@@ -9,5 +9,6 @@
 )]
 
 pub mod asc;
+pub mod cmp;
 pub mod vecmap;
 pub mod vecset;
