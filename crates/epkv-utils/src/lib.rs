@@ -9,4 +9,5 @@
 )]
 
 pub mod asc;
+pub mod vecmap;
 pub mod vecset;
