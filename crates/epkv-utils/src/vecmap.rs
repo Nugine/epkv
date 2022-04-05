@@ -2,7 +2,7 @@
 
 use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::mem::{self, ManuallyDrop};
+use std::mem;
 use std::ptr;
 
 use serde::{Deserialize, Serialize};
@@ -111,57 +111,62 @@ impl<K: Ord, V> VecMap<K, V> {
     }
 
     #[inline]
-    pub fn merge_with(&mut self, other: Self, mut f: impl FnMut(V, V) -> V) {
-        let mut lhs = ManuallyDrop::new(mem::take(&mut self.0));
-        let mut rhs = ManuallyDrop::new(other.0);
+    pub fn merge_copied_with(&mut self, other: &Self, mut f: impl FnMut(V, V) -> V)
+    where
+        K: Copy,
+        V: Copy,
+    {
+        let lhs = &mut self.0;
+        let rhs = &other.0;
+
         let ans_cap = lhs.len().checked_add(rhs.len()).unwrap();
-        let mut ans = Vec::<(K, V)>::with_capacity(ans_cap);
+        lhs.reserve(ans_cap);
 
         unsafe {
-            let mut p1 = lhs.as_mut_ptr();
-            let mut p2 = rhs.as_mut_ptr();
-            let mut p3 = ans.as_mut_ptr();
-            let e1 = lhs.as_mut_ptr().add(lhs.len());
-            let e2 = rhs.as_mut_ptr().add(rhs.len());
+            let mut p1 = lhs.as_ptr();
+            let mut p2 = rhs.as_ptr();
+            let mut p3 = lhs.as_mut_ptr().add(lhs.len());
+            let e1 = p1.add(lhs.len());
+            let e2 = p2.add(rhs.len());
 
             while p1 < e1 && p2 < e2 {
-                let (k1, v1) = &mut *p1;
-                let (k2, v2) = &mut *p2;
+                let (k1, v1) = &*p1;
+                let (k2, v2) = &*p2;
                 match Ord::cmp(k1, k2) {
                     Ordering::Less => {
-                        p3.write(ptr::read(p1));
+                        ptr::copy_nonoverlapping(p1, p3, 1);
                         p1 = p1.add(1);
                     }
                     Ordering::Greater => {
-                        p3.write(ptr::read(p2));
+                        ptr::copy_nonoverlapping(p2, p3, 1);
                         p2 = p2.add(1);
                     }
                     Ordering::Equal => {
-                        let v = f(ptr::read(v1), ptr::read(v2));
-                        p3.write((ptr::read(k1), v));
+                        let v = f(*v1, *v2);
+                        p3.write((*k1, v));
                         p1 = p1.add(1);
                         p2 = p2.add(1);
                     }
                 }
                 p3 = p3.add(1);
             }
-            while p1 < e1 {
-                p3.write(ptr::read(p1));
-                p1 = p1.add(1);
-                p3 = p3.add(1);
+            if p1 < e1 {
+                let cnt = e1.offset_from(p1) as usize;
+                ptr::copy_nonoverlapping(p1, p3, cnt);
+                p3 = p3.add(cnt);
             }
-            while p2 < e2 {
-                p3.write(ptr::read(p2));
-                p2 = p2.add(1);
-                p3 = p3.add(1);
+            if p2 < e2 {
+                let cnt = e2.offset_from(p2) as usize;
+                ptr::copy_nonoverlapping(p2, p3, cnt);
+                p3 = p3.add(cnt);
             }
-            lhs.set_len(0);
-            rhs.set_len(0);
-            ManuallyDrop::drop(&mut lhs);
-            ManuallyDrop::drop(&mut rhs);
-            let ans_len = p3.offset_from(ans.as_mut_ptr()) as usize;
-            ans.set_len(ans_len);
-            ptr::write(&mut self.0, ans)
+            {
+                let dst = lhs.as_mut_ptr();
+                let src = dst.add(lhs.len());
+                let cnt = p3.offset_from(src) as usize;
+                ptr::copy(src, dst, cnt);
+                lhs.set_len(cnt)
+            }
         }
     }
 }
@@ -206,7 +211,7 @@ mod tests {
     fn merge_max() {
         let mut m1: VecMap<u8, u8> = VecMap::from_vec(vec![(1, 1), (3, 3), (5, 5)]);
         let m2: VecMap<u8, u8> = VecMap::from_vec(vec![(1, 1), (2, 2), (3, 2), (4, 4), (5, 6)]);
-        m1.merge_with(m2, |v1, v2| v1.max(v2));
+        m1.merge_copied_with(&m2, |v1, v2| v1.max(v2));
         assert_eq!(*m1.get(&1).unwrap(), 1);
         assert_eq!(*m1.get(&2).unwrap(), 2);
         assert_eq!(*m1.get(&3).unwrap(), 3);

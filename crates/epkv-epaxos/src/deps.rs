@@ -18,7 +18,7 @@ impl Deps {
         self.0.update(rid, |prev| max_assign(prev, lid), || lid);
     }
 
-    pub fn merge(&mut self, other: Self) {
-        self.0.merge_with(other.0, |v1, v2| v1.max(v2))
+    pub fn merge(&mut self, other: &Self) {
+        self.0.merge_copied_with(&other.0, |v1, v2| v1.max(v2))
     }
 }
