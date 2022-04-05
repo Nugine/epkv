@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::deps::Deps;
+use crate::id::{Ballot, Seq};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum InstanceStatus {
     PreAccepted = 1,
@@ -7,6 +10,14 @@ pub enum InstanceStatus {
     Committed = 3,
     Issued = 4,
     Executed = 5,
+}
+
+pub struct Instance<C> {
+    pub cmd: C,
+    pub seq: Seq,
+    pub deps: Deps,
+    pub abal: Ballot,
+    pub status: InstanceStatus,
 }
 
 #[cfg(test)]
