@@ -2,7 +2,7 @@
 
 use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::ptr;
+use std::{mem, ptr};
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +15,12 @@ impl<T: Ord> VecSet<T> {
     #[must_use]
     pub fn new() -> Self {
         Self(Vec::new())
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn with_capacity(cap: usize) -> Self {
+        Self(Vec::with_capacity(cap))
     }
 
     #[inline]
@@ -47,6 +53,21 @@ impl<T: Ord> VecSet<T> {
         Q: Ord + ?Sized,
     {
         self.search(val).is_ok()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn insert(&mut self, val: T) -> Option<T> {
+        match self.search(&val) {
+            Ok(idx) => {
+                let prev = unsafe { &mut self.0.get_unchecked_mut(idx) };
+                Some(mem::replace(prev, val))
+            }
+            Err(idx) => {
+                self.0.insert(idx, val);
+                None
+            }
+        }
     }
 
     #[inline]
