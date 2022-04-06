@@ -26,6 +26,18 @@ impl<K: Ord, V> VecMap<K, V> {
 
     #[inline]
     #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[inline]
+    #[must_use]
     pub fn from_vec(mut v: Vec<(K, V)>) -> Self {
         v.sort_unstable_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
         v.dedup_by(|x, first| x.0 == first.0);

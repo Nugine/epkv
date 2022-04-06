@@ -25,6 +25,18 @@ impl<T: Ord> VecSet<T> {
 
     #[inline]
     #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[inline]
+    #[must_use]
     pub fn from_vec(mut v: Vec<T>) -> Self {
         v.sort_unstable();
         v.dedup_by(|x, first| x == first);
