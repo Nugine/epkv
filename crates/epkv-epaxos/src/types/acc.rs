@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct Acc(VecSet<ReplicaId>);
 
 impl Acc {
+    #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         Self(VecSet::with_capacity(cap))
     }

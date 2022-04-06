@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct Deps(VecMap<ReplicaId, LocalInstanceId>);
 
 impl Deps {
+    #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         Self(VecMap::with_capacity(cap))
     }
