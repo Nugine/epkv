@@ -22,6 +22,9 @@ pub mod types {
 
     mod store;
     pub use self::store::*;
+
+    mod effect;
+    pub use self::effect::*;
 }
 
 pub mod codec;
