@@ -12,6 +12,8 @@ where
 {
     type Key: Eq + Ord + Hash + Send + Sync + 'static;
 
+    type Notify: Send + Sync + 'static;
+
     fn keys(&self) -> Keys<Self>;
 
     fn has_unbounded_keys(&self) -> bool;
@@ -25,6 +27,9 @@ where
     fn create_fence() -> Self
     where
         Self: Sized;
+
+    fn notify_committed(&self) -> Self::Notify;
+    fn notify_executed(&self) -> Self::Notify;
 }
 
 pub enum Keys<C: CommandLike> {
