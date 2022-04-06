@@ -2,6 +2,7 @@ use super::acc::Acc;
 use super::deps::Deps;
 use super::id::{Ballot, InstanceId, ReplicaId, Seq};
 use super::ins::InstanceStatus;
+use super::Epoch;
 
 use serde::{Deserialize, Serialize};
 
@@ -96,6 +97,17 @@ pub struct PrepareOk<C> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct Join {
+    pub sender: ReplicaId,
+    pub epoch: Epoch,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JoinOk {
+    pub sender: ReplicaId,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Message<C> {
     PreAccept(PreAccept<C>),
     PreAcceptOk(PreAcceptOk),
@@ -106,6 +118,8 @@ pub enum Message<C> {
     Prepare(Prepare),
     PrepareOk(PrepareOk<C>),
     PrepareNack(PrepareNack),
+    Join(Join),
+    JoinOk(JoinOk),
 }
 
 #[cfg(test)]
