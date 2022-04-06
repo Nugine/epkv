@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
+use super::deps::Deps;
+use super::id::{Ballot, Seq};
 
-use crate::deps::Deps;
-use crate::id::{Ballot, Seq};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum InstanceStatus {

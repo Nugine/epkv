@@ -1,5 +1,5 @@
-use crate::id::{Ballot, InstanceId};
-use crate::ins::Instance;
+use super::id::{Ballot, InstanceId};
+use super::ins::Instance;
 
 use anyhow::Result;
 

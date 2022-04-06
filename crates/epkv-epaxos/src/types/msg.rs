@@ -1,7 +1,7 @@
-use crate::acc::Acc;
-use crate::deps::Deps;
-use crate::id::{Ballot, InstanceId, ReplicaId, Seq};
-use crate::ins::InstanceStatus;
+use super::acc::Acc;
+use super::deps::Deps;
+use super::id::{Ballot, InstanceId, ReplicaId, Seq};
+use super::ins::InstanceStatus;
 
 use serde::{Deserialize, Serialize};
 
@@ -113,8 +113,7 @@ mod tests {
     use super::*;
 
     use crate::codec;
-    use crate::deps::Deps;
-    use crate::id::{Epoch, LocalInstanceId, Round, Seq};
+    use crate::types::{Epoch, LocalInstanceId, Round};
 
     use std::mem;
 

@@ -1,4 +1,4 @@
-use crate::id::ReplicaId;
+use super::id::ReplicaId;
 
 use epkv_utils::vecset::VecSet;
 

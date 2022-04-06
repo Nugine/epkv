@@ -1,4 +1,4 @@
-use crate::id::{InstanceId, LocalInstanceId, ReplicaId};
+use super::id::{InstanceId, LocalInstanceId, ReplicaId};
 
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
