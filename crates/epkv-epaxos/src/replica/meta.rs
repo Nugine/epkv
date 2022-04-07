@@ -1,28 +1,29 @@
 use crate::types::{Epoch, ReplicaId};
 
+use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
 
-type Priority = u64;
+type Rank = u64;
 
 pub struct ReplicaMeta {
     epoch: Epoch,
-    live_peers: VecMap<ReplicaId, Priority>,
-    rank: Vec<(Priority, ReplicaId)>,
+    live_peers: VecMap<ReplicaId, Rank>,
+    rank: Vec<(Rank, ReplicaId)>,
 }
 
 impl ReplicaMeta {
     pub fn new(epoch: Epoch, peers: &[ReplicaId]) -> Self {
-        let live_peers: VecMap<ReplicaId, Priority> = peers
+        let live_peers: VecMap<ReplicaId, Rank> = peers
             .iter()
             .copied()
-            .map(|peer| (peer, Priority::MAX))
+            .map(|peer| (peer, Rank::MAX))
             .collect();
         assert!(live_peers.len() != peers.len(), "duplicate replicas");
 
-        let mut rank: Vec<(Priority, ReplicaId)> = peers
+        let mut rank: Vec<(Rank, ReplicaId)> = peers
             .iter()
             .copied()
-            .map(|peer| (Priority::MAX, peer))
+            .map(|peer| (Rank::MAX, peer))
             .collect();
         rank.sort_unstable_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
 
@@ -51,5 +52,16 @@ impl ReplicaMeta {
     #[must_use]
     pub fn all_peers(&self) -> Vec<ReplicaId> {
         self.live_peers.as_slice().iter().map(|&(r, _)| r).collect()
+    }
+
+    pub fn add_peer(&mut self, peer: ReplicaId) {
+        let is_new_peer = self.live_peers.init_with(&peer, || (peer, Rank::MAX));
+        if is_new_peer {
+            self.rank.push((Rank::MAX, peer))
+        }
+    }
+
+    pub fn update_epoch(&mut self, epoch: Epoch) {
+        max_assign(&mut self.epoch, epoch);
     }
 }

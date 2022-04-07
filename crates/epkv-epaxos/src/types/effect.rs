@@ -15,7 +15,7 @@ pub struct Broadcast<C> {
 
 pub struct Reply<C> {
     pub target: ReplicaId,
-    pub reply: Message<C>,
+    pub msg: Message<C>,
 }
 
 impl<C: CommandLike> Effect<C> {
@@ -32,6 +32,14 @@ impl<C: CommandLike> Effect<C> {
     pub fn broadcast(targets: Vec<ReplicaId>, msg: Message<C>) -> Self {
         Effect {
             broadcasts: vec![Broadcast { targets, msg }],
+            ..Self::empty()
+        }
+    }
+
+    #[must_use]
+    pub fn reply(target: ReplicaId, msg: Message<C>) -> Self {
+        Effect {
+            replies: vec![Reply { target, msg }],
             ..Self::empty()
         }
     }

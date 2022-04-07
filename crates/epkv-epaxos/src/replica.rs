@@ -63,7 +63,7 @@ impl<S: LogStore> Replica<S> {
             Message::Prepare(_) => todo!(),
             Message::PrepareOk(_) => todo!(),
             Message::PrepareNack(_) => todo!(),
-            Message::Join(_) => todo!(),
+            Message::Join(msg) => self.handle_join(msg).await,
             Message::JoinOk(msg) => self.handle_join_ok(msg).await,
         }
     }
@@ -74,12 +74,11 @@ impl<S: LogStore> Replica<S> {
 
         state.joining = Some(VecSet::new());
 
+        let targets = state.meta.all_peers();
         let msg: _ = Message::Join(Join {
             sender: self.rid,
             epoch: state.meta.epoch(),
         });
-
-        let targets = state.meta.all_peers();
         Ok(Effect::broadcast(targets, msg))
     }
 
@@ -101,5 +100,17 @@ impl<S: LogStore> Replica<S> {
         }
 
         Ok(Effect::empty())
+    }
+
+    async fn handle_join(&self, msg: Join) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.write().await;
+        let state = &mut *guard;
+
+        state.meta.add_peer(msg.sender);
+        state.meta.update_epoch(msg.epoch);
+
+        let target = msg.sender;
+        let msg = Message::JoinOk(JoinOk { sender: self.rid });
+        Ok(Effect::reply(target, msg))
     }
 }
