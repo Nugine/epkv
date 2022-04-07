@@ -6,7 +6,7 @@ mod meta;
 use self::config::ReplicaConfig;
 use self::meta::ReplicaMeta;
 
-use crate::types::{Effect, Epoch, Join, LogStore, Message, ReplicaId};
+use crate::types::{Effect, Epoch, Join, JoinOk, LogStore, Message, ReplicaId};
 
 use epkv_utils::vecset::VecSet;
 
@@ -64,21 +64,42 @@ impl<S: LogStore> Replica<S> {
             Message::PrepareOk(_) => todo!(),
             Message::PrepareNack(_) => todo!(),
             Message::Join(_) => todo!(),
-            Message::JoinOk(_) => todo!(),
+            Message::JoinOk(msg) => self.handle_join_ok(msg).await,
         }
     }
 
-    pub async fn start_phase_join(&self) -> Result<Effect<S::Command>> {
-        let mut state_guard = self.state.write().await;
-        let state = &mut *state_guard;
+    pub async fn start_joining(&self) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.write().await;
+        let state = &mut *guard;
 
         state.joining = Some(VecSet::new());
 
-        let msg = Message::<S::Command>::Join(Join {
+        let msg: _ = Message::Join(Join {
             sender: self.rid,
             epoch: state.meta.epoch(),
         });
+
         let targets = state.meta.all_peers();
         Ok(Effect::broadcast(targets, msg))
+    }
+
+    async fn handle_join_ok(&self, msg: JoinOk) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.write().await;
+        let state = &mut *guard;
+
+        let joining = match state.joining {
+            Some(ref mut s) => s,
+            None => return Ok(Effect::empty()),
+        };
+
+        let _ = joining.insert(msg.sender);
+
+        let cluster_size = state.meta.cluster_size();
+
+        if joining.len() > cluster_size / 2 {
+            state.joining = None;
+        }
+
+        Ok(Effect::empty())
     }
 }
