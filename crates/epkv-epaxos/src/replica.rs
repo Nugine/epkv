@@ -46,7 +46,7 @@ impl<S: LogStore> Replica<S> {
         ensure!(cluster_size >= 3 && cluster_size % 2 == 1);
 
         let meta = ReplicaMeta::new(epoch, peers);
-        let space = Space::new(store)?;
+        let space = Space::new(rid, store)?;
         let state = RwLock::new(State {
             meta,
             space,
