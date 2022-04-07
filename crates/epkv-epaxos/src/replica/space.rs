@@ -47,7 +47,6 @@ impl<S: LogStore> Space<S> {
 
         let max_lid_map = attr_bounds
             .max_lids
-            .as_slice()
             .iter()
             .copied()
             .map(|(rid, lid)| {

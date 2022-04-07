@@ -4,6 +4,7 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::mem;
 use std::ptr;
+use std::slice;
 
 use serde::{Deserialize, Serialize};
 
@@ -42,12 +43,6 @@ impl<K: Ord, V> VecMap<K, V> {
         v.sort_unstable_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
         v.dedup_by(|x, first| x.0 == first.0);
         Self(v)
-    }
-
-    #[inline]
-    #[must_use]
-    pub fn as_slice(&self) -> &[(K, V)] {
-        &*self.0
     }
 
     fn search<Q>(&self, key: &Q) -> Result<usize, usize>
@@ -215,6 +210,12 @@ impl<K: Ord, V> VecMap<K, V> {
             }
         }
     }
+
+    #[inline]
+    #[must_use]
+    pub fn iter(&self) -> Iter<'_, K, V> {
+        Iter(self.0.as_slice().iter())
+    }
 }
 
 impl<K: Ord, V> From<Vec<(K, V)>> for VecMap<K, V> {
@@ -236,6 +237,22 @@ impl<K: Ord, V> Default for VecMap<K, V> {
     #[must_use]
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct Iter<'a, K, V>(slice::Iter<'a, (K, V)>);
+
+impl<'a, K, V> Iterator for Iter<'a, K, V> {
+    type Item = &'a (K, V);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
     }
 }
 

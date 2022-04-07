@@ -2,7 +2,7 @@
 
 use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::{mem, ptr};
+use std::{mem, ptr, slice};
 
 use serde::{Deserialize, Serialize};
 
@@ -41,12 +41,6 @@ impl<T: Ord> VecSet<T> {
         v.sort_unstable();
         v.dedup_by(|x, first| x == first);
         Self(v)
-    }
-
-    #[inline]
-    #[must_use]
-    pub fn as_slice(&self) -> &[T] {
-        &*self.0
     }
 
     fn search<Q>(&self, val: &Q) -> Result<usize, usize>
@@ -137,6 +131,12 @@ impl<T: Ord> VecSet<T> {
             }
         }
     }
+
+    #[inline]
+    #[must_use]
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter(self.0.as_slice().iter())
+    }
 }
 
 impl<T: Ord> From<Vec<T>> for VecSet<T> {
@@ -161,6 +161,22 @@ impl<T: Ord> Default for VecSet<T> {
     }
 }
 
+pub struct Iter<'a, T>(slice::Iter<'a, T>);
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,7 +184,7 @@ mod tests {
     #[test]
     fn from_vec() {
         let s = VecSet::<u64>::from_vec(vec![1, 4, 3, 2, 5, 7, 9, 2, 4, 6, 7, 8, 0]);
-        assert_eq!(s.as_slice(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+        assert_eq!(s.0.as_slice(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     }
 
     #[test]
@@ -176,6 +192,6 @@ mod tests {
         let mut s1 = VecSet::<u64>::from_vec(vec![1, 2, 3, 5]);
         let s2 = VecSet::<u64>::from_vec(vec![2, 4, 5, 6]);
         s1.union_copied(&s2);
-        assert_eq!(s1.as_slice(), &[1, 2, 3, 4, 5, 6])
+        assert_eq!(s1.0.as_slice(), &[1, 2, 3, 4, 5, 6])
     }
 }

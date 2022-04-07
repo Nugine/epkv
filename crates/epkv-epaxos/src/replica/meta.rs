@@ -72,6 +72,6 @@ impl ReplicaMeta {
 
     #[must_use]
     pub fn all_peers(&self) -> Vec<ReplicaId> {
-        self.live_peers.as_slice().iter().map(|&(r, _)| r).collect()
+        self.live_peers.iter().map(|&(r, _)| r).collect()
     }
 }
