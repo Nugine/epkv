@@ -2,9 +2,11 @@
 
 mod config;
 mod meta;
+mod space;
 
 use self::config::ReplicaConfig;
 use self::meta::ReplicaMeta;
+use self::space::Space;
 
 use crate::types::*;
 
@@ -19,13 +21,13 @@ pub struct Replica<S: LogStore> {
     state: RwLock<State<S>>,
 }
 
-struct State<S> {
+struct State<S: LogStore> {
     meta: ReplicaMeta,
-    store: S,
+    space: Space<S>,
     joining: Option<VecSet<ReplicaId>>,
 }
 
-impl<S> State<S> {
+impl<S: LogStore> State<S> {
     fn is_joining(&self) -> bool {
         self.joining.is_some()
     }
@@ -44,9 +46,10 @@ impl<S: LogStore> Replica<S> {
         ensure!(cluster_size >= 3 && cluster_size % 2 == 1);
 
         let meta = ReplicaMeta::new(epoch, peers);
+        let space = Space::new(store)?;
         let state = RwLock::new(State {
             meta,
-            store,
+            space,
             joining: None,
         });
         Ok(Self { rid, config, state })
@@ -57,12 +60,13 @@ impl<S: LogStore> Replica<S> {
             Message::PreAccept(msg) => self.handle_pre_accept(msg).await,
             Message::PreAcceptOk(msg) => self.handle_pre_accept_ok(msg).await,
             Message::PreAcceptDiff(msg) => self.handle_pre_accept_diff(msg).await,
-            Message::Accept(msg) => self.handle_accept().await,
-            Message::AcceptOk(msg) => self.handle_accept_ok().await,
-            Message::Commit(msg) => self.handle_commit().await,
-            Message::Prepare(msg) => self.handle_prepare().await,
-            Message::PrepareOk(msg) => self.handle_prepare_ok().await,
-            Message::PrepareNack(msg) => self.handle_prepare_nack().await,
+            Message::Accept(msg) => self.handle_accept(msg).await,
+            Message::AcceptOk(msg) => self.handle_accept_ok(msg).await,
+            Message::Commit(msg) => self.handle_commit(msg).await,
+            Message::Prepare(msg) => self.handle_prepare(msg).await,
+            Message::PrepareOk(msg) => self.handle_prepare_ok(msg).await,
+            Message::PrepareNack(msg) => self.handle_prepare_nack(msg).await,
+            Message::PrepareUnchosen(msg) => self.handle_prepare_unchosen(msg).await,
             Message::Join(msg) => self.handle_join(msg).await,
             Message::JoinOk(msg) => self.handle_join_ok(msg).await,
             Message::Leave(msg) => self.handle_leave(msg).await,
@@ -136,27 +140,31 @@ impl<S: LogStore> Replica<S> {
         todo!()
     }
 
-    async fn handle_accept(&self) -> Result<Effect<S::Command>> {
+    async fn handle_accept(&self, msg: Accept<S::Command>) -> Result<Effect<S::Command>> {
         todo!()
     }
 
-    async fn handle_accept_ok(&self) -> Result<Effect<S::Command>> {
+    async fn handle_accept_ok(&self, msg: AcceptOk) -> Result<Effect<S::Command>> {
         todo!()
     }
 
-    async fn handle_commit(&self) -> Result<Effect<S::Command>> {
+    async fn handle_commit(&self, msg: Commit<S::Command>) -> Result<Effect<S::Command>> {
         todo!()
     }
 
-    async fn handle_prepare(&self) -> Result<Effect<S::Command>> {
+    async fn handle_prepare(&self, msg: Prepare) -> Result<Effect<S::Command>> {
         todo!()
     }
 
-    async fn handle_prepare_ok(&self) -> Result<Effect<S::Command>> {
+    async fn handle_prepare_ok(&self, msg: PrepareOk<S::Command>) -> Result<Effect<S::Command>> {
         todo!()
     }
 
-    async fn handle_prepare_nack(&self) -> Result<Effect<S::Command>> {
+    async fn handle_prepare_nack(&self, msg: PrepareNack) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_prepare_unchosen(&self, msg: PrepareUnchosen) -> Result<Effect<S::Command>> {
         todo!()
     }
 }

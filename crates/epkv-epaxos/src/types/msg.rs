@@ -123,6 +123,7 @@ pub enum Message<C> {
     Prepare(Prepare),
     PrepareOk(PrepareOk<C>),
     PrepareNack(PrepareNack),
+    PrepareUnchosen(PrepareUnchosen),
     Join(Join),
     JoinOk(JoinOk),
     Leave(Leave),
