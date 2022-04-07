@@ -6,7 +6,7 @@ mod meta;
 use self::config::ReplicaConfig;
 use self::meta::ReplicaMeta;
 
-use crate::types::{Effect, Epoch, Join, JoinOk, LogStore, Message, ReplicaId};
+use crate::types::*;
 
 use epkv_utils::vecset::VecSet;
 
@@ -65,6 +65,7 @@ impl<S: LogStore> Replica<S> {
             Message::PrepareNack(_) => todo!(),
             Message::Join(msg) => self.handle_join(msg).await,
             Message::JoinOk(msg) => self.handle_join_ok(msg).await,
+            Message::Leave(msg) => self.handle_leave(msg).await,
         }
     }
 
@@ -112,5 +113,14 @@ impl<S: LogStore> Replica<S> {
         let target = msg.sender;
         let msg = Message::JoinOk(JoinOk { sender: self.rid });
         Ok(Effect::reply(target, msg))
+    }
+
+    async fn handle_leave(&self, msg: Leave) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.write().await;
+        let state = &mut *guard;
+
+        state.meta.remove_peer(msg.sender);
+
+        Ok(Effect::empty())
     }
 }

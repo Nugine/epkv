@@ -11,6 +11,10 @@ pub struct ReplicaMeta {
     rank: Vec<(Rank, ReplicaId)>,
 }
 
+fn sort_rank(rank: &mut [(Rank, ReplicaId)]) {
+    rank.sort_unstable_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
+}
+
 impl ReplicaMeta {
     pub fn new(epoch: Epoch, peers: &[ReplicaId]) -> Self {
         let live_peers: VecMap<ReplicaId, Rank> = peers
@@ -25,7 +29,7 @@ impl ReplicaMeta {
             .copied()
             .map(|peer| (Rank::MAX, peer))
             .collect();
-        rank.sort_unstable_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
+        sort_rank(&mut rank);
 
         Self {
             epoch,
@@ -49,9 +53,8 @@ impl ReplicaMeta {
         self.epoch
     }
 
-    #[must_use]
-    pub fn all_peers(&self) -> Vec<ReplicaId> {
-        self.live_peers.as_slice().iter().map(|&(r, _)| r).collect()
+    pub fn update_epoch(&mut self, epoch: Epoch) {
+        max_assign(&mut self.epoch, epoch);
     }
 
     pub fn add_peer(&mut self, peer: ReplicaId) {
@@ -61,7 +64,14 @@ impl ReplicaMeta {
         }
     }
 
-    pub fn update_epoch(&mut self, epoch: Epoch) {
-        max_assign(&mut self.epoch, epoch);
+    pub fn remove_peer(&mut self, peer: ReplicaId) {
+        if self.live_peers.remove(&peer).is_some() {
+            self.rank.retain(|&(_, r)| r != peer)
+        }
+    }
+
+    #[must_use]
+    pub fn all_peers(&self) -> Vec<ReplicaId> {
+        self.live_peers.as_slice().iter().map(|&(r, _)| r).collect()
     }
 }

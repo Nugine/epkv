@@ -111,6 +111,22 @@ impl<K: Ord, V> VecMap<K, V> {
 
     #[inline]
     #[must_use]
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        match self.search(key) {
+            Ok(idx) => {
+                let pair = self.0.remove(idx);
+                Some(pair.1)
+            }
+            Err(_) => None,
+        }
+    }
+
+    #[inline]
+    #[must_use]
     pub fn init_with<Q>(&mut self, key: &Q, g: impl FnOnce() -> (K, V)) -> bool
     where
         K: Borrow<Q>,

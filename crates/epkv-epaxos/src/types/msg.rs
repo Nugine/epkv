@@ -108,6 +108,11 @@ pub struct JoinOk {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct Leave {
+    pub sender: ReplicaId,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Message<C> {
     PreAccept(PreAccept<C>),
     PreAcceptOk(PreAcceptOk),
@@ -120,6 +125,7 @@ pub enum Message<C> {
     PrepareNack(PrepareNack),
     Join(Join),
     JoinOk(JoinOk),
+    Leave(Leave),
 }
 
 #[cfg(test)]
