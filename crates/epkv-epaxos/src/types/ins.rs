@@ -12,6 +12,7 @@ pub enum InstanceStatus {
 }
 
 pub struct Instance<C> {
+    pub pbal: Ballot,
     pub cmd: C,
     pub seq: Seq,
     pub deps: Deps,
@@ -21,6 +22,7 @@ pub struct Instance<C> {
 }
 
 pub struct PartialInstance {
+    pub pbal: Ballot,
     pub seq: Seq,
     pub deps: Deps,
     pub abal: Ballot,
