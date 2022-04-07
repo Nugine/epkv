@@ -31,6 +31,9 @@ pub mod types {
 
     mod effect;
     pub use self::effect::*;
+
+    mod bounds;
+    pub use self::bounds::*;
 }
 
 pub mod codec;
