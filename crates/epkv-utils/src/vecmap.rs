@@ -127,16 +127,20 @@ impl<K: Ord, V> VecMap<K, V> {
 
     #[inline]
     #[must_use]
-    pub fn init_with<Q>(&mut self, key: &Q, g: impl FnOnce() -> (K, V)) -> bool
+    pub fn init_with<Q>(&mut self, key: &Q, g: impl FnOnce() -> (K, V)) -> (bool, &mut V)
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        let result = self.search(key);
-        if let Err(idx) = result {
+        let (is_first, idx) = match self.search(key) {
+            Ok(idx) => (true, idx),
+            Err(idx) => (false, idx),
+        };
+        if is_first {
             self.0.insert(idx, g());
         }
-        result.is_err()
+        let val: &mut V = unsafe { &mut self.0.get_unchecked_mut(idx).1 };
+        (is_first, val)
     }
 
     #[inline]

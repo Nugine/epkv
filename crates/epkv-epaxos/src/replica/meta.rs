@@ -58,7 +58,7 @@ impl ReplicaMeta {
     }
 
     pub fn add_peer(&mut self, peer: ReplicaId) {
-        let is_new_peer = self.live_peers.init_with(&peer, || (peer, Rank::MAX));
+        let (is_new_peer, _) = self.live_peers.init_with(&peer, || (peer, Rank::MAX));
         if is_new_peer {
             self.rank.push((Rank::MAX, peer))
         }
