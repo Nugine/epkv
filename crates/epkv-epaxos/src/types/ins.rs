@@ -1,5 +1,4 @@
-use super::deps::Deps;
-use super::id::{Ballot, Seq};
+use super::*;
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +17,15 @@ pub struct Instance<C> {
     pub deps: Deps,
     pub abal: Ballot,
     pub status: InstanceStatus,
+    pub acc: Acc,
+}
+
+pub struct PartialInstance {
+    pub seq: Seq,
+    pub deps: Deps,
+    pub abal: Ballot,
+    pub status: InstanceStatus,
+    pub acc: Acc,
 }
 
 #[cfg(test)]
