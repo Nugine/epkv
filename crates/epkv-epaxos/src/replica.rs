@@ -54,15 +54,15 @@ impl<S: LogStore> Replica<S> {
 
     pub async fn handle_message(&self, msg: Message<S::Command>) -> Result<Effect<S::Command>> {
         match msg {
-            Message::PreAccept(_) => todo!(),
-            Message::PreAcceptOk(_) => todo!(),
-            Message::PreAcceptDiff(_) => todo!(),
-            Message::Accept(_) => todo!(),
-            Message::AcceptOk(_) => todo!(),
-            Message::Commit(_) => todo!(),
-            Message::Prepare(_) => todo!(),
-            Message::PrepareOk(_) => todo!(),
-            Message::PrepareNack(_) => todo!(),
+            Message::PreAccept(msg) => self.handle_pre_accept(msg).await,
+            Message::PreAcceptOk(msg) => self.handle_pre_accept_ok(msg).await,
+            Message::PreAcceptDiff(msg) => self.handle_pre_accept_diff(msg).await,
+            Message::Accept(msg) => self.handle_accept().await,
+            Message::AcceptOk(msg) => self.handle_accept_ok().await,
+            Message::Commit(msg) => self.handle_commit().await,
+            Message::Prepare(msg) => self.handle_prepare().await,
+            Message::PrepareOk(msg) => self.handle_prepare_ok().await,
+            Message::PrepareNack(msg) => self.handle_prepare_nack().await,
             Message::Join(msg) => self.handle_join(msg).await,
             Message::JoinOk(msg) => self.handle_join_ok(msg).await,
             Message::Leave(msg) => self.handle_leave(msg).await,
@@ -122,5 +122,41 @@ impl<S: LogStore> Replica<S> {
         state.meta.remove_peer(msg.sender);
 
         Ok(Effect::empty())
+    }
+
+    async fn handle_pre_accept(&self, msg: PreAccept<S::Command>) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_pre_accept_ok(&self, msg: PreAcceptOk) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_pre_accept_diff(&self, msg: PreAcceptDiff) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_accept(&self) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_accept_ok(&self) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_commit(&self) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_prepare(&self) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_prepare_ok(&self) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_prepare_nack(&self) -> Result<Effect<S::Command>> {
+        todo!()
     }
 }
