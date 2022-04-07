@@ -128,6 +128,28 @@ impl<S: LogStore> Replica<S> {
         Ok(Effect::empty())
     }
 
+    pub async fn propose(&self, cmd: S::Command) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.write().await;
+        let state = &mut *guard;
+
+        let id = InstanceId(self.rid, state.space.generate_lid());
+        let pbal = Ballot(state.meta.epoch(), Round::ZERO, self.rid);
+        let acc = Acc::with_capacity(1);
+
+        drop(guard);
+        self.start_phase_pre_accept(id, pbal, cmd, acc).await
+    }
+
+    async fn start_phase_pre_accept(
+        &self,
+        id: InstanceId,
+        pbal: Ballot,
+        cmd: S::Command,
+        acc: Acc,
+    ) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
     async fn handle_pre_accept(&self, msg: PreAccept<S::Command>) -> Result<Effect<S::Command>> {
         todo!()
     }
