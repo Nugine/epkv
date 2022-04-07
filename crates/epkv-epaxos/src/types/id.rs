@@ -39,6 +39,8 @@ macro_rules! impl_newtype {
             impl $ty {
                 pub const ZERO: Self = Self(0);
 
+                pub const ONE: Self = Self(1);
+
                 #[inline]
                 #[must_use]
                 pub const fn raw_value(self) -> $inner {
