@@ -24,7 +24,7 @@ pub struct Replica<S: LogStore> {
 }
 
 impl<S: LogStore> Replica<S> {
-    pub fn new(
+    pub async fn new(
         rid: ReplicaId,
         store: S,
         epoch: Epoch,
@@ -35,8 +35,32 @@ impl<S: LogStore> Replica<S> {
         ensure!(peers.iter().all(|&p| p != rid));
         ensure!(cluster_size >= 3);
 
-        let state = Mutex::new(State::new(rid, store, epoch, peers)?);
+        let state = State::new(rid, store, epoch, peers).await?;
+        let state = Mutex::new(state);
         Ok(Self { rid, config, state })
+    }
+
+    pub async fn propose(&self, cmd: S::Command) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        let id = InstanceId(self.rid, state.generate_lid());
+        let pbal = Ballot(state.meta.epoch(), Round::ZERO, self.rid);
+        let acc = VecSet::<ReplicaId>::with_capacity(1);
+
+        drop(guard);
+
+        self.start_phase_pre_accept(id, pbal, cmd, acc).await
+    }
+
+    async fn start_phase_pre_accept(
+        &self,
+        id: InstanceId,
+        pbal: Ballot,
+        cmd: <S as LogStore>::Command,
+        acc: VecSet<ReplicaId>,
+    ) -> Result<Effect<S::Command>> {
+        todo!()
     }
 }
 
@@ -73,10 +97,15 @@ struct MaxSeq {
 }
 
 impl<S: LogStore> State<S> {
-    fn new(rid: ReplicaId, store: S, epoch: Epoch, peers: &VecSet<ReplicaId>) -> Result<Self> {
+    async fn new(
+        rid: ReplicaId,
+        store: S,
+        epoch: Epoch,
+        peers: &VecSet<ReplicaId>,
+    ) -> Result<Self> {
         let meta = Meta::new(epoch, peers);
 
-        let attr_bounds = store.load_attr_bounds()?;
+        let attr_bounds = store.load_attr_bounds().await?;
 
         let lid_head = attr_bounds
             .max_lids
@@ -160,8 +189,8 @@ impl<S: LogStore> State<S> {
         (seq, deps)
     }
 
-    fn save(&mut self, id: InstanceId, ins: Instance<S::Command>) -> Result<()> {
-        self.store.save_instance(id, &ins)?;
+    async fn save(&mut self, id: InstanceId, ins: Instance<S::Command>) -> Result<()> {
+        self.store.save_instance(id, &ins).await?;
         let _ = self.ins_cache.insert(id, ins);
         let _ = self.pbal_cache.remove(&id);
         Ok(())
