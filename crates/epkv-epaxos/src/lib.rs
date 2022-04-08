@@ -8,9 +8,6 @@
 )]
 
 pub mod types {
-    mod acc;
-    pub use self::acc::*;
-
     mod cmd;
     pub use self::cmd::*;
 

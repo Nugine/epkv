@@ -1,8 +1,9 @@
-use super::acc::Acc;
 use super::deps::Deps;
 use super::id::{Ballot, InstanceId, ReplicaId, Seq};
 use super::ins::Status;
 use super::Epoch;
+
+use epkv_utils::vecset::VecSet;
 
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +15,7 @@ pub struct PreAccept<C> {
     pub cmd: Option<C>,
     pub seq: Seq,
     pub deps: Deps,
-    pub acc: Acc,
+    pub acc: VecSet<ReplicaId>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -41,7 +42,7 @@ pub struct Accept<C> {
     pub cmd: Option<C>,
     pub seq: Seq,
     pub deps: Deps,
-    pub acc: Acc,
+    pub acc: VecSet<ReplicaId>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,7 +60,7 @@ pub struct Commit<C> {
     pub cmd: Option<C>,
     pub seq: Seq,
     pub deps: Deps,
-    pub acc: Acc,
+    pub acc: VecSet<ReplicaId>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -93,7 +94,7 @@ pub struct PrepareOk<C> {
     pub deps: Deps,
     pub abal: Ballot,
     pub status: Status,
-    pub acc: Acc,
+    pub acc: VecSet<ReplicaId>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -153,8 +154,8 @@ mod tests {
             let cmd = None;
             let seq = Seq::from(1);
             let deps = Deps::with_capacity(3);
-            let mut acc = Acc::with_capacity(3);
-            acc.insert(rid);
+            let mut acc = VecSet::with_capacity(3);
+            let _ = acc.insert(rid);
 
             let pre_accept = Message::<()>::PreAccept(PreAccept {
                 sender: rid,

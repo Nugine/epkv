@@ -1,5 +1,7 @@
 use super::*;
 
+use epkv_utils::vecset::VecSet;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -18,7 +20,7 @@ pub struct Instance<C> {
     pub deps: Deps,
     pub abal: Ballot,
     pub status: Status,
-    pub acc: Acc,
+    pub acc: VecSet<ReplicaId>,
 }
 
 pub struct PartialInstance {
@@ -27,7 +29,7 @@ pub struct PartialInstance {
     pub deps: Deps,
     pub abal: Ballot,
     pub status: Status,
-    pub acc: Acc,
+    pub acc: VecSet<ReplicaId>,
 }
 
 #[cfg(test)]
