@@ -32,5 +32,3 @@ pub mod types {
     mod bounds;
     pub use self::bounds::*;
 }
-
-pub mod codec;

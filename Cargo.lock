@@ -46,8 +46,6 @@ name = "epkv-epaxos"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
- "bincode",
- "bytes",
  "epkv-utils",
  "serde",
  "tokio",
@@ -58,6 +56,8 @@ dependencies = [
 name = "epkv-utils"
 version = "0.1.0-dev"
 dependencies = [
+ "bincode",
+ "bytes",
  "serde",
  "triomphe",
 ]

@@ -134,8 +134,9 @@ pub enum Message<C> {
 mod tests {
     use super::*;
 
-    use crate::codec;
     use crate::types::{Epoch, LocalInstanceId, Round};
+
+    use epkv_utils::codec;
 
     use std::mem;
 
