@@ -1,8 +1,8 @@
 mod config;
-mod meta;
+mod peers;
 
 pub use self::config::ReplicaConfig;
-use self::meta::Meta;
+use self::peers::Peers;
 
 use crate::types::*;
 
@@ -21,6 +21,7 @@ pub struct Replica<S: LogStore> {
     rid: ReplicaId,
     config: ReplicaConfig,
     state: Mutex<State<S>>,
+    epoch: AtomicEpoch,
 }
 
 impl<S: LogStore> Replica<S> {
@@ -28,16 +29,22 @@ impl<S: LogStore> Replica<S> {
         rid: ReplicaId,
         store: S,
         epoch: Epoch,
-        peers: &VecSet<ReplicaId>,
+        peers: VecSet<ReplicaId>,
         config: ReplicaConfig,
     ) -> Result<Self> {
         let cluster_size = peers.len().wrapping_add(1);
         ensure!(peers.iter().all(|&p| p != rid));
         ensure!(cluster_size >= 3);
 
-        let state = State::new(rid, store, epoch, peers).await?;
-        let state = Mutex::new(state);
-        Ok(Self { rid, config, state })
+        let state = Mutex::new(State::new(rid, store, epoch, peers).await?);
+        let epoch = AtomicEpoch::new(epoch);
+
+        Ok(Self {
+            rid,
+            config,
+            state,
+            epoch,
+        })
     }
 
     pub async fn handle_message(&self, msg: Message<S::Command>) -> Result<Effect<S::Command>> {
@@ -63,7 +70,7 @@ impl<S: LogStore> Replica<S> {
         let state = &mut *guard;
 
         let id = InstanceId(self.rid, state.generate_lid());
-        let pbal = Ballot(state.meta.epoch(), Round::ZERO, self.rid);
+        let pbal = Ballot(self.epoch.load(), Round::ZERO, self.rid);
         let acc = VecSet::<ReplicaId>::with_capacity(1);
 
         drop(guard);
@@ -135,7 +142,7 @@ impl<S: LogStore> Replica<S> {
 }
 
 struct State<S: LogStore> {
-    meta: Meta,
+    peers: Peers,
 
     store: S,
 
@@ -167,13 +174,8 @@ struct MaxSeq {
 }
 
 impl<S: LogStore> State<S> {
-    async fn new(
-        rid: ReplicaId,
-        store: S,
-        epoch: Epoch,
-        peers: &VecSet<ReplicaId>,
-    ) -> Result<Self> {
-        let meta = Meta::new(epoch, peers);
+    async fn new(rid: ReplicaId, store: S, epoch: Epoch, peers: VecSet<ReplicaId>) -> Result<Self> {
+        let peers = Peers::new(peers);
 
         let attr_bounds = store.load_attr_bounds().await?;
 
@@ -207,7 +209,7 @@ impl<S: LogStore> State<S> {
         let pbal_cache = FnvHashMap::default();
 
         Ok(Self {
-            meta,
+            peers,
             store,
             lid_head,
             max_key_map,

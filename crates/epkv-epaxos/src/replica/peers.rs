@@ -1,7 +1,5 @@
-use crate::types::{Epoch, ReplicaId};
+use crate::types::ReplicaId;
 
-use epkv_utils::cmp::max_assign;
-use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
 use std::ops::Not;
@@ -10,9 +8,8 @@ use rand::prelude::SliceRandom;
 
 type Rank = u64;
 
-pub struct Meta {
-    epoch: Epoch,
-    peers: VecMap<ReplicaId, Rank>,
+pub struct Peers {
+    peers: VecSet<ReplicaId>,
     rank: Vec<(Rank, ReplicaId)>,
 }
 
@@ -33,18 +30,12 @@ where
     iter.copied().map(f).collect()
 }
 
-impl Meta {
+impl Peers {
     #[must_use]
-    pub fn new(epoch: Epoch, peers: &VecSet<ReplicaId>) -> Self {
-        let map: VecMap<_, _> = copied_map_collect(peers.iter(), |peer| (peer, Rank::MAX));
+    pub fn new(peers: VecSet<ReplicaId>) -> Self {
         let mut rank: Vec<_> = copied_map_collect(peers.iter(), |peer| (Rank::MAX, peer));
         sort_rank(&mut rank);
-
-        Self {
-            epoch,
-            peers: map,
-            rank,
-        }
+        Self { peers, rank }
     }
 
     #[must_use]
@@ -52,35 +43,26 @@ impl Meta {
         self.peers.len().wrapping_add(1).max(3)
     }
 
-    #[must_use]
-    pub fn epoch(&self) -> Epoch {
-        self.epoch
-    }
-
-    pub fn update_epoch(&mut self, epoch: Epoch) {
-        max_assign(&mut self.epoch, epoch);
-    }
-
-    pub fn add_peer(&mut self, peer: ReplicaId) {
-        let (is_new_peer, _) = self.peers.init_with(&peer, || (peer, Rank::MAX));
+    pub fn add(&mut self, peer: ReplicaId) {
+        let is_new_peer = self.peers.insert(peer).is_some();
         if is_new_peer {
             self.rank.push((Rank::MAX, peer))
         }
     }
 
-    pub fn remove_peer(&mut self, peer: ReplicaId) {
+    pub fn remove(&mut self, peer: ReplicaId) {
         if self.peers.remove(&peer).is_some() {
             self.rank.retain(|&(_, r)| r != peer)
         }
     }
 
     #[must_use]
-    pub fn all_peers(&self) -> VecSet<ReplicaId> {
-        self.peers.iter().map(|&(r, _)| r).collect()
+    pub fn select_all(&self) -> VecSet<ReplicaId> {
+        self.peers.clone()
     }
 
     #[must_use]
-    pub fn select_peers(&self, quorum: usize, acc: &VecSet<ReplicaId>) -> SelectedPeers {
+    pub fn select(&self, quorum: usize, acc: &VecSet<ReplicaId>) -> SelectedPeers {
         let ans_acc = if acc.len() <= quorum {
             acc.clone()
         } else {

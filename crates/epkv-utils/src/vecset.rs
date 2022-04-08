@@ -83,6 +83,19 @@ impl<T: Ord> VecSet<T> {
     }
 
     #[inline]
+    #[must_use]
+    pub fn remove<Q>(&mut self, val: &Q) -> Option<T>
+    where
+        T: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        match self.search(val) {
+            Ok(idx) => Some(self.0.remove(idx)),
+            Err(_) => None,
+        }
+    }
+
+    #[inline]
     pub fn union_copied(&mut self, other: &Self)
     where
         T: Copy,
