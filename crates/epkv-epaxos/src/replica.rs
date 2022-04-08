@@ -40,6 +40,24 @@ impl<S: LogStore> Replica<S> {
         Ok(Self { rid, config, state })
     }
 
+    pub async fn handle_message(&self, msg: Message<S::Command>) -> Result<Effect<S::Command>> {
+        match msg {
+            Message::PreAccept(msg) => self.handle_pre_accept(msg).await,
+            Message::PreAcceptOk(msg) => self.handle_pre_accept_ok(msg).await,
+            Message::PreAcceptDiff(msg) => self.handle_pre_accept_diff(msg).await,
+            Message::Accept(msg) => self.handle_accept(msg).await,
+            Message::AcceptOk(msg) => self.handle_accept_ok(msg).await,
+            Message::Commit(msg) => self.handle_commit(msg).await,
+            Message::Prepare(msg) => self.handle_prepare(msg).await,
+            Message::PrepareOk(msg) => self.handle_prepare_ok(msg).await,
+            Message::PrepareNack(msg) => self.handle_prepare_nack(msg).await,
+            Message::PrepareUnchosen(msg) => self.handle_prepare_unchosen(msg).await,
+            Message::Join(msg) => self.handle_join(msg).await,
+            Message::JoinOk(msg) => self.handle_join_ok(msg).await,
+            Message::Leave(msg) => self.handle_leave(msg).await,
+        }
+    }
+
     pub async fn propose(&self, cmd: S::Command) -> Result<Effect<S::Command>> {
         let mut guard = self.state.lock().await;
         let state = &mut *guard;
@@ -60,6 +78,58 @@ impl<S: LogStore> Replica<S> {
         cmd: <S as LogStore>::Command,
         acc: VecSet<ReplicaId>,
     ) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_pre_accept(&self, msg: PreAccept<S::Command>) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_pre_accept_ok(&self, msg: PreAcceptOk) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_pre_accept_diff(&self, msg: PreAcceptDiff) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_accept(&self, msg: Accept<S::Command>) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_accept_ok(&self, msg: AcceptOk) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_commit(&self, msg: Commit<S::Command>) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_prepare(&self, msg: Prepare) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_prepare_ok(&self, msg: PrepareOk<S::Command>) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_prepare_nack(&self, msg: PrepareNack) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_prepare_unchosen(&self, msg: PrepareUnchosen) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_join(&self, msg: Join) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_join_ok(&self, msg: JoinOk) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_leave(&self, msg: Leave) -> Result<Effect<S::Command>> {
         todo!()
     }
 }
