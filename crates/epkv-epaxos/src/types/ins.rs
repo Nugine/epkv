@@ -3,7 +3,7 @@ use super::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum InstanceStatus {
+pub enum Status {
     PreAccepted = 1,
     Accepted = 2,
     Committed = 3,
@@ -17,7 +17,7 @@ pub struct Instance<C> {
     pub seq: Seq,
     pub deps: Deps,
     pub abal: Ballot,
-    pub status: InstanceStatus,
+    pub status: Status,
     pub acc: Acc,
 }
 
@@ -26,7 +26,7 @@ pub struct PartialInstance {
     pub seq: Seq,
     pub deps: Deps,
     pub abal: Ballot,
-    pub status: InstanceStatus,
+    pub status: Status,
     pub acc: Acc,
 }
 
@@ -37,11 +37,11 @@ mod tests {
     #[test]
     fn ord() {
         let ss = [
-            InstanceStatus::PreAccepted,
-            InstanceStatus::Accepted,
-            InstanceStatus::Committed,
-            InstanceStatus::Issued,
-            InstanceStatus::Executed,
+            Status::PreAccepted,
+            Status::Accepted,
+            Status::Committed,
+            Status::Issued,
+            Status::Executed,
         ];
 
         for i in 0..ss.len() - 1 {

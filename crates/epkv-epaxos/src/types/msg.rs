@@ -1,7 +1,7 @@
 use super::acc::Acc;
 use super::deps::Deps;
 use super::id::{Ballot, InstanceId, ReplicaId, Seq};
-use super::ins::InstanceStatus;
+use super::ins::Status;
 use super::Epoch;
 
 use serde::{Deserialize, Serialize};
@@ -92,7 +92,7 @@ pub struct PrepareOk<C> {
     pub seq: Seq,
     pub deps: Deps,
     pub abal: Ballot,
-    pub status: InstanceStatus,
+    pub status: Status,
     pub acc: Acc,
 }
 
