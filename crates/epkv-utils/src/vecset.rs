@@ -43,6 +43,12 @@ impl<T: Ord> VecSet<T> {
         Self(v)
     }
 
+    #[inline]
+    #[must_use]
+    pub fn as_slice(&self) -> &[T] {
+        self.0.as_slice()
+    }
+
     fn search<Q>(&self, val: &Q) -> Result<usize, usize>
     where
         T: Borrow<Q>,
@@ -184,7 +190,7 @@ mod tests {
     #[test]
     fn from_vec() {
         let s = VecSet::<u64>::from_vec(vec![1, 4, 3, 2, 5, 7, 9, 2, 4, 6, 7, 8, 0]);
-        assert_eq!(s.0.as_slice(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+        assert_eq!(s.as_slice(), &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     }
 
     #[test]
@@ -192,6 +198,6 @@ mod tests {
         let mut s1 = VecSet::<u64>::from_vec(vec![1, 2, 3, 5]);
         let s2 = VecSet::<u64>::from_vec(vec![2, 4, 5, 6]);
         s1.union_copied(&s2);
-        assert_eq!(s1.0.as_slice(), &[1, 2, 3, 4, 5, 6])
+        assert_eq!(s1.as_slice(), &[1, 2, 3, 4, 5, 6])
     }
 }
