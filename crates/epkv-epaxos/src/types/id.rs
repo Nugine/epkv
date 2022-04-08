@@ -1,5 +1,7 @@
 #![deny(clippy::missing_inline_in_public_items, clippy::missing_const_for_fn)]
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -92,6 +94,26 @@ macro_rules! impl_sub_one {
 }
 
 impl_sub_one!(LocalInstanceId,);
+
+pub struct AtomicEpoch(AtomicU64);
+
+impl AtomicEpoch {
+    #[inline]
+    #[must_use]
+    pub const fn new(epoch: Epoch) -> Self {
+        Self(AtomicU64::new(epoch.0))
+    }
+
+    #[inline]
+    pub fn load(&self) -> Epoch {
+        Epoch(self.0.load(Ordering::SeqCst))
+    }
+
+    #[inline]
+    pub fn update_max(&self, epoch: Epoch) {
+        self.0.fetch_max(epoch.0, Ordering::Relaxed);
+    }
+}
 
 #[cfg(test)]
 mod tests {
