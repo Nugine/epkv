@@ -28,7 +28,7 @@ dev:
     cd {{justfile_directory()}}
     cargo check
     cargo clippy
-    just build
+    just test
 
 udeps:
     #!/bin/bash -ex
