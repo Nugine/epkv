@@ -20,18 +20,15 @@ build: fmt
     mold -run cargo build --release --offline
 
 test: fmt
-    mold -run cargo test --release --offline
-
-miri:
     cargo miri test -p epkv-utils 
+    mold -run cargo test --release --offline
 
 dev:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
-    just fmt
+    cargo check
+    cargo clippy
     just build
-    just test
-    just miri
 
 udeps:
     #!/bin/bash -ex
