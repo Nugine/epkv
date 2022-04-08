@@ -1,6 +1,8 @@
-use super::CommandLike;
+use super::*;
 
-use crate::types::{Message, ReplicaId};
+use epkv_utils::vecset::VecSet;
+
+use std::ops::Not;
 
 pub struct Effect<C: CommandLike> {
     pub broadcasts: Vec<Broadcast<C>>,
@@ -9,7 +11,7 @@ pub struct Effect<C: CommandLike> {
 }
 
 pub struct Broadcast<C> {
-    pub targets: Vec<ReplicaId>,
+    pub targets: VecSet<ReplicaId>,
     pub msg: Message<C>,
 }
 
@@ -29,7 +31,7 @@ impl<C: CommandLike> Effect<C> {
     }
 
     #[must_use]
-    pub fn broadcast(targets: Vec<ReplicaId>, msg: Message<C>) -> Self {
+    pub fn broadcast(targets: VecSet<ReplicaId>, msg: Message<C>) -> Self {
         Effect {
             broadcasts: vec![Broadcast { targets, msg }],
             ..Self::empty()
@@ -40,6 +42,38 @@ impl<C: CommandLike> Effect<C> {
     pub fn reply(target: ReplicaId, msg: Message<C>) -> Self {
         Effect {
             replies: vec![Reply { target, msg }],
+            ..Self::empty()
+        }
+    }
+
+    #[must_use]
+    pub fn broadcast_pre_accept(
+        acc: VecSet<ReplicaId>,
+        others: VecSet<ReplicaId>,
+        msg: PreAccept<C>,
+    ) -> Self {
+        assert!(msg.cmd.is_some());
+        let mut broadcasts = Vec::with_capacity(2);
+        broadcasts.push(Broadcast {
+            targets: acc,
+            msg: Message::PreAccept(PreAccept {
+                sender: msg.sender,
+                id: msg.id,
+                pbal: msg.pbal,
+                cmd: None,
+                seq: msg.seq,
+                deps: msg.deps.clone(),
+                acc: msg.acc.clone(),
+            }),
+        });
+        if others.is_empty().not() {
+            broadcasts.push(Broadcast {
+                targets: others,
+                msg: Message::PreAccept(msg),
+            });
+        }
+        Effect {
+            broadcasts,
             ..Self::empty()
         }
     }

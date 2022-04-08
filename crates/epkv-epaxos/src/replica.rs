@@ -70,10 +70,11 @@ impl<S: LogStore> Replica<S> {
         let state = &mut *guard;
 
         let id = InstanceId(self.rid, state.generate_lid());
-        let pbal = Ballot(self.epoch.load(), Round::ZERO, self.rid);
-        let acc = VecSet::<ReplicaId>::with_capacity(1);
 
         drop(guard);
+
+        let pbal = Ballot(self.epoch.load(), Round::ZERO, self.rid);
+        let acc = VecSet::<ReplicaId>::with_capacity(1);
 
         self.start_phase_pre_accept(id, pbal, cmd, acc).await
     }
@@ -82,10 +83,52 @@ impl<S: LogStore> Replica<S> {
         &self,
         id: InstanceId,
         pbal: Ballot,
-        cmd: <S as LogStore>::Command,
-        acc: VecSet<ReplicaId>,
+        cmd: S::Command,
+        mut acc: VecSet<ReplicaId>,
     ) -> Result<Effect<S::Command>> {
-        todo!()
+        let keys = cmd.keys();
+
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        let (seq, deps) = state.calc_attributes(id, &keys);
+
+        let abal = pbal;
+        let status = Status::PreAccepted;
+        let _ = acc.insert(self.rid);
+
+        let ins = Instance {
+            pbal,
+            cmd: cmd.clone(),
+            seq,
+            deps: deps.clone(),
+            abal,
+            status,
+            acc: acc.clone(),
+        };
+
+        state.save(id, ins).await?;
+
+        let quorum = state.peers.cluster_size().wrapping_sub(2);
+        let selected_peers = state.peers.select(quorum, &acc);
+
+        drop(guard);
+
+        let msg = PreAccept {
+            sender: self.rid,
+            id,
+            pbal,
+            cmd: Some(cmd),
+            seq,
+            deps,
+            acc,
+        };
+
+        Ok(Effect::broadcast_pre_accept(
+            selected_peers.acc,
+            selected_peers.others,
+            msg,
+        ))
     }
 
     async fn handle_pre_accept(&self, msg: PreAccept<S::Command>) -> Result<Effect<S::Command>> {

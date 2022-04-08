@@ -9,6 +9,7 @@ pub trait CommandLike
 where
     Self: Serialize + DeserializeOwned,
     Self: Send + Sync + 'static,
+    Self: Clone,
 {
     type Key: Eq + Ord + Hash + Send + Sync + 'static;
 

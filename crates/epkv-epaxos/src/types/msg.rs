@@ -7,7 +7,7 @@ use epkv_utils::vecset::VecSet;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreAccept<C> {
     pub sender: ReplicaId,
     pub id: InstanceId,
