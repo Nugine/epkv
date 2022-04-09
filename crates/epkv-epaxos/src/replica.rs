@@ -8,6 +8,7 @@ use self::temporary::{PreAccepting, Temporary};
 
 use crate::types::*;
 
+use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
@@ -334,6 +335,54 @@ impl<S: LogStore> Replica<S> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    async fn start_phase_accept(
+        &self,
+        mut guard: MutexGuard<'_, State<S>>,
+        id: InstanceId,
+        pbal: Ballot,
+        mut cmd: Option<S::Command>,
+        seq: Seq,
+        deps: Deps,
+        acc: VecSet<ReplicaId>,
+    ) -> Result<Effect<S::Command>> {
+        let state = &mut *guard;
+
+        let abal = pbal;
+        let status = Status::Accepted;
+
+        let quorum = state.peers.cluster_size() / 2;
+        let selected_peers = state.peers.select(quorum, &acc);
+
+        match cmd {
+            Some(ref cmd) => {
+                clone!(cmd, deps, acc);
+                let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
+                state.save_full(id, ins).await?;
+            }
+            None => {
+                clone!(deps, acc);
+                let ins = PartialInstance { pbal, seq, deps, abal, status, acc };
+                state.save_partial(id, ins).await?;
+
+                if selected_peers.others.is_empty().not() {
+                    state.load(id).await?;
+                    let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                    cmd = Some(ins.cmd.clone())
+                };
+            }
+        };
+
+        drop(guard);
+
+        let sender = self.rid;
+        let epoch = self.epoch.load();
+        let msg = Accept { sender, epoch, id, pbal, cmd, seq, deps, acc };
+        let mut effect = Effect::new();
+        effect.broadcast_accept(selected_peers.acc, selected_peers.others, msg);
+        Ok(effect)
+    }
+
     async fn handle_accept(&self, msg: Accept<S::Command>) -> Result<Effect<S::Command>> {
         todo!()
     }
@@ -388,20 +437,6 @@ impl<S: LogStore> Replica<S> {
 
     #[allow(clippy::too_many_arguments)]
     async fn start_phase_commit(
-        &self,
-        guard: MutexGuard<'_, State<S>>,
-        id: InstanceId,
-        pbal: Ballot,
-        cmd: Option<S::Command>,
-        seq: Seq,
-        deps: Deps,
-        acc: VecSet<ReplicaId>,
-    ) -> Result<Effect<S::Command>> {
-        todo!()
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn start_phase_accept(
         &self,
         guard: MutexGuard<'_, State<S>>,
         id: InstanceId,
@@ -583,13 +618,17 @@ impl<S: LogStore> State<S> {
 
     async fn save_partial(&mut self, id: InstanceId, ins: PartialInstance) -> Result<()> {
         self.store.save_partial(id, &ins).await?;
-        let c = self.ins_cache.get_mut(&id).expect("instance should exist");
-        c.pbal = ins.pbal;
-        c.seq = ins.seq;
-        c.deps = ins.deps;
-        c.abal = ins.abal;
-        c.status = ins.status;
-        c.acc = ins.acc;
+        if let Some(c) = self.ins_cache.get_mut(&id) {
+            c.pbal = ins.pbal;
+            c.seq = ins.seq;
+            c.deps = ins.deps;
+            c.abal = ins.abal;
+            c.status = ins.status;
+            c.acc = ins.acc;
+        } else if let Some(p) = self.pbal_cache.get_mut(&id) {
+            *p = ins.pbal;
+        }
+
         Ok(())
     }
 

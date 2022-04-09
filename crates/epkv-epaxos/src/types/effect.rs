@@ -66,7 +66,6 @@ impl<C: CommandLike> Effect<C> {
         others: VecSet<ReplicaId>,
         msg: PreAccept<C>,
     ) {
-        assert!(msg.cmd.is_some());
         self.broadcasts.reserve(2);
         self.broadcasts.push(Broadcast {
             targets: acc,
@@ -82,8 +81,34 @@ impl<C: CommandLike> Effect<C> {
             }),
         });
         if others.is_empty().not() {
-            self.broadcasts
-                .push(Broadcast { targets: others, msg: Message::PreAccept(msg) });
+            assert!(msg.cmd.is_some());
+            self.broadcasts.push(Broadcast { targets: others, msg: Message::PreAccept(msg) });
+        }
+    }
+
+    pub fn broadcast_accept(
+        &mut self,
+        acc: VecSet<ReplicaId>,
+        others: VecSet<ReplicaId>,
+        msg: Accept<C>,
+    ) {
+        self.broadcasts.reserve(2);
+        self.broadcasts.push(Broadcast {
+            targets: acc,
+            msg: Message::Accept(Accept {
+                sender: msg.sender,
+                epoch: msg.epoch,
+                id: msg.id,
+                pbal: msg.pbal,
+                cmd: None,
+                seq: msg.seq,
+                deps: msg.deps.clone(),
+                acc: msg.acc.clone(),
+            }),
+        });
+        if others.is_empty().not() {
+            assert!(msg.cmd.is_some());
+            self.broadcasts.push(Broadcast { targets: others, msg: Message::Accept(msg) });
         }
     }
 }
