@@ -13,3 +13,12 @@ pub mod cmp;
 pub mod codec;
 pub mod vecmap;
 pub mod vecset;
+
+#[macro_export]
+macro_rules! clone {
+    ($($id:ident),+) => {
+        $(
+            let $id = $id.clone();
+        )+
+    };
+}
