@@ -23,7 +23,7 @@ pub struct InstanceId(pub ReplicaId, pub LocalInstanceId);
 pub struct Round(u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Ballot(pub Epoch, pub Round, pub ReplicaId);
+pub struct Ballot(pub Round, pub ReplicaId);
 
 macro_rules! impl_newtype {
     ($($ty: ident($inner: ident),)+) => {

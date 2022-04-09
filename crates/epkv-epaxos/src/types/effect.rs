@@ -58,6 +58,7 @@ impl<C: CommandLike> Effect<C> {
             targets: acc,
             msg: Message::PreAccept(PreAccept {
                 sender: msg.sender,
+                epoch: msg.epoch,
                 id: msg.id,
                 pbal: msg.pbal,
                 cmd: None,

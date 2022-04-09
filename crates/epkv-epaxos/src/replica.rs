@@ -74,7 +74,7 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let pbal = Ballot(self.epoch.load(), Round::ZERO, self.rid);
+        let pbal = Ballot(Round::ZERO, self.rid);
         let acc = VecSet::<ReplicaId>::with_capacity(1);
 
         self.start_phase_pre_accept(id, pbal, cmd, acc).await
@@ -117,6 +117,7 @@ impl<S: LogStore> Replica<S> {
 
         let msg = PreAccept {
             sender: self.rid,
+            epoch: self.epoch.load(),
             id,
             pbal,
             cmd: Some(cmd),

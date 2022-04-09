@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreAccept<C> {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
     pub pbal: Ballot,
     pub cmd: Option<C>,
@@ -21,6 +22,7 @@ pub struct PreAccept<C> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PreAcceptOk {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
     pub pbal: Ballot,
 }
@@ -28,6 +30,7 @@ pub struct PreAcceptOk {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PreAcceptDiff {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
     pub pbal: Ballot,
     pub seq: Seq,
@@ -37,6 +40,7 @@ pub struct PreAcceptDiff {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Accept<C> {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
     pub pbal: Ballot,
     pub cmd: Option<C>,
@@ -48,6 +52,7 @@ pub struct Accept<C> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AcceptOk {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
     pub pbal: Ballot,
 }
@@ -55,6 +60,7 @@ pub struct AcceptOk {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Commit<C> {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
     pub pbal: Ballot,
     pub cmd: Option<C>,
@@ -66,6 +72,7 @@ pub struct Commit<C> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Prepare {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
     pub pbal: Ballot,
     pub known: bool,
@@ -74,6 +81,7 @@ pub struct Prepare {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrepareNack {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
     pub pbal: Ballot,
 }
@@ -81,12 +89,14 @@ pub struct PrepareNack {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrepareUnchosen {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrepareOk<C> {
     pub sender: ReplicaId,
+    pub epoch: Epoch,
     pub id: InstanceId,
     pub pbal: Ballot,
     pub cmd: Option<C>,
@@ -144,14 +154,15 @@ mod tests {
     fn message_size() {
         {
             let baseline_type_size = mem::size_of::<Message<()>>();
-            assert_eq!(baseline_type_size, 144); // track message type size
+            assert_eq!(baseline_type_size, 136); // track message type size
         }
 
         {
+            let epoch = Epoch::ONE;
             let rid = ReplicaId::from(101);
             let lid = LocalInstanceId::from(1024);
             let id = InstanceId(rid, lid);
-            let pbal = Ballot(Epoch::from(1), Round::ZERO, rid);
+            let pbal = Ballot(Round::ZERO, rid);
             let cmd = None;
             let seq = Seq::from(1);
             let deps = Deps::with_capacity(3);
@@ -160,6 +171,7 @@ mod tests {
 
             let pre_accept = Message::<()>::PreAccept(PreAccept {
                 sender: rid,
+                epoch,
                 id,
                 pbal,
                 cmd,
