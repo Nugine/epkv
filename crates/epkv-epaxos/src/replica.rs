@@ -146,7 +146,7 @@ impl<S: LogStore> Replica<S> {
         let keys = msg
             .cmd
             .as_ref()
-            .or_else(|| state.get_cached_cmd(id))
+            .or_else(|| state.get_cached_ins(id).map(|ins: _| &ins.cmd))
             .expect("cmd should exist")
             .keys();
 
@@ -377,8 +377,6 @@ impl<S: LogStore> State<S> {
         (seq, deps)
     }
 
-    fn update_caches(&mut self, id: InstanceId, ins: Instance<S::Command>) {}
-
     fn update_attrs(&mut self, id: InstanceId, keys: Keys<S::Command>, seq: Seq) {
         let InstanceId(rid, lid) = id;
 
@@ -463,8 +461,8 @@ impl<S: LogStore> State<S> {
         self.pbal_cache.get(&id).copied()
     }
 
-    fn get_cached_cmd(&self, id: InstanceId) -> Option<&S::Command> {
-        self.ins_cache.get(&id).map(|ins| &ins.cmd)
+    fn get_cached_ins(&self, id: InstanceId) -> Option<&Instance<S::Command>> {
+        self.ins_cache.get(&id)
     }
 
     fn should_ignore(&mut self, id: InstanceId, pbal: Ballot, next_status: Status) -> bool {
