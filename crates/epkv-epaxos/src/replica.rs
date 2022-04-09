@@ -1,8 +1,10 @@
 mod config;
 mod peers;
+mod temporary;
 
 pub use self::config::ReplicaConfig;
 use self::peers::Peers;
+use self::temporary::{PreAccepting, Temporary};
 
 use crate::types::*;
 
@@ -12,12 +14,13 @@ use epkv_utils::vecset::VecSet;
 
 use std::collections::hash_map;
 use std::collections::HashMap;
+use std::mem;
 use std::ops::Not;
 
 use anyhow::ensure;
 use anyhow::Result;
 use fnv::FnvHashMap;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 pub struct Replica<S: LogStore> {
     rid: ReplicaId,
@@ -93,27 +96,23 @@ impl<S: LogStore> Replica<S> {
         let state = &mut *guard;
 
         let id = InstanceId(self.rid, state.generate_lid());
-
-        drop(guard);
-
         let pbal = Ballot(Round::ZERO, self.rid);
         let acc = VecSet::<ReplicaId>::with_capacity(1);
 
-        self.start_phase_preaccept(id, pbal, cmd, acc).await
+        self.start_phase_preaccept(guard, id, pbal, cmd, acc).await
     }
 
     async fn start_phase_preaccept(
         &self,
+        mut guard: MutexGuard<'_, State<S>>,
         id: InstanceId,
         pbal: Ballot,
         cmd: S::Command,
         mut acc: VecSet<ReplicaId>,
     ) -> Result<Effect<S::Command>> {
-        let keys = cmd.keys();
-
-        let mut guard = self.state.lock().await;
         let state = &mut *guard;
 
+        let keys = cmd.keys();
         let (seq, deps) = state.calc_attributes(id, &keys);
 
         let abal = pbal;
@@ -155,6 +154,10 @@ impl<S: LogStore> Replica<S> {
     }
 
     async fn handle_preaccept(&self, msg: PreAccept<S::Command>) -> Result<Effect<S::Command>> {
+        if msg.epoch < self.epoch.load() {
+            return Ok(Effect::new());
+        }
+
         let mut guard = self.state.lock().await;
         let state = &mut *guard;
 
@@ -187,6 +190,7 @@ impl<S: LogStore> Replica<S> {
         let _ = acc.insert(self.rid);
 
         {
+            let acc = acc.clone();
             let deps = deps.clone();
             match msg.cmd {
                 Some(cmd) => {
@@ -200,6 +204,13 @@ impl<S: LogStore> Replica<S> {
             }
         }
         state.update_attrs(id, keys, seq);
+
+        {
+            let received = VecSet::new();
+            let deps = deps.clone();
+            let temp = PreAccepting { received, seq, deps, all_same: true, acc };
+            let _ = state.temporaries.insert(id, Temporary::PreAccepting(temp));
+        }
 
         drop(guard);
 
@@ -219,7 +230,108 @@ impl<S: LogStore> Replica<S> {
     }
 
     async fn handle_preaccept_reply(&self, msg: PreAcceptReply) -> Result<Effect<S::Command>> {
-        todo!()
+        let epoch = match msg {
+            PreAcceptReply::Ok(ref msg) => msg.epoch,
+            PreAcceptReply::Diff(ref msg) => msg.epoch,
+        };
+
+        if epoch < self.epoch.load() {
+            return Ok(Effect::new());
+        }
+
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        let (id, pbal) = match msg {
+            PreAcceptReply::Ok(ref msg) => (msg.id, msg.pbal),
+            PreAcceptReply::Diff(ref msg) => (msg.id, msg.pbal),
+        };
+
+        state.load(id).await?;
+
+        let saved_pbal = state.get_cached_pbal(id).expect("pbal should exist");
+        if pbal != saved_pbal {
+            return Ok(Effect::new());
+        }
+
+        let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+
+        if ins.status != Status::PreAccepted {
+            return Ok(Effect::new());
+        }
+
+        let temp = match state.temporaries.get_mut(&id) {
+            Some(Temporary::PreAccepting(t)) => t,
+            _ => return Ok(Effect::new()),
+        };
+
+        {
+            let sender = match msg {
+                PreAcceptReply::Ok(ref msg) => msg.sender,
+                PreAcceptReply::Diff(ref msg) => msg.sender,
+            };
+            if temp.received.insert(sender).is_some() {
+                return Ok(Effect::new());
+            }
+            let _ = temp.acc.insert(sender);
+        }
+
+        match msg {
+            PreAcceptReply::Ok(_) => {}
+            PreAcceptReply::Diff(msg) => {
+                let mut seq = msg.seq;
+                let mut deps = msg.deps;
+                max_assign(&mut seq, temp.seq);
+                deps.merge(&temp.deps);
+                if temp.received.len() > 1 && (seq != temp.seq || deps != temp.deps) {
+                    temp.all_same = false;
+                }
+                temp.seq = seq;
+                temp.deps = deps;
+            }
+        }
+
+        let cluster_size = state.peers.cluster_size();
+
+        if temp.received.len() < cluster_size / 2 {
+            return Ok(Effect::new());
+        }
+
+        let mut which_path = None;
+        if temp.all_same {
+            if pbal.0 == Round::ZERO && temp.received.len() >= cluster_size.wrapping_sub(2) {
+                which_path = Some(true)
+            }
+        } else {
+            which_path = Some(false)
+        }
+
+        let is_fast_path = match which_path {
+            Some(f) => f,
+            None => {
+                let conf = &self.config.fastpath_timeout;
+                let duration = if conf.enable_adaptive {
+                    state.peers.get_avg_rtt().unwrap_or(conf.default)
+                } else {
+                    conf.default
+                };
+                let mut effect = Effect::new();
+                effect.timeout(duration, TimeoutKind::PreAcceptFastPath { id });
+                return Ok(effect);
+            }
+        };
+
+        let cmd = None;
+        let seq = temp.seq;
+        let deps = mem::take(&mut temp.deps);
+        let acc = mem::take(&mut temp.acc);
+        let _ = state.temporaries.remove(&id);
+
+        if is_fast_path {
+            self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await
+        } else {
+            self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
+        }
     }
 
     async fn handle_accept(&self, msg: Accept<S::Command>) -> Result<Effect<S::Command>> {
@@ -273,6 +385,34 @@ impl<S: LogStore> Replica<S> {
 
         Ok(Effect::new())
     }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn start_phase_commit(
+        &self,
+        guard: MutexGuard<'_, State<S>>,
+        id: InstanceId,
+        pbal: Ballot,
+        cmd: Option<S::Command>,
+        seq: Seq,
+        deps: Deps,
+        acc: VecSet<ReplicaId>,
+    ) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn start_phase_accept(
+        &self,
+        guard: MutexGuard<'_, State<S>>,
+        id: InstanceId,
+        pbal: Ballot,
+        cmd: Option<S::Command>,
+        seq: Seq,
+        deps: Deps,
+        acc: VecSet<ReplicaId>,
+    ) -> Result<Effect<S::Command>> {
+        todo!()
+    }
 }
 
 struct State<S: LogStore> {
@@ -288,6 +428,8 @@ struct State<S: LogStore> {
 
     ins_cache: FnvHashMap<InstanceId, Instance<S::Command>>,
     pbal_cache: FnvHashMap<InstanceId, Ballot>,
+
+    temporaries: FnvHashMap<InstanceId, Temporary>,
 }
 
 type CommandKey<S> = <<S as LogStore>::Command as CommandLike>::Key;
@@ -332,6 +474,8 @@ impl<S: LogStore> State<S> {
         let ins_cache = FnvHashMap::default();
         let pbal_cache = FnvHashMap::default();
 
+        let temporaries = FnvHashMap::default();
+
         Ok(Self {
             peers,
             store,
@@ -341,6 +485,7 @@ impl<S: LogStore> State<S> {
             max_seq,
             ins_cache,
             pbal_cache,
+            temporaries,
         })
     }
 
