@@ -10,9 +10,7 @@ pub fn serialize<T>(value: &T) -> Result<Bytes, impl Error>
 where
     T: Serialize,
 {
-    bincode::DefaultOptions::new()
-        .serialize(value)
-        .map(Bytes::from)
+    bincode::DefaultOptions::new().serialize(value).map(Bytes::from)
 }
 
 #[inline]

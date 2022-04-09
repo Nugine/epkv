@@ -313,11 +313,7 @@ impl<S: LogStore> State<S> {
 
         let attr_bounds = store.load_attr_bounds().await?;
 
-        let lid_head = attr_bounds
-            .max_lids
-            .get(&rid)
-            .copied()
-            .unwrap_or(LocalInstanceId::ZERO);
+        let lid_head = attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO);
 
         let max_key_map = HashMap::new();
 
