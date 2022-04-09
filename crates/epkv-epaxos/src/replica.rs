@@ -174,7 +174,18 @@ impl<S: LogStore> Replica<S> {
     }
 
     async fn handle_join(&self, msg: Join) -> Result<Effect<S::Command>> {
-        todo!()
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        state.peers.add(msg.sender);
+        self.epoch.update_max(msg.epoch);
+
+        drop(guard);
+
+        Ok(Effect::reply(
+            msg.sender,
+            Message::JoinOk(JoinOk { sender: self.rid }),
+        ))
     }
 
     async fn handle_join_ok(&self, msg: JoinOk) -> Result<Effect<S::Command>> {
@@ -182,7 +193,14 @@ impl<S: LogStore> Replica<S> {
     }
 
     async fn handle_leave(&self, msg: Leave) -> Result<Effect<S::Command>> {
-        todo!()
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        state.peers.remove(msg.sender);
+
+        drop(guard);
+
+        Ok(Effect::empty())
     }
 }
 
