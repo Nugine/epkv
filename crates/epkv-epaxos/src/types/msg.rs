@@ -140,6 +140,21 @@ pub enum Message<C> {
     Leave(Leave),
 }
 
+pub enum PreAcceptReply {
+    Ok(PreAcceptOk),
+    Diff(PreAcceptDiff),
+}
+
+pub enum AcceptReply {
+    Ok(AcceptOk),
+}
+
+pub enum PrepareReply<C> {
+    Ok(PrepareOk<C>),
+    Nack(PrepareNack),
+    Unchosen(PrepareUnchosen),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
