@@ -391,6 +391,61 @@ impl<S: LogStore> Replica<S> {
         todo!()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    async fn start_phase_commit(
+        &self,
+        mut guard: MutexGuard<'_, State<S>>,
+        id: InstanceId,
+        pbal: Ballot,
+        cmd: Option<S::Command>,
+        seq: Seq,
+        deps: Deps,
+        acc: VecSet<ReplicaId>,
+    ) -> Result<Effect<S::Command>> {
+        let state = &mut *guard;
+
+        let abal = pbal;
+        let status = Status::Committed;
+
+        let quorum = state.peers.cluster_size().wrapping_sub(1);
+        let selected_peers = state.peers.select(quorum, &acc);
+
+        match cmd {
+            Some(ref cmd) => {
+                clone!(cmd, deps, acc);
+                let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
+                state.save_full(id, ins).await?;
+            }
+            None => {
+                clone!(deps, acc);
+                let ins = PartialInstance { pbal, seq, deps, abal, status, acc };
+                state.save_partial(id, ins).await?;
+            }
+        };
+
+        state.load(id).await?;
+        let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+        let cmd = ins.cmd.clone();
+
+        drop(guard);
+
+        let mut effect = Effect::new();
+
+        effect.notify(cmd.notify_committed());
+
+        {
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            clone!(cmd, deps);
+            let msg = Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
+            effect.broadcast_commit(selected_peers.acc, selected_peers.others, msg);
+        }
+
+        effect.execution(id, cmd, seq, deps);
+
+        Ok(effect)
+    }
+
     async fn handle_commit(&self, msg: Commit<S::Command>) -> Result<Effect<S::Command>> {
         todo!()
     }
@@ -433,20 +488,6 @@ impl<S: LogStore> Replica<S> {
         drop(guard);
 
         Ok(Effect::new())
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn start_phase_commit(
-        &self,
-        guard: MutexGuard<'_, State<S>>,
-        id: InstanceId,
-        pbal: Ballot,
-        cmd: Option<S::Command>,
-        seq: Seq,
-        deps: Deps,
-        acc: VecSet<ReplicaId>,
-    ) -> Result<Effect<S::Command>> {
-        todo!()
     }
 }
 

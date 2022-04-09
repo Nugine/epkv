@@ -10,6 +10,7 @@ pub struct Effect<C: CommandLike> {
     pub replies: Vec<Reply<C>>,
     pub notifies: Vec<C::Notify>,
     pub timeouts: Vec<Timeout>,
+    pub executions: Vec<Execution<C>>,
 }
 
 pub struct Broadcast<C> {
@@ -25,6 +26,13 @@ pub struct Reply<C> {
 pub struct Timeout {
     pub duration: Duration,
     pub kind: TimeoutKind,
+}
+
+pub struct Execution<C> {
+    pub id: InstanceId,
+    pub cmd: C,
+    pub seq: Seq,
+    pub deps: Deps,
 }
 
 pub enum TimeoutKind {
@@ -45,6 +53,7 @@ impl<C: CommandLike> Effect<C> {
             replies: Vec::new(),
             notifies: Vec::new(),
             timeouts: Vec::new(),
+            executions: Vec::new(),
         }
     }
 
@@ -56,8 +65,16 @@ impl<C: CommandLike> Effect<C> {
         self.replies.push(Reply { target, msg })
     }
 
+    pub fn notify(&mut self, notify: C::Notify) {
+        self.notifies.push(notify)
+    }
+
     pub fn timeout(&mut self, duration: Duration, kind: TimeoutKind) {
         self.timeouts.push(Timeout { duration, kind })
+    }
+
+    pub fn execution(&mut self, id: InstanceId, cmd: C, seq: Seq, deps: Deps) {
+        self.executions.push(Execution { id, cmd, seq, deps })
     }
 
     pub fn broadcast_preaccept(
@@ -109,6 +126,32 @@ impl<C: CommandLike> Effect<C> {
         if others.is_empty().not() {
             assert!(msg.cmd.is_some());
             self.broadcasts.push(Broadcast { targets: others, msg: Message::Accept(msg) });
+        }
+    }
+
+    pub fn broadcast_commit(
+        &mut self,
+        acc: VecSet<ReplicaId>,
+        others: VecSet<ReplicaId>,
+        msg: Commit<C>,
+    ) {
+        self.broadcasts.reserve(2);
+        self.broadcasts.push(Broadcast {
+            targets: acc,
+            msg: Message::Commit(Commit {
+                sender: msg.sender,
+                epoch: msg.epoch,
+                id: msg.id,
+                pbal: msg.pbal,
+                cmd: None,
+                seq: msg.seq,
+                deps: msg.deps.clone(),
+                acc: msg.acc.clone(),
+            }),
+        });
+        if others.is_empty().not() {
+            assert!(msg.cmd.is_some());
+            self.broadcasts.push(Broadcast { targets: others, msg: Message::Commit(msg) });
         }
     }
 }
