@@ -46,23 +46,45 @@ impl<S: LogStore> Replica<S> {
 
     pub async fn handle_message(&self, msg: Message<S::Command>) -> Result<Effect<S::Command>> {
         match msg {
-            Message::PreAccept(msg) => self.handle_preaccept(msg).await,
-            Message::PreAcceptOk(msg) => self.handle_preaccept_reply(PreAcceptReply::Ok(msg)).await,
+            Message::PreAccept(msg) => {
+                self.handle_preaccept(msg).await //
+            }
+            Message::PreAcceptOk(msg) => {
+                self.handle_preaccept_reply(PreAcceptReply::Ok(msg)).await //
+            }
             Message::PreAcceptDiff(msg) => {
                 self.handle_preaccept_reply(PreAcceptReply::Diff(msg)).await
             }
-            Message::Accept(msg) => self.handle_accept(msg).await,
-            Message::AcceptOk(msg) => self.handle_accept_reply(AcceptReply::Ok(msg)).await,
-            Message::Commit(msg) => self.handle_commit(msg).await,
-            Message::Prepare(msg) => self.handle_prepare(msg).await,
-            Message::PrepareOk(msg) => self.handle_prepare_reply(PrepareReply::Ok(msg)).await,
-            Message::PrepareNack(msg) => self.handle_prepare_reply(PrepareReply::Nack(msg)).await,
+            Message::Accept(msg) => {
+                self.handle_accept(msg).await //
+            }
+            Message::AcceptOk(msg) => {
+                self.handle_accept_reply(AcceptReply::Ok(msg)).await //
+            }
+            Message::Commit(msg) => {
+                self.handle_commit(msg).await //
+            }
+            Message::Prepare(msg) => {
+                self.handle_prepare(msg).await //
+            }
+            Message::PrepareOk(msg) => {
+                self.handle_prepare_reply(PrepareReply::Ok(msg)).await //
+            }
+            Message::PrepareNack(msg) => {
+                self.handle_prepare_reply(PrepareReply::Nack(msg)).await //
+            }
             Message::PrepareUnchosen(msg) => {
                 self.handle_prepare_reply(PrepareReply::Unchosen(msg)).await
             }
-            Message::Join(msg) => self.handle_join(msg).await,
-            Message::JoinOk(msg) => self.handle_join_ok(msg).await,
-            Message::Leave(msg) => self.handle_leave(msg).await,
+            Message::Join(msg) => {
+                self.handle_join(msg).await //
+            }
+            Message::JoinOk(msg) => {
+                self.handle_join_ok(msg).await //
+            }
+            Message::Leave(msg) => {
+                self.handle_leave(msg).await //
+            }
         }
     }
 
