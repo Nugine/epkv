@@ -364,26 +364,63 @@ impl<S: LogStore> Replica<S> {
                 clone!(deps, acc);
                 let ins = PartialInstance { pbal, seq, deps, abal, status, acc };
                 state.save_partial(id, ins).await?;
-
-                if selected_peers.others.is_empty().not() {
-                    state.load(id).await?;
-                    let ins: _ = state.get_cached_ins(id).expect("instance should exist");
-                    cmd = Some(ins.cmd.clone())
-                };
             }
-        };
+        }
+
+        state.load(id).await?;
+        let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+        let cmd = ins.cmd.clone();
+        state.update_attrs(id, cmd.keys(), seq);
 
         drop(guard);
 
         let sender = self.rid;
         let epoch = self.epoch.load();
-        let msg = Accept { sender, epoch, id, pbal, cmd, seq, deps, acc };
+        let msg = Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
         let mut effect = Effect::new();
         effect.broadcast_accept(selected_peers.acc, selected_peers.others, msg);
         Ok(effect)
     }
 
     async fn handle_accept(&self, msg: Accept<S::Command>) -> Result<Effect<S::Command>> {
+        if msg.epoch < self.epoch.load() {
+            return Ok(Effect::new());
+        }
+
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        let id = msg.id;
+        let pbal = msg.pbal;
+
+        state.load(id).await?;
+
+        if state.should_ignore(id, pbal, Status::Accepted) {
+            return Ok(Effect::new());
+        }
+
+        let abal = pbal;
+        let status = Status::Accepted;
+
+        let mut acc = msg.acc;
+        let _ = acc.insert(self.rid);
+
+        let seq = msg.seq;
+        let deps = msg.deps;
+        match msg.cmd {
+            Some(cmd) => {
+                let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+                state.save_full(id, ins).await?;
+            }
+            None => {
+                let ins: _ = PartialInstance { pbal, seq, deps, abal, status, acc };
+                state.save_partial(id, ins).await?;
+            }
+        }
+        let ins = state.get_cached_ins(id).expect("instance should exist");
+        let keys = ins.cmd.keys();
+        state.update_attrs(id, keys, seq);
+
         todo!()
     }
 
@@ -425,7 +462,9 @@ impl<S: LogStore> Replica<S> {
 
         state.load(id).await?;
         let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+
         let cmd = ins.cmd.clone();
+        state.update_attrs(id, cmd.keys(), seq);
 
         drop(guard);
 
