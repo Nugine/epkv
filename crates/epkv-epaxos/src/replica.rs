@@ -105,6 +105,7 @@ impl<S: LogStore> Replica<S> {
         };
 
         state.save_full(id, ins).await?;
+        state.update_attrs(id, keys, seq);
 
         let quorum = state.peers.cluster_size().wrapping_sub(2);
         let selected_peers = state.peers.select(quorum, &acc);
@@ -130,7 +131,69 @@ impl<S: LogStore> Replica<S> {
     }
 
     async fn handle_pre_accept(&self, msg: PreAccept<S::Command>) -> Result<Effect<S::Command>> {
-        todo!()
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        let id = msg.id;
+        let pbal = msg.pbal;
+
+        state.load(id).await?;
+
+        if state.should_ignore(id, pbal, Status::PreAccepted) {
+            return Ok(Effect::empty());
+        }
+
+        let keys = msg
+            .cmd
+            .as_ref()
+            .or_else(|| state.get_cached_cmd(id))
+            .expect("cmd should exist")
+            .keys();
+
+        let (mut seq, mut deps) = state.calc_attributes(id, &keys);
+        max_assign(&mut seq, msg.seq);
+        deps.merge(&msg.deps);
+
+        let is_changed = seq != msg.seq || deps != msg.deps;
+
+        let abal = pbal;
+        let status = Status::PreAccepted;
+
+        let mut acc = msg.acc;
+        let _ = acc.insert(self.rid);
+
+        {
+            let deps = deps.clone();
+            match msg.cmd {
+                Some(cmd) => {
+                    let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+                    state.save_full(id, ins).await?;
+                }
+                None => {
+                    let ins: _ = PartialInstance { pbal, seq, deps, abal, status, acc };
+                    state.save_partial(id, ins).await?;
+                }
+            }
+        }
+        state.update_attrs(id, keys, seq);
+
+        drop(guard);
+
+        let sender = self.rid;
+        let epoch = self.epoch.load();
+        let effect = if is_changed {
+            Effect::reply(
+                msg.sender,
+                Message::PreAcceptDiff(PreAcceptDiff { sender, epoch, id, pbal, seq, deps }),
+            )
+        } else {
+            Effect::reply(
+                msg.sender,
+                Message::PreAcceptOk(PreAcceptOk { sender, epoch, id, pbal }),
+            )
+        };
+
+        Ok(effect)
     }
 
     async fn handle_pre_accept_ok(&self, msg: PreAcceptOk) -> Result<Effect<S::Command>> {
@@ -314,10 +377,7 @@ impl<S: LogStore> State<S> {
         (seq, deps)
     }
 
-    fn update_caches(&mut self, id: InstanceId, ins: Instance<S::Command>) {
-        let _ = self.ins_cache.insert(id, ins);
-        let _ = self.pbal_cache.remove(&id);
-    }
+    fn update_caches(&mut self, id: InstanceId, ins: Instance<S::Command>) {}
 
     fn update_attrs(&mut self, id: InstanceId, keys: Keys<S::Command>, seq: Seq) {
         let InstanceId(rid, lid) = id;
@@ -365,14 +425,28 @@ impl<S: LogStore> State<S> {
 
     async fn save_full(&mut self, id: InstanceId, ins: Instance<S::Command>) -> Result<()> {
         self.store.save_full(id, &ins).await?;
-        self.update_caches(id, ins);
+        let _ = self.ins_cache.insert(id, ins);
+        let _ = self.pbal_cache.remove(&id);
+        Ok(())
+    }
+
+    async fn save_partial(&mut self, id: InstanceId, ins: PartialInstance) -> Result<()> {
+        self.store.save_partial(id, &ins).await?;
+        let c = self.ins_cache.get_mut(&id).expect("instance should exist");
+        c.pbal = ins.pbal;
+        c.seq = ins.seq;
+        c.deps = ins.deps;
+        c.abal = ins.abal;
+        c.status = ins.status;
+        c.acc = ins.acc;
         Ok(())
     }
 
     async fn load(&mut self, id: InstanceId) -> Result<()> {
         if self.ins_cache.contains_key(&id).not() {
             if let Some(ins) = self.store.load_full(id).await? {
-                self.update_caches(id, ins);
+                let _ = self.ins_cache.insert(id, ins);
+                let _ = self.pbal_cache.remove(&id);
             } else if self.pbal_cache.contains_key(&id).not() {
                 if let Some(pbal) = self.store.load_pbal(id).await? {
                     let _ = self.pbal_cache.insert(id, pbal);
@@ -387,6 +461,10 @@ impl<S: LogStore> State<S> {
             return Some(ins.pbal);
         }
         self.pbal_cache.get(&id).copied()
+    }
+
+    fn get_cached_cmd(&self, id: InstanceId) -> Option<&S::Command> {
+        self.ins_cache.get(&id).map(|ins| &ins.cmd)
     }
 
     fn should_ignore(&mut self, id: InstanceId, pbal: Ballot, next_status: Status) -> bool {
