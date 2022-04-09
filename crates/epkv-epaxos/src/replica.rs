@@ -10,6 +10,7 @@ use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
+use std::collections::hash_map;
 use std::collections::HashMap;
 use std::ops::Not;
 
@@ -37,7 +38,7 @@ impl<S: LogStore> Replica<S> {
         ensure!(peers.iter().all(|&p| p != rid));
         ensure!(cluster_size >= 3);
 
-        let state = Mutex::new(State::new(rid, store, epoch, peers).await?);
+        let state = Mutex::new(State::new(rid, store, peers).await?);
         let epoch = AtomicEpoch::new(epoch);
 
         Ok(Self {
@@ -108,7 +109,7 @@ impl<S: LogStore> Replica<S> {
             acc: acc.clone(),
         };
 
-        state.save(id, ins).await?;
+        state.save_full(id, ins).await?;
 
         let quorum = state.peers.cluster_size().wrapping_sub(2);
         let selected_peers = state.peers.select(quorum, &acc);
@@ -237,7 +238,7 @@ struct MaxSeq {
 }
 
 impl<S: LogStore> State<S> {
-    async fn new(rid: ReplicaId, store: S, epoch: Epoch, peers: VecSet<ReplicaId>) -> Result<Self> {
+    async fn new(rid: ReplicaId, mut store: S, peers: VecSet<ReplicaId>) -> Result<Self> {
         let peers = Peers::new(peers);
 
         let attr_bounds = store.load_attr_bounds().await?;
@@ -324,18 +325,71 @@ impl<S: LogStore> State<S> {
         (seq, deps)
     }
 
-    async fn save(&mut self, id: InstanceId, ins: Instance<S::Command>) -> Result<()> {
-        self.store.save_instance(id, &ins).await?;
+    fn update_caches(&mut self, id: InstanceId, ins: Instance<S::Command>) {
         let _ = self.ins_cache.insert(id, ins);
         let _ = self.pbal_cache.remove(&id);
+    }
+
+    fn update_attrs(&mut self, id: InstanceId, keys: Keys<S::Command>, seq: Seq) {
+        let InstanceId(rid, lid) = id;
+
+        match keys {
+            Keys::Bounded(keys) => {
+                for k in keys.into_iter() {
+                    match self.max_key_map.entry(k) {
+                        hash_map::Entry::Occupied(mut e) => {
+                            let m = e.get_mut();
+                            max_assign(&mut m.seq, seq);
+                            m.lids.update(rid, |l| max_assign(l, lid), || lid);
+                        }
+                        hash_map::Entry::Vacant(e) => {
+                            let mut lids = VecMap::new();
+                            let _ = lids.insert(rid, lid);
+                            e.insert(MaxKey { seq, lids });
+                        }
+                    }
+                }
+
+                self.max_lid_map.update(
+                    rid,
+                    |m| max_assign(&mut m.any, lid),
+                    || MaxLid {
+                        checkpoint: lid,
+                        any: lid,
+                    },
+                );
+
+                max_assign(&mut self.max_seq.any, seq);
+            }
+            Keys::Unbounded => {
+                self.max_lid_map.update(
+                    rid,
+                    |m| {
+                        max_assign(&mut m.checkpoint, lid);
+                        max_assign(&mut m.any, lid);
+                    },
+                    || MaxLid {
+                        checkpoint: lid,
+                        any: lid,
+                    },
+                );
+
+                max_assign(&mut self.max_seq.checkpoint, seq);
+                max_assign(&mut self.max_seq.any, seq);
+            }
+        }
+    }
+
+    async fn save_full(&mut self, id: InstanceId, ins: Instance<S::Command>) -> Result<()> {
+        self.store.save_full(id, &ins).await?;
+        self.update_caches(id, ins);
         Ok(())
     }
 
     async fn load(&mut self, id: InstanceId) -> Result<()> {
         if self.ins_cache.contains_key(&id).not() {
-            if let Some(ins) = self.store.load_instance(id).await? {
-                let _ = self.ins_cache.insert(id, ins);
-                let _ = self.pbal_cache.remove(&id);
+            if let Some(ins) = self.store.load_full(id).await? {
+                self.update_caches(id, ins);
             } else if self.pbal_cache.contains_key(&id).not() {
                 if let Some(pbal) = self.store.load_pbal(id).await? {
                     let _ = self.pbal_cache.insert(id, pbal);
@@ -352,17 +406,10 @@ impl<S: LogStore> State<S> {
         self.pbal_cache.get(&id).copied()
     }
 
-    async fn should_ignore(
-        &mut self,
-        id: InstanceId,
-        pbal: Ballot,
-        next_status: Status,
-    ) -> Result<bool> {
-        self.load(id).await?;
-
+    fn should_ignore(&mut self, id: InstanceId, pbal: Ballot, next_status: Status) -> bool {
         if let Some(saved_pbal) = self.get_cached_pbal(id) {
             if saved_pbal != pbal {
-                return Ok(true);
+                return true;
             }
         }
 
@@ -371,10 +418,10 @@ impl<S: LogStore> State<S> {
             let status = ins.status;
 
             if (pbal, next_status) <= (abal, status) {
-                return Ok(true);
+                return true;
             }
         }
 
-        Ok(false)
+        false
     }
 }
