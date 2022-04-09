@@ -46,9 +46,9 @@ impl<S: LogStore> Replica<S> {
 
     pub async fn handle_message(&self, msg: Message<S::Command>) -> Result<Effect<S::Command>> {
         match msg {
-            Message::PreAccept(msg) => self.handle_pre_accept(msg).await,
-            Message::PreAcceptOk(msg) => self.handle_pre_accept_ok(msg).await,
-            Message::PreAcceptDiff(msg) => self.handle_pre_accept_diff(msg).await,
+            Message::PreAccept(msg) => self.handle_preaccept(msg).await,
+            Message::PreAcceptOk(msg) => self.handle_preaccept_ok(msg).await,
+            Message::PreAcceptDiff(msg) => self.handle_preaccept_diff(msg).await,
             Message::Accept(msg) => self.handle_accept(msg).await,
             Message::AcceptOk(msg) => self.handle_accept_ok(msg).await,
             Message::Commit(msg) => self.handle_commit(msg).await,
@@ -73,10 +73,10 @@ impl<S: LogStore> Replica<S> {
         let pbal = Ballot(Round::ZERO, self.rid);
         let acc = VecSet::<ReplicaId>::with_capacity(1);
 
-        self.start_phase_pre_accept(id, pbal, cmd, acc).await
+        self.start_phase_preaccept(id, pbal, cmd, acc).await
     }
 
-    async fn start_phase_pre_accept(
+    async fn start_phase_preaccept(
         &self,
         id: InstanceId,
         pbal: Ballot,
@@ -123,14 +123,12 @@ impl<S: LogStore> Replica<S> {
             acc,
         };
 
-        Ok(Effect::broadcast_pre_accept(
-            selected_peers.acc,
-            selected_peers.others,
-            msg,
-        ))
+        let mut effect = Effect::new();
+        effect.broadcast_preaccept(selected_peers.acc, selected_peers.others, msg);
+        Ok(effect)
     }
 
-    async fn handle_pre_accept(&self, msg: PreAccept<S::Command>) -> Result<Effect<S::Command>> {
+    async fn handle_preaccept(&self, msg: PreAccept<S::Command>) -> Result<Effect<S::Command>> {
         let mut guard = self.state.lock().await;
         let state = &mut *guard;
 
@@ -140,7 +138,7 @@ impl<S: LogStore> Replica<S> {
         state.load(id).await?;
 
         if state.should_ignore(id, pbal, Status::PreAccepted) {
-            return Ok(Effect::empty());
+            return Ok(Effect::new());
         }
 
         let keys = msg
@@ -179,28 +177,26 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let sender = self.rid;
-        let epoch = self.epoch.load();
-        let effect = if is_changed {
-            Effect::reply(
-                msg.sender,
-                Message::PreAcceptDiff(PreAcceptDiff { sender, epoch, id, pbal, seq, deps }),
-            )
-        } else {
-            Effect::reply(
-                msg.sender,
-                Message::PreAcceptOk(PreAcceptOk { sender, epoch, id, pbal }),
-            )
-        };
-
+        let mut effect = Effect::new();
+        {
+            let target = msg.sender;
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            let msg = if is_changed {
+                Message::PreAcceptDiff(PreAcceptDiff { sender, epoch, id, pbal, seq, deps })
+            } else {
+                Message::PreAcceptOk(PreAcceptOk { sender, epoch, id, pbal })
+            };
+            effect.reply(target, msg);
+        }
         Ok(effect)
     }
 
-    async fn handle_pre_accept_ok(&self, msg: PreAcceptOk) -> Result<Effect<S::Command>> {
+    async fn handle_preaccept_ok(&self, msg: PreAcceptOk) -> Result<Effect<S::Command>> {
         todo!()
     }
 
-    async fn handle_pre_accept_diff(&self, msg: PreAcceptDiff) -> Result<Effect<S::Command>> {
+    async fn handle_preaccept_diff(&self, msg: PreAcceptDiff) -> Result<Effect<S::Command>> {
         todo!()
     }
 
@@ -241,10 +237,9 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        Ok(Effect::reply(
-            msg.sender,
-            Message::JoinOk(JoinOk { sender: self.rid }),
-        ))
+        let mut effect = Effect::new();
+        effect.reply(msg.sender, Message::JoinOk(JoinOk { sender: self.rid }));
+        Ok(effect)
     }
 
     async fn handle_join_ok(&self, msg: JoinOk) -> Result<Effect<S::Command>> {
@@ -259,7 +254,7 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        Ok(Effect::empty())
+        Ok(Effect::new())
     }
 }
 
