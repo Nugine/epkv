@@ -1,4 +1,15 @@
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ReplicaConfig {
-    pub _todo: (),
+    pub fastpath_timeout: FastPathTimeout,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FastPathTimeout {
+    pub default: Duration,
+    pub enable_adaptive: bool,
 }
