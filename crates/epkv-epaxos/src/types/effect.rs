@@ -40,10 +40,7 @@ impl<C: CommandLike> Effect<C> {
 
     #[must_use]
     pub fn reply(target: ReplicaId, msg: Message<C>) -> Self {
-        Effect {
-            replies: vec![Reply { target, msg }],
-            ..Self::empty()
-        }
+        Effect { replies: vec![Reply { target, msg }], ..Self::empty() }
     }
 
     #[must_use]
@@ -68,14 +65,8 @@ impl<C: CommandLike> Effect<C> {
             }),
         });
         if others.is_empty().not() {
-            broadcasts.push(Broadcast {
-                targets: others,
-                msg: Message::PreAccept(msg),
-            });
+            broadcasts.push(Broadcast { targets: others, msg: Message::PreAccept(msg) });
         }
-        Effect {
-            broadcasts,
-            ..Self::empty()
-        }
+        Effect { broadcasts, ..Self::empty() }
     }
 }

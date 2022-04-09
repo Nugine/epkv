@@ -41,12 +41,7 @@ impl<S: LogStore> Replica<S> {
         let state = Mutex::new(State::new(rid, store, peers).await?);
         let epoch = AtomicEpoch::new(epoch);
 
-        Ok(Self {
-            rid,
-            config,
-            state,
-            epoch,
-        })
+        Ok(Self { rid, config, state, epoch })
     }
 
     pub async fn handle_message(&self, msg: Message<S::Command>) -> Result<Effect<S::Command>> {
@@ -256,18 +251,12 @@ impl<S: LogStore> State<S> {
             .iter()
             .copied()
             .map(|(rid, lid)| {
-                let max_lid = MaxLid {
-                    checkpoint: lid,
-                    any: lid,
-                };
+                let max_lid = MaxLid { checkpoint: lid, any: lid };
                 (rid, max_lid)
             })
             .collect();
 
-        let max_seq = MaxSeq {
-            checkpoint: attr_bounds.max_seq,
-            any: attr_bounds.max_seq,
-        };
+        let max_seq = MaxSeq { checkpoint: attr_bounds.max_seq, any: attr_bounds.max_seq };
 
         let ins_cache = FnvHashMap::default();
         let pbal_cache = FnvHashMap::default();
@@ -353,10 +342,7 @@ impl<S: LogStore> State<S> {
                 self.max_lid_map.update(
                     rid,
                     |m| max_assign(&mut m.any, lid),
-                    || MaxLid {
-                        checkpoint: lid,
-                        any: lid,
-                    },
+                    || MaxLid { checkpoint: lid, any: lid },
                 );
 
                 max_assign(&mut self.max_seq.any, seq);
@@ -368,10 +354,7 @@ impl<S: LogStore> State<S> {
                         max_assign(&mut m.checkpoint, lid);
                         max_assign(&mut m.any, lid);
                     },
-                    || MaxLid {
-                        checkpoint: lid,
-                        any: lid,
-                    },
+                    || MaxLid { checkpoint: lid, any: lid },
                 );
 
                 max_assign(&mut self.max_seq.checkpoint, seq);

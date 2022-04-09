@@ -84,9 +84,6 @@ impl Peers {
             }
         };
 
-        SelectedPeers {
-            acc: ans_acc,
-            others: ans_others,
-        }
+        SelectedPeers { acc: ans_acc, others: ans_others }
     }
 }
