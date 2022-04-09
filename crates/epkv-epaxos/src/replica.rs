@@ -11,6 +11,7 @@ use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
 use std::collections::HashMap;
+use std::ops::Not;
 
 use anyhow::ensure;
 use anyhow::Result;
@@ -309,5 +310,52 @@ impl<S: LogStore> State<S> {
         let _ = self.ins_cache.insert(id, ins);
         let _ = self.pbal_cache.remove(&id);
         Ok(())
+    }
+
+    async fn load(&mut self, id: InstanceId) -> Result<()> {
+        if self.ins_cache.contains_key(&id).not() {
+            if let Some(ins) = self.store.load_instance(id).await? {
+                let _ = self.ins_cache.insert(id, ins);
+                let _ = self.pbal_cache.remove(&id);
+            } else if self.pbal_cache.contains_key(&id).not() {
+                if let Some(pbal) = self.store.load_pbal(id).await? {
+                    let _ = self.pbal_cache.insert(id, pbal);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn get_cached_pbal(&self, id: InstanceId) -> Option<Ballot> {
+        if let Some(ins) = self.ins_cache.get(&id) {
+            return Some(ins.pbal);
+        }
+        self.pbal_cache.get(&id).copied()
+    }
+
+    async fn should_ignore(
+        &mut self,
+        id: InstanceId,
+        pbal: Ballot,
+        next_status: Status,
+    ) -> Result<bool> {
+        self.load(id).await?;
+
+        if let Some(saved_pbal) = self.get_cached_pbal(id) {
+            if saved_pbal != pbal {
+                return Ok(true);
+            }
+        }
+
+        if let Some(ins) = self.ins_cache.get(&id) {
+            let abal = ins.abal;
+            let status = ins.status;
+
+            if (pbal, next_status) <= (abal, status) {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 }
