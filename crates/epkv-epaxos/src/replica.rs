@@ -621,6 +621,12 @@ impl<S: LogStore> Replica<S> {
 
         state.load(id).await?;
 
+        if let Some(ins) = state.get_cached_ins(id) {
+            if ins.status >= Status::Committed {
+                return Ok(Effect::new());
+            }
+        }
+
         let pbal = match state.get_cached_pbal(id) {
             Some(Ballot(rnd, _)) => Ballot(rnd.add_one(), self.rid),
             None => Ballot(Round::ZERO, self.rid),
