@@ -9,7 +9,6 @@ use self::temporary::{Accepting, PreAccepting, Temporary};
 
 use crate::types::*;
 
-use epkv_utils::atomic_flag::AtomicFlag;
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecset::VecSet;
@@ -25,7 +24,6 @@ pub struct Replica<S: LogStore> {
     config: ReplicaConfig,
     state: Mutex<State<S>>,
     epoch: AtomicEpoch,
-    is_joining: AtomicFlag,
 }
 
 impl<S: LogStore> Replica<S> {
@@ -42,9 +40,8 @@ impl<S: LogStore> Replica<S> {
 
         let state = Mutex::new(State::new(rid, store, peers).await?);
         let epoch = AtomicEpoch::new(epoch);
-        let is_joining = AtomicFlag::new(false);
 
-        Ok(Self { rid, config, state, epoch, is_joining })
+        Ok(Self { rid, config, state, epoch })
     }
 
     pub async fn handle_message(&self, msg: Message<S::Command>) -> Result<Effect<S::Command>> {
@@ -732,8 +729,6 @@ impl<S: LogStore> Replica<S> {
 
         state.joining = Some(VecSet::new());
 
-        self.is_joining.set(true);
-
         let targets = state.peers.select_all();
 
         drop(guard);
@@ -762,7 +757,22 @@ impl<S: LogStore> Replica<S> {
     }
 
     async fn handle_join_ok(&self, msg: JoinOk) -> Result<Effect<S::Command>> {
-        todo!()
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        let mut effect = Effect::new();
+
+        if let Some(ref mut j) = state.joining {
+            let _ = j.insert(msg.sender);
+            if j.len() > state.peers.cluster_size() / 2 {
+                state.joining = None;
+                effect.join_finished = true;
+            }
+        }
+
+        drop(guard);
+
+        Ok(effect)
     }
 
     async fn handle_leave(&self, msg: Leave) -> Result<Effect<S::Command>> {

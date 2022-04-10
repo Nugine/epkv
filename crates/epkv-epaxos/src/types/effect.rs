@@ -11,6 +11,7 @@ pub struct Effect<C: CommandLike> {
     pub notifies: Vec<C::Notify>,
     pub timeouts: Vec<Timeout>,
     pub executions: Vec<Execution<C>>,
+    pub join_finished: bool,
 }
 
 pub struct Broadcast<C> {
@@ -54,6 +55,7 @@ impl<C: CommandLike> Effect<C> {
             notifies: Vec::new(),
             timeouts: Vec::new(),
             executions: Vec::new(),
+            join_finished: false,
         }
     }
 
