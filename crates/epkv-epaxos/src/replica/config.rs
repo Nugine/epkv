@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 pub struct ReplicaConfig {
     pub fastpath_timeout: FastPathTimeout,
-    pub retry_recovery: RetryRecovery,
+    pub recover: Recover,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,7 +16,7 @@ pub struct FastPathTimeout {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RetryRecovery {
+pub struct Recover {
     pub default: Duration,
     pub enable_adaptive: bool,
 }

@@ -778,7 +778,7 @@ impl<S: LogStore> Replica<S> {
             PrepareReply::Nack(msg) => {
                 state.save_pbal(id, msg.pbal).await?;
 
-                let conf = &self.config.retry_recovery;
+                let conf = &self.config.recover;
                 let duration = if conf.enable_adaptive {
                     match state.peers.get_avg_rtt() {
                         Some(d) => {
@@ -797,7 +797,7 @@ impl<S: LogStore> Replica<S> {
                 drop(guard);
 
                 let mut effect = Effect::new();
-                effect.timeout(duration, TimeoutKind::RetryRecovery { id });
+                effect.timeout(duration, TimeoutKind::Recover { id });
                 return Ok(effect);
             }
             PrepareReply::Ok(msg) => {
