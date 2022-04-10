@@ -16,6 +16,7 @@ use epkv_utils::cmp::max_assign;
 use epkv_utils::vecset::VecSet;
 
 use std::mem;
+use std::ops::Not;
 
 use anyhow::{ensure, Result};
 use tokio::sync::{Mutex, MutexGuard};
@@ -594,6 +595,36 @@ impl<S: LogStore> Replica<S> {
         if exec {
             effect.execution(id, cmd, seq, deps)
         }
+        Ok(effect)
+    }
+
+    async fn recover(&self, id: InstanceId) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        state.load(id).await?;
+
+        let pbal = match state.get_cached_pbal(id) {
+            Some(Ballot(rnd, _)) => Ballot(rnd.add_one(), self.rid),
+            None => Ballot(Round::ZERO, self.rid),
+        };
+
+        let known = matches!(state.get_cached_ins(id), Some(ins) if ins.cmd.is_nop().not());
+
+        let mut effect = Effect::new();
+        {
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+
+            let mut targets = state.peers.select_all();
+            let _ = targets.insert(self.rid);
+
+            effect.broadcast(
+                targets,
+                Message::Prepare(Prepare { sender, epoch, id, pbal, known }),
+            )
+        }
+
         Ok(effect)
     }
 
