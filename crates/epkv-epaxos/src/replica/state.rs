@@ -177,8 +177,18 @@ impl<S: LogStore> State<S> {
         ins: Instance<S::Command>,
         mode: UpdateMode,
     ) -> Result<()> {
+        let needs_update_attrs = if let Some(saved) = self.ins_cache.get(&id) {
+            saved.seq != ins.seq || saved.deps != ins.deps
+        } else {
+            true
+        };
+
         self.store.save_instance(id, &ins, mode).await?;
-        self.update_attrs(id, ins.cmd.keys(), ins.seq);
+
+        if needs_update_attrs {
+            self.update_attrs(id, ins.cmd.keys(), ins.seq);
+        }
+
         let _ = self.ins_cache.insert(id, ins);
         let _ = self.pbal_cache.remove(&id);
         Ok(())

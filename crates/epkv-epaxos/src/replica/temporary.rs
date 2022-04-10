@@ -16,5 +16,9 @@ pub struct PreAccepting {
     pub acc: VecSet<ReplicaId>,
 }
 
-pub struct Accepting {}
+pub struct Accepting {
+    pub received: VecSet<ReplicaId>,
+    pub acc: VecSet<ReplicaId>,
+}
+
 pub struct Preparing {}

@@ -6,7 +6,7 @@ mod temporary;
 pub use self::config::ReplicaConfig;
 // use self::peers::Peers;
 use self::state::State;
-use self::temporary::{PreAccepting, Temporary};
+use self::temporary::{Accepting, PreAccepting, Temporary};
 
 use crate::types::*;
 
@@ -16,7 +16,6 @@ use epkv_utils::cmp::max_assign;
 use epkv_utils::vecset::VecSet;
 
 use std::mem;
-use std::ops::Not;
 
 use anyhow::{ensure, Result};
 use tokio::sync::{Mutex, MutexGuard};
@@ -126,6 +125,13 @@ impl<S: LogStore> Replica<S> {
         let quorum = state.peers.cluster_size().wrapping_sub(2);
         let selected_peers = state.peers.select(quorum, &acc);
 
+        {
+            clone!(deps, acc);
+            let received = VecSet::new();
+            let temp = PreAccepting { received, seq, deps, all_same: true, acc };
+            let _ = state.temporaries.insert(id, Temporary::PreAccepting(temp));
+        }
+
         drop(guard);
 
         let mut effect = Effect::new();
@@ -182,16 +188,9 @@ impl<S: LogStore> Replica<S> {
         let _ = acc.insert(self.rid);
 
         {
-            clone!(deps, acc);
+            clone!(deps);
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
             state.save(id, ins, mode).await?
-        }
-
-        {
-            let received = VecSet::new();
-            clone!(deps);
-            let temp = PreAccepting { received, seq, deps, all_same: true, acc };
-            let _ = state.temporaries.insert(id, Temporary::PreAccepting(temp));
         }
 
         drop(guard);
@@ -352,6 +351,13 @@ impl<S: LogStore> Replica<S> {
             state.save(id, ins, mode).await?;
         }
 
+        {
+            clone!(acc);
+            let received = VecSet::new();
+            let temp = Accepting { received, acc };
+            let _ = state.temporaries.insert(id, Temporary::Accepting(temp));
+        }
+
         drop(guard);
 
         let mut effect = Effect::new();
@@ -423,7 +429,56 @@ impl<S: LogStore> Replica<S> {
     }
 
     async fn handle_accept_reply(&self, msg: AcceptReply) -> Result<Effect<S::Command>> {
-        todo!()
+        let AcceptReply::Ok(msg) = msg;
+
+        if msg.epoch < self.epoch.load() {
+            return Ok(Effect::new());
+        }
+
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        let id = msg.id;
+        let pbal = msg.pbal;
+
+        state.load(id).await?;
+
+        if state.should_ignore_pbal(id, pbal) {
+            return Ok(Effect::new());
+        }
+
+        let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+
+        if ins.status != Status::Accepted {
+            return Ok(Effect::new());
+        }
+
+        let seq = ins.seq;
+        let deps = ins.deps.clone();
+
+        let temp = match state.temporaries.get_mut(&id) {
+            Some(Temporary::Accepting(t)) => t,
+            _ => return Ok(Effect::new()),
+        };
+
+        {
+            if temp.received.insert(msg.sender).is_some() {
+                return Ok(Effect::new());
+            }
+            let _ = temp.acc.insert(msg.sender);
+        }
+
+        let cluster_size = state.peers.cluster_size();
+
+        if temp.received.len() < cluster_size / 2 {
+            return Ok(Effect::new());
+        }
+
+        let acc = mem::take(&mut temp.acc);
+        let _ = state.temporaries.remove(&id);
+
+        let cmd = None;
+        self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await
     }
 
     #[allow(clippy::too_many_arguments)]
