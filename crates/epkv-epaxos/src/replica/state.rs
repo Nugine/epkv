@@ -17,6 +17,7 @@ use fnv::FnvHashMap;
 pub struct State<S: LogStore> {
     pub peers: Peers,
     pub temporaries: FnvHashMap<InstanceId, Temporary>,
+    pub joining: Option<VecSet<ReplicaId>>,
 
     store: S,
 
@@ -51,6 +52,7 @@ impl<S: LogStore> State<S> {
     pub async fn new(rid: ReplicaId, mut store: S, peers: VecSet<ReplicaId>) -> Result<Self> {
         let peers = Peers::new(peers);
         let temporaries = FnvHashMap::default();
+        let joining = None;
 
         let attr_bounds = store.load_attr_bounds().await?;
 
@@ -76,6 +78,7 @@ impl<S: LogStore> State<S> {
         Ok(Self {
             peers,
             temporaries,
+            joining,
             store,
             lid_head,
             max_key_map,
