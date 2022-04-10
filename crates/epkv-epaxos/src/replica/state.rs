@@ -208,6 +208,21 @@ impl<S: LogStore> State<S> {
         Ok(())
     }
 
+    pub async fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Result<()> {
+        self.store.save_pbal(id, pbal).await?;
+
+        match self.ins_cache.get_mut(&id) {
+            Some(ins) => {
+                ins.pbal = pbal;
+            }
+            None => {
+                let _ = self.pbal_cache.insert(id, pbal);
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn get_cached_pbal(&self, id: InstanceId) -> Option<Ballot> {
         if let Some(ins) = self.ins_cache.get(&id) {
             return Some(ins.pbal);

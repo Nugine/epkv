@@ -311,6 +311,7 @@ impl<S: LogStore> Replica<S> {
                 } else {
                     conf.default
                 };
+                drop(guard);
                 let mut effect = Effect::new();
                 effect.timeout(duration, TimeoutKind::PreAcceptFastPath { id });
                 Ok(effect)
@@ -415,6 +416,8 @@ impl<S: LogStore> Replica<S> {
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
             state.save(id, ins, mode).await?;
         }
+
+        drop(guard);
 
         let mut effect = Effect::new();
         {
@@ -591,6 +594,8 @@ impl<S: LogStore> Replica<S> {
             state.save(id, ins, mode).await?
         }
 
+        drop(guard);
+
         let mut effect = Effect::new();
         if exec {
             effect.execution(id, cmd, seq, deps)
@@ -611,13 +616,16 @@ impl<S: LogStore> Replica<S> {
 
         let known = matches!(state.get_cached_ins(id), Some(ins) if ins.cmd.is_nop().not());
 
+        let mut targets = state.peers.select_all();
+
+        drop(guard);
+
+        let _ = targets.insert(self.rid);
+
         let mut effect = Effect::new();
         {
             let sender = self.rid;
             let epoch = self.epoch.load();
-
-            let mut targets = state.peers.select_all();
-            let _ = targets.insert(self.rid);
 
             effect.broadcast(
                 targets,
@@ -629,7 +637,85 @@ impl<S: LogStore> Replica<S> {
     }
 
     async fn handle_prepare(&self, msg: Prepare) -> Result<Effect<S::Command>> {
-        todo!()
+        if msg.epoch < self.epoch.load() {
+            return Ok(Effect::new());
+        }
+
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        let id = msg.id;
+
+        state.load(id).await?;
+
+        let epoch = self.epoch.load();
+
+        if let Some(pbal) = state.get_cached_pbal(id) {
+            if pbal >= msg.pbal {
+                drop(guard);
+                let mut effect = Effect::new();
+                let target = msg.sender;
+                let sender = self.rid;
+                effect.reply(
+                    target,
+                    Message::PrepareNack(PrepareNack { sender, epoch, id, pbal }),
+                );
+                return Ok(effect);
+            }
+        }
+
+        let pbal = msg.pbal;
+
+        state.save_pbal(id, pbal).await?;
+
+        let ins: _ = match state.get_cached_ins(id) {
+            Some(ins) => ins,
+            None => {
+                drop(guard);
+                let mut effect = Effect::new();
+                let target = msg.sender;
+                let sender = self.rid;
+                effect.reply(
+                    target,
+                    Message::PrepareUnchosen(PrepareUnchosen { sender, epoch, id }),
+                );
+                return Ok(effect);
+            }
+        };
+
+        let cmd = if msg.known && ins.cmd.is_nop().not() {
+            None
+        } else {
+            Some(ins.cmd.clone())
+        };
+
+        let seq = ins.seq;
+        let deps = ins.deps.clone();
+        let abal = ins.abal;
+        let status = ins.status;
+        let acc = ins.acc.clone();
+
+        drop(guard);
+
+        let mut effect = Effect::new();
+        let target = msg.sender;
+        let sender = self.rid;
+        effect.reply(
+            target,
+            Message::PrepareOk(PrepareOk {
+                sender,
+                epoch,
+                id,
+                pbal,
+                cmd,
+                seq,
+                deps,
+                abal,
+                status,
+                acc,
+            }),
+        );
+        Ok(effect)
     }
 
     async fn handle_prepare_reply(
