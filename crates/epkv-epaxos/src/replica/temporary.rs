@@ -1,11 +1,11 @@
-use crate::types::{Deps, ReplicaId, Seq};
+use crate::types::{Ballot, Deps, ReplicaId, Seq, Status};
 
 use epkv_utils::vecset::VecSet;
 
-pub enum Temporary {
+pub enum Temporary<C> {
     PreAccepting(PreAccepting),
     Accepting(Accepting),
-    Preparing(Preparing),
+    Preparing(Preparing<C>),
 }
 
 pub struct PreAccepting {
@@ -21,4 +21,10 @@ pub struct Accepting {
     pub acc: VecSet<ReplicaId>,
 }
 
-pub struct Preparing {}
+pub struct Preparing<C> {
+    pub received: VecSet<ReplicaId>,
+    pub max_abal: Option<Ballot>,
+    pub cmd: Option<C>,
+    /// (sender, seq, deps, status, acc)
+    pub tuples: Vec<(ReplicaId, Seq, Deps, Status, VecSet<ReplicaId>)>,
+}

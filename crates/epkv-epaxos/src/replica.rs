@@ -5,7 +5,7 @@ mod temporary;
 
 pub use self::config::ReplicaConfig;
 use self::state::State;
-use self::temporary::{Accepting, PreAccepting, Temporary};
+use self::temporary::{Accepting, PreAccepting, Preparing, Temporary};
 
 use crate::types::*;
 
@@ -13,10 +13,14 @@ use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecset::VecSet;
 
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::mem;
 use std::ops::Not;
+use std::time::Duration;
 
 use anyhow::{ensure, Result};
+use rand::Rng;
 use tokio::sync::{Mutex, MutexGuard};
 
 pub struct Replica<S: LogStore> {
@@ -96,7 +100,7 @@ impl<S: LogStore> Replica<S> {
         let pbal = Ballot(Round::ZERO, self.rid);
         let acc = VecSet::<ReplicaId>::with_capacity(1);
 
-        self.start_phase_preaccept(guard, id, pbal, cmd, acc).await
+        self.start_phase_preaccept(guard, id, pbal, Some(cmd), acc).await
     }
 
     async fn start_phase_preaccept(
@@ -104,10 +108,20 @@ impl<S: LogStore> Replica<S> {
         mut guard: MutexGuard<'_, State<S>>,
         id: InstanceId,
         pbal: Ballot,
-        cmd: S::Command,
+        cmd: Option<S::Command>,
         mut acc: VecSet<ReplicaId>,
     ) -> Result<Effect<S::Command>> {
         let state = &mut *guard;
+
+        state.load(id).await?;
+
+        let (cmd, mode) = match cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
+            None => {
+                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
+            }
+        };
 
         let (seq, deps) = state.calc_attributes(id, &cmd.keys());
 
@@ -118,7 +132,7 @@ impl<S: LogStore> Replica<S> {
         {
             clone!(cmd, deps, acc);
             let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            state.save(id, ins, UpdateMode::Full).await?;
+            state.save(id, ins, mode).await?;
         }
 
         let quorum = state.peers.cluster_size().wrapping_sub(2);
@@ -616,6 +630,12 @@ impl<S: LogStore> Replica<S> {
 
         let mut targets = state.peers.select_all();
 
+        {
+            let received = VecSet::new();
+            let temp: _ = Preparing { received, max_abal: None, cmd: None, tuples: Vec::new() };
+            let _ = state.temporaries.insert(id, Temporary::Preparing(temp));
+        }
+
         drop(guard);
 
         let _ = targets.insert(self.rid);
@@ -720,7 +740,169 @@ impl<S: LogStore> Replica<S> {
         &self,
         msg: PrepareReply<S::Command>,
     ) -> Result<Effect<S::Command>> {
-        todo!()
+        let msg_epoch = match msg {
+            PrepareReply::Ok(ref msg) => msg.epoch,
+            PrepareReply::Nack(ref msg) => msg.epoch,
+            PrepareReply::Unchosen(ref msg) => msg.epoch,
+        };
+
+        if msg_epoch < self.epoch.load() {
+            return Ok(Effect::new());
+        }
+
+        let mut guard = self.state.lock().await;
+        let state = &mut *guard;
+
+        let id = match msg {
+            PrepareReply::Ok(ref msg) => msg.id,
+            PrepareReply::Nack(ref msg) => msg.id,
+            PrepareReply::Unchosen(ref msg) => msg.id,
+        };
+
+        state.load(id).await?;
+        if let PrepareReply::Ok(ref msg) = msg {
+            if state.should_ignore_pbal(id, msg.pbal) {
+                return Ok(Effect::new());
+            }
+        }
+
+        let temp: _ = match state.temporaries.get_mut(&id) {
+            Some(Temporary::Preparing(t)) => t,
+            _ => return Ok(Effect::new()),
+        };
+
+        match msg {
+            PrepareReply::Unchosen(msg) => {
+                let _ = temp.received.insert(msg.sender);
+            }
+            PrepareReply::Nack(msg) => {
+                state.save_pbal(id, msg.pbal).await?;
+
+                let conf = &self.config.retry_recovery;
+                let duration = if conf.enable_adaptive {
+                    match state.peers.get_avg_rtt() {
+                        Some(d) => {
+                            let rate: f64 = rand::thread_rng().gen_range(1.0..4.0);
+                            #[allow(clippy::float_arithmetic)]
+                            Duration::from_secs_f64(d.as_secs_f64() * rate)
+                        }
+                        None => conf.default,
+                    }
+                } else {
+                    conf.default
+                };
+
+                let _ = state.temporaries.remove(&id);
+
+                drop(guard);
+
+                let mut effect = Effect::new();
+                effect.timeout(duration, TimeoutKind::RetryRecovery { id });
+                return Ok(effect);
+            }
+            PrepareReply::Ok(msg) => {
+                let _ = temp.received.insert(msg.sender);
+
+                let is_max_abal = match temp.max_abal {
+                    Some(ref mut max_abal) => match Ord::cmp(&msg.abal, max_abal) {
+                        Ordering::Less => false,
+                        Ordering::Equal => true,
+                        Ordering::Greater => {
+                            *max_abal = msg.abal;
+                            temp.cmd = None;
+                            temp.tuples.clear();
+                            true
+                        }
+                    },
+                    None => {
+                        temp.max_abal = Some(msg.abal);
+                        true
+                    }
+                };
+                if is_max_abal.not() {
+                    return Ok(Effect::new());
+                }
+                temp.cmd = msg.cmd;
+                temp.tuples.push((msg.sender, msg.seq, msg.deps, msg.status, msg.acc));
+            }
+        }
+
+        let cluster_size = state.peers.cluster_size();
+        if temp.received.len() <= cluster_size / 2 {
+            return Ok(Effect::new());
+        }
+
+        let max_abal = match temp.max_abal {
+            Some(b) => b,
+            None => return Ok(Effect::new()),
+        };
+
+        let cmd = temp.cmd.take();
+        let mut tuples = mem::take(&mut temp.tuples);
+        let _ = state.temporaries.remove(&id);
+
+        let pbal = state.get_cached_pbal(id).expect("pbal should exist");
+
+        let mut acc = match state.get_cached_ins(id) {
+            Some(ins) => ins.acc.clone(),
+            None => VecSet::new(),
+        };
+        for (_, _, _, _, a) in tuples.iter() {
+            acc.union_copied(a);
+        }
+
+        for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
+            if status >= Status::Committed {
+                let deps = mem::take(deps);
+                return self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+            } else if status == Status::Accepted {
+                let deps = mem::take(deps);
+                return self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+            }
+        }
+
+        tuples.retain(|t| t.3 == Status::PreAccepted);
+        let enable_accept = max_abal.0 == Round::ZERO
+            && tuples.len() >= cluster_size / 2
+            && tuples.iter().all(|t| t.0 != id.0);
+
+        if enable_accept {
+            #[allow(clippy::mutable_key_type)]
+            let mut buckets: HashMap<(Seq, &mut Deps), usize> = HashMap::new();
+            for &mut (_, seq, ref mut deps, _, _) in tuples.iter_mut() {
+                let cnt = buckets.entry((seq, deps)).or_default();
+                *cnt = cnt.wrapping_add(1);
+            }
+            let mut max_cnt_attr = None;
+            let mut max_cnt = 0;
+            for (attr, cnt) in buckets {
+                if cnt > max_cnt {
+                    max_cnt_attr = Some(attr);
+                    max_cnt = cnt;
+                }
+            }
+            if max_cnt >= cluster_size / 2 {
+                if let Some(attr) = max_cnt_attr {
+                    let seq = attr.0;
+                    let deps = mem::take(attr.1);
+                    return self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                }
+            }
+        }
+
+        if let Some(t) = tuples.first_mut() {
+            return self.start_phase_preaccept(guard, id, pbal, cmd, acc).await;
+        }
+
+        let cmd = match state.get_cached_ins(id) {
+            Some(_) => None,
+            None => {
+                acc = VecSet::new();
+                Some(S::Command::create_nop())
+            }
+        };
+
+        self.start_phase_preaccept(guard, id, pbal, cmd, acc).await
     }
 
     pub async fn start_joining(&self) -> Result<Effect<S::Command>> {

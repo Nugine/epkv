@@ -8,7 +8,7 @@ use std::slice;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(from = "Vec<(K, V)>")]
 pub struct VecMap<K: Ord, V>(Vec<(K, V)>);
 

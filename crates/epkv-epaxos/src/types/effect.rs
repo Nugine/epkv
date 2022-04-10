@@ -38,6 +38,7 @@ pub struct Execution<C> {
 
 pub enum TimeoutKind {
     PreAcceptFastPath { id: InstanceId },
+    RetryRecovery { id: InstanceId },
 }
 
 impl<C: CommandLike> Default for Effect<C> {

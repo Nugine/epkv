@@ -16,7 +16,7 @@ use fnv::FnvHashMap;
 
 pub struct State<S: LogStore> {
     pub peers: Peers,
-    pub temporaries: FnvHashMap<InstanceId, Temporary>,
+    pub temporaries: FnvHashMap<InstanceId, Temporary<S::Command>>,
     pub joining: Option<VecSet<ReplicaId>>,
 
     store: S,
