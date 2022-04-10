@@ -1,26 +1,24 @@
 mod config;
 mod peers;
+mod state;
 mod temporary;
 
 pub use self::config::ReplicaConfig;
-use self::peers::Peers;
+// use self::peers::Peers;
+use self::state::State;
 use self::temporary::{PreAccepting, Temporary};
 
 use crate::types::*;
 
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
-use epkv_utils::vecmap::VecMap;
+// use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
-use std::collections::hash_map;
-use std::collections::HashMap;
 use std::mem;
 use std::ops::Not;
 
-use anyhow::ensure;
-use anyhow::Result;
-use fnv::FnvHashMap;
+use anyhow::{ensure, Result};
 use tokio::sync::{Mutex, MutexGuard};
 
 pub struct Replica<S: LogStore> {
@@ -113,44 +111,33 @@ impl<S: LogStore> Replica<S> {
     ) -> Result<Effect<S::Command>> {
         let state = &mut *guard;
 
-        let keys = cmd.keys();
-        let (seq, deps) = state.calc_attributes(id, &keys);
+        let (seq, deps) = state.calc_attributes(id, &cmd.keys());
 
         let abal = pbal;
         let status = Status::PreAccepted;
         let _ = acc.insert(self.rid);
 
-        let ins = Instance {
-            pbal,
-            cmd: cmd.clone(),
-            seq,
-            deps: deps.clone(),
-            abal,
-            status,
-            acc: acc.clone(),
-        };
-
-        state.save_full(id, ins).await?;
-        state.update_attrs(id, keys, seq);
+        {
+            clone!(cmd, deps, acc);
+            let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            state.save(id, ins, UpdateMode::Full).await?;
+        }
 
         let quorum = state.peers.cluster_size().wrapping_sub(2);
         let selected_peers = state.peers.select(quorum, &acc);
 
         drop(guard);
 
-        let msg = PreAccept {
-            sender: self.rid,
-            epoch: self.epoch.load(),
-            id,
-            pbal,
-            cmd: Some(cmd),
-            seq,
-            deps,
-            acc,
-        };
-
         let mut effect = Effect::new();
-        effect.broadcast_preaccept(selected_peers.acc, selected_peers.others, msg);
+        {
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            effect.broadcast_preaccept(
+                selected_peers.acc,
+                selected_peers.others,
+                PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
+            );
+        }
         Ok(effect)
     }
 
@@ -167,18 +154,22 @@ impl<S: LogStore> Replica<S> {
 
         state.load(id).await?;
 
-        if state.should_ignore(id, pbal, Status::PreAccepted) {
+        if state.should_ignore_pbal(id, pbal) {
+            return Ok(Effect::new());
+        }
+        if state.should_ignore_status(id, pbal, Status::PreAccepted) {
             return Ok(Effect::new());
         }
 
-        let keys = msg
-            .cmd
-            .as_ref()
-            .or_else(|| state.get_cached_ins(id).map(|ins: _| &ins.cmd))
-            .expect("cmd should exist")
-            .keys();
+        let (cmd, mode) = match msg.cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
+            None => {
+                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
+            }
+        };
 
-        let (mut seq, mut deps) = state.calc_attributes(id, &keys);
+        let (mut seq, mut deps) = state.calc_attributes(id, &cmd.keys());
         max_assign(&mut seq, msg.seq);
         deps.merge(&msg.deps);
 
@@ -191,24 +182,14 @@ impl<S: LogStore> Replica<S> {
         let _ = acc.insert(self.rid);
 
         {
-            let acc = acc.clone();
-            let deps = deps.clone();
-            match msg.cmd {
-                Some(cmd) => {
-                    let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-                    state.save_full(id, ins).await?;
-                }
-                None => {
-                    let ins: _ = PartialInstance { pbal, seq, deps, abal, status, acc };
-                    state.save_partial(id, ins).await?;
-                }
-            }
+            clone!(deps, acc);
+            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            state.save(id, ins, mode).await?
         }
-        state.update_attrs(id, keys, seq);
 
         {
             let received = VecSet::new();
-            let deps = deps.clone();
+            clone!(deps);
             let temp = PreAccepting { received, seq, deps, all_same: true, acc };
             let _ = state.temporaries.insert(id, Temporary::PreAccepting(temp));
         }
@@ -220,23 +201,25 @@ impl<S: LogStore> Replica<S> {
             let target = msg.sender;
             let sender = self.rid;
             let epoch = self.epoch.load();
-            let msg = if is_changed {
-                Message::PreAcceptDiff(PreAcceptDiff { sender, epoch, id, pbal, seq, deps })
-            } else {
-                Message::PreAcceptOk(PreAcceptOk { sender, epoch, id, pbal })
-            };
-            effect.reply(target, msg);
+            effect.reply(
+                target,
+                if is_changed {
+                    Message::PreAcceptDiff(PreAcceptDiff { sender, epoch, id, pbal, seq, deps })
+                } else {
+                    Message::PreAcceptOk(PreAcceptOk { sender, epoch, id, pbal })
+                },
+            );
         }
         Ok(effect)
     }
 
     async fn handle_preaccept_reply(&self, msg: PreAcceptReply) -> Result<Effect<S::Command>> {
-        let epoch = match msg {
+        let msg_epoch = match msg {
             PreAcceptReply::Ok(ref msg) => msg.epoch,
             PreAcceptReply::Diff(ref msg) => msg.epoch,
         };
 
-        if epoch < self.epoch.load() {
+        if msg_epoch < self.epoch.load() {
             return Ok(Effect::new());
         }
 
@@ -250,8 +233,7 @@ impl<S: LogStore> Replica<S> {
 
         state.load(id).await?;
 
-        let saved_pbal = state.get_cached_pbal(id).expect("pbal should exist");
-        if pbal != saved_pbal {
+        if state.should_ignore_pbal(id, pbal) {
             return Ok(Effect::new());
         }
 
@@ -267,14 +249,14 @@ impl<S: LogStore> Replica<S> {
         };
 
         {
-            let sender = match msg {
+            let msg_sender = match msg {
                 PreAcceptReply::Ok(ref msg) => msg.sender,
                 PreAcceptReply::Diff(ref msg) => msg.sender,
             };
-            if temp.received.insert(sender).is_some() {
+            if temp.received.insert(msg_sender).is_some() {
                 return Ok(Effect::new());
             }
-            let _ = temp.acc.insert(sender);
+            let _ = temp.acc.insert(msg_sender);
         }
 
         match msg {
@@ -298,17 +280,30 @@ impl<S: LogStore> Replica<S> {
             return Ok(Effect::new());
         }
 
-        let mut which_path = None;
-        if temp.all_same {
+        let which_path = if temp.all_same {
             if pbal.0 == Round::ZERO && temp.received.len() >= cluster_size.wrapping_sub(2) {
-                which_path = Some(true)
+                Some(true)
+            } else {
+                None
             }
         } else {
-            which_path = Some(false)
-        }
+            Some(false)
+        };
 
-        let is_fast_path = match which_path {
-            Some(f) => f,
+        match which_path {
+            Some(is_fast_path) => {
+                let cmd = None;
+                let seq = temp.seq;
+                let deps = mem::take(&mut temp.deps);
+                let acc = mem::take(&mut temp.acc);
+                let _ = state.temporaries.remove(&id);
+
+                if is_fast_path {
+                    self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await
+                } else {
+                    self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
+                }
+            }
             None => {
                 let conf = &self.config.fastpath_timeout;
                 let duration = if conf.enable_adaptive {
@@ -318,20 +313,8 @@ impl<S: LogStore> Replica<S> {
                 };
                 let mut effect = Effect::new();
                 effect.timeout(duration, TimeoutKind::PreAcceptFastPath { id });
-                return Ok(effect);
+                Ok(effect)
             }
-        };
-
-        let cmd = None;
-        let seq = temp.seq;
-        let deps = mem::take(&mut temp.deps);
-        let acc = mem::take(&mut temp.acc);
-        let _ = state.temporaries.remove(&id);
-
-        if is_fast_path {
-            self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await
-        } else {
-            self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
         }
     }
 
@@ -341,7 +324,7 @@ impl<S: LogStore> Replica<S> {
         mut guard: MutexGuard<'_, State<S>>,
         id: InstanceId,
         pbal: Ballot,
-        mut cmd: Option<S::Command>,
+        cmd: Option<S::Command>,
         seq: Seq,
         deps: Deps,
         acc: VecSet<ReplicaId>,
@@ -354,31 +337,33 @@ impl<S: LogStore> Replica<S> {
         let quorum = state.peers.cluster_size() / 2;
         let selected_peers = state.peers.select(quorum, &acc);
 
-        match cmd {
-            Some(ref cmd) => {
-                clone!(cmd, deps, acc);
-                let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
-                state.save_full(id, ins).await?;
-            }
+        let (cmd, mode) = match cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
             None => {
-                clone!(deps, acc);
-                let ins = PartialInstance { pbal, seq, deps, abal, status, acc };
-                state.save_partial(id, ins).await?;
+                state.load(id).await?;
+                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
             }
-        }
+        };
 
-        state.load(id).await?;
-        let ins: _ = state.get_cached_ins(id).expect("instance should exist");
-        let cmd = ins.cmd.clone();
-        state.update_attrs(id, cmd.keys(), seq);
+        {
+            clone!(cmd, deps, acc);
+            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            state.save(id, ins, mode).await?;
+        }
 
         drop(guard);
 
-        let sender = self.rid;
-        let epoch = self.epoch.load();
-        let msg = Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
         let mut effect = Effect::new();
-        effect.broadcast_accept(selected_peers.acc, selected_peers.others, msg);
+        {
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            effect.broadcast_accept(
+                selected_peers.acc,
+                selected_peers.others,
+                Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
+            );
+        }
         Ok(effect)
     }
 
@@ -395,7 +380,10 @@ impl<S: LogStore> Replica<S> {
 
         state.load(id).await?;
 
-        if state.should_ignore(id, pbal, Status::Accepted) {
+        if state.should_ignore_pbal(id, pbal) {
+            return Ok(Effect::new());
+        }
+        if state.should_ignore_status(id, pbal, Status::Accepted) {
             return Ok(Effect::new());
         }
 
@@ -407,21 +395,31 @@ impl<S: LogStore> Replica<S> {
 
         let seq = msg.seq;
         let deps = msg.deps;
-        match msg.cmd {
-            Some(cmd) => {
-                let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-                state.save_full(id, ins).await?;
-            }
-            None => {
-                let ins: _ = PartialInstance { pbal, seq, deps, abal, status, acc };
-                state.save_partial(id, ins).await?;
-            }
-        }
-        let ins = state.get_cached_ins(id).expect("instance should exist");
-        let keys = ins.cmd.keys();
-        state.update_attrs(id, keys, seq);
 
-        todo!()
+        let (cmd, mode) = match msg.cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
+            None => {
+                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
+            }
+        };
+
+        {
+            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            state.save(id, ins, mode).await?;
+        }
+
+        let mut effect = Effect::new();
+        {
+            let target = msg.sender;
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            effect.reply(
+                target,
+                Message::AcceptOk(AcceptOk { sender, epoch, id, pbal }),
+            );
+        }
+        Ok(effect)
     }
 
     async fn handle_accept_reply(&self, msg: AcceptReply) -> Result<Effect<S::Command>> {
@@ -447,40 +445,43 @@ impl<S: LogStore> Replica<S> {
         let quorum = state.peers.cluster_size().wrapping_sub(1);
         let selected_peers = state.peers.select(quorum, &acc);
 
-        match cmd {
-            Some(ref cmd) => {
-                clone!(cmd, deps, acc);
-                let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
-                state.save_full(id, ins).await?;
-            }
+        let (cmd, mode) = match cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
             None => {
-                clone!(deps, acc);
-                let ins = PartialInstance { pbal, seq, deps, abal, status, acc };
-                state.save_partial(id, ins).await?;
+                state.load(id).await?;
+                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
             }
         };
 
-        state.load(id).await?;
-        let ins: _ = state.get_cached_ins(id).expect("instance should exist");
-
-        let cmd = ins.cmd.clone();
-        state.update_attrs(id, cmd.keys(), seq);
+        {
+            clone!(cmd, deps, acc);
+            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            state.save(id, ins, mode).await?;
+        }
 
         drop(guard);
 
         let mut effect = Effect::new();
 
-        effect.notify(cmd.notify_committed());
+        if let Some(n) = cmd.notify_committed() {
+            effect.notify(n);
+        }
 
         {
             let sender = self.rid;
             let epoch = self.epoch.load();
             clone!(cmd, deps);
-            let msg = Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
-            effect.broadcast_commit(selected_peers.acc, selected_peers.others, msg);
+            effect.broadcast_commit(
+                selected_peers.acc,
+                selected_peers.others,
+                Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
+            );
         }
 
-        effect.execution(id, cmd, seq, deps);
+        {
+            effect.execution(id, cmd, seq, deps);
+        }
 
         Ok(effect)
     }
@@ -510,7 +511,10 @@ impl<S: LogStore> Replica<S> {
         drop(guard);
 
         let mut effect = Effect::new();
-        effect.reply(msg.sender, Message::JoinOk(JoinOk { sender: self.rid }));
+        {
+            let target = msg.sender;
+            effect.reply(target, Message::JoinOk(JoinOk { sender: self.rid }));
+        }
         Ok(effect)
     }
 
@@ -527,232 +531,5 @@ impl<S: LogStore> Replica<S> {
         drop(guard);
 
         Ok(Effect::new())
-    }
-}
-
-struct State<S: LogStore> {
-    peers: Peers,
-
-    store: S,
-
-    lid_head: LocalInstanceId,
-
-    max_key_map: HashMap<CommandKey<S>, MaxKey>,
-    max_lid_map: VecMap<ReplicaId, MaxLid>,
-    max_seq: MaxSeq,
-
-    ins_cache: FnvHashMap<InstanceId, Instance<S::Command>>,
-    pbal_cache: FnvHashMap<InstanceId, Ballot>,
-
-    temporaries: FnvHashMap<InstanceId, Temporary>,
-}
-
-type CommandKey<S> = <<S as LogStore>::Command as CommandLike>::Key;
-
-struct MaxKey {
-    seq: Seq,
-    lids: VecMap<ReplicaId, LocalInstanceId>,
-}
-
-struct MaxLid {
-    checkpoint: LocalInstanceId,
-    any: LocalInstanceId,
-}
-
-struct MaxSeq {
-    checkpoint: Seq,
-    any: Seq,
-}
-
-impl<S: LogStore> State<S> {
-    async fn new(rid: ReplicaId, mut store: S, peers: VecSet<ReplicaId>) -> Result<Self> {
-        let peers = Peers::new(peers);
-
-        let attr_bounds = store.load_attr_bounds().await?;
-
-        let lid_head = attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO);
-
-        let max_key_map = HashMap::new();
-
-        let max_lid_map = attr_bounds
-            .max_lids
-            .iter()
-            .copied()
-            .map(|(rid, lid)| {
-                let max_lid = MaxLid { checkpoint: lid, any: lid };
-                (rid, max_lid)
-            })
-            .collect();
-
-        let max_seq = MaxSeq { checkpoint: attr_bounds.max_seq, any: attr_bounds.max_seq };
-
-        let ins_cache = FnvHashMap::default();
-        let pbal_cache = FnvHashMap::default();
-
-        let temporaries = FnvHashMap::default();
-
-        Ok(Self {
-            peers,
-            store,
-            lid_head,
-            max_key_map,
-            max_lid_map,
-            max_seq,
-            ins_cache,
-            pbal_cache,
-            temporaries,
-        })
-    }
-
-    fn generate_lid(&mut self) -> LocalInstanceId {
-        self.lid_head = self.lid_head.add_one();
-        self.lid_head
-    }
-
-    fn calc_attributes(&self, id: InstanceId, keys: &Keys<S::Command>) -> (Seq, Deps) {
-        let mut deps = Deps::with_capacity(self.max_lid_map.len());
-        let mut seq = Seq::ZERO;
-        let InstanceId(rid, lid) = id;
-
-        match keys {
-            Keys::Bounded(ref keys) => {
-                let conflicts: _ = keys.iter().filter_map(|k: _| self.max_key_map.get(k));
-                for m in conflicts {
-                    let others: _ = m.lids.iter().filter(|(r, _)| *r != rid);
-                    for &(r, l) in others {
-                        deps.insert(InstanceId(r, l));
-                    }
-                    max_assign(&mut seq, m.seq);
-                }
-                let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
-                for &(r, ref m) in others {
-                    deps.insert(InstanceId(r, m.checkpoint));
-                }
-                max_assign(&mut seq, self.max_seq.checkpoint);
-            }
-            Keys::Unbounded => {
-                let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
-                for &(r, ref m) in others {
-                    deps.insert(InstanceId(r, m.any));
-                }
-                max_assign(&mut seq, self.max_seq.any);
-            }
-        }
-        if lid > LocalInstanceId::ONE {
-            deps.insert(InstanceId(rid, lid.sub_one()));
-        }
-        seq = seq.add_one();
-        (seq, deps)
-    }
-
-    fn update_attrs(&mut self, id: InstanceId, keys: Keys<S::Command>, seq: Seq) {
-        let InstanceId(rid, lid) = id;
-
-        match keys {
-            Keys::Bounded(keys) => {
-                for k in keys.into_iter() {
-                    match self.max_key_map.entry(k) {
-                        hash_map::Entry::Occupied(mut e) => {
-                            let m = e.get_mut();
-                            max_assign(&mut m.seq, seq);
-                            m.lids.update(rid, |l| max_assign(l, lid), || lid);
-                        }
-                        hash_map::Entry::Vacant(e) => {
-                            let mut lids = VecMap::new();
-                            let _ = lids.insert(rid, lid);
-                            e.insert(MaxKey { seq, lids });
-                        }
-                    }
-                }
-
-                self.max_lid_map.update(
-                    rid,
-                    |m| max_assign(&mut m.any, lid),
-                    || MaxLid { checkpoint: lid, any: lid },
-                );
-
-                max_assign(&mut self.max_seq.any, seq);
-            }
-            Keys::Unbounded => {
-                self.max_lid_map.update(
-                    rid,
-                    |m| {
-                        max_assign(&mut m.checkpoint, lid);
-                        max_assign(&mut m.any, lid);
-                    },
-                    || MaxLid { checkpoint: lid, any: lid },
-                );
-
-                max_assign(&mut self.max_seq.checkpoint, seq);
-                max_assign(&mut self.max_seq.any, seq);
-            }
-        }
-    }
-
-    async fn save_full(&mut self, id: InstanceId, ins: Instance<S::Command>) -> Result<()> {
-        self.store.save_full(id, &ins).await?;
-        let _ = self.ins_cache.insert(id, ins);
-        let _ = self.pbal_cache.remove(&id);
-        Ok(())
-    }
-
-    async fn save_partial(&mut self, id: InstanceId, ins: PartialInstance) -> Result<()> {
-        self.store.save_partial(id, &ins).await?;
-        if let Some(c) = self.ins_cache.get_mut(&id) {
-            c.pbal = ins.pbal;
-            c.seq = ins.seq;
-            c.deps = ins.deps;
-            c.abal = ins.abal;
-            c.status = ins.status;
-            c.acc = ins.acc;
-        } else if let Some(p) = self.pbal_cache.get_mut(&id) {
-            *p = ins.pbal;
-        }
-
-        Ok(())
-    }
-
-    async fn load(&mut self, id: InstanceId) -> Result<()> {
-        if self.ins_cache.contains_key(&id).not() {
-            if let Some(ins) = self.store.load_full(id).await? {
-                let _ = self.ins_cache.insert(id, ins);
-                let _ = self.pbal_cache.remove(&id);
-            } else if self.pbal_cache.contains_key(&id).not() {
-                if let Some(pbal) = self.store.load_pbal(id).await? {
-                    let _ = self.pbal_cache.insert(id, pbal);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn get_cached_pbal(&self, id: InstanceId) -> Option<Ballot> {
-        if let Some(ins) = self.ins_cache.get(&id) {
-            return Some(ins.pbal);
-        }
-        self.pbal_cache.get(&id).copied()
-    }
-
-    fn get_cached_ins(&self, id: InstanceId) -> Option<&Instance<S::Command>> {
-        self.ins_cache.get(&id)
-    }
-
-    fn should_ignore(&mut self, id: InstanceId, pbal: Ballot, next_status: Status) -> bool {
-        if let Some(saved_pbal) = self.get_cached_pbal(id) {
-            if saved_pbal != pbal {
-                return true;
-            }
-        }
-
-        if let Some(ins) = self.ins_cache.get(&id) {
-            let abal = ins.abal;
-            let status = ins.status;
-
-            if (pbal, next_status) <= (abal, status) {
-                return true;
-            }
-        }
-
-        false
     }
 }

@@ -29,8 +29,8 @@ where
     where
         Self: Sized;
 
-    fn notify_committed(&self) -> Self::Notify;
-    fn notify_executed(&self) -> Self::Notify;
+    fn notify_committed(&self) -> Option<Self::Notify>;
+    fn notify_executed(&self) -> Option<Self::Notify>;
 }
 
 pub enum Keys<C: CommandLike> {

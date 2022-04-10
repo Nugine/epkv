@@ -23,15 +23,6 @@ pub struct Instance<C> {
     pub acc: VecSet<ReplicaId>,
 }
 
-pub struct PartialInstance {
-    pub pbal: Ballot,
-    pub seq: Seq,
-    pub deps: Deps,
-    pub abal: Ballot,
-    pub status: Status,
-    pub acc: VecSet<ReplicaId>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
