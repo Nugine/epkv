@@ -11,6 +11,7 @@ use crate::types::*;
 
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
+use epkv_utils::time::LocalInstant;
 use epkv_utils::vecset::VecSet;
 
 use std::cmp::Ordering;
@@ -48,7 +49,11 @@ impl<S: LogStore> Replica<S> {
         Ok(Self { rid, config, state, epoch })
     }
 
-    pub async fn handle_message(&self, msg: Message<S::Command>) -> Result<Effect<S::Command>> {
+    pub async fn handle_message(
+        &self,
+        msg: Message<S::Command>,
+        time: LocalInstant,
+    ) -> Result<Effect<S::Command>> {
         match msg {
             Message::PreAccept(msg) => {
                 self.handle_preaccept(msg).await //
@@ -88,6 +93,12 @@ impl<S: LogStore> Replica<S> {
             }
             Message::Leave(msg) => {
                 self.handle_leave(msg).await //
+            }
+            Message::ProbeRtt(msg) => {
+                self.handle_probe_rtt(msg).await //
+            }
+            Message::ProbeRttOk(msg) => {
+                self.handle_probe_rtt_ok(msg, time).await //
             }
         }
     }
@@ -986,6 +997,47 @@ impl<S: LogStore> Replica<S> {
         let s = &mut *guard;
 
         s.peers.remove(msg.sender);
+
+        drop(guard);
+
+        Ok(Effect::new())
+    }
+
+    pub async fn probe_rtt(&self, time: LocalInstant) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let targets = s.peers.select_all();
+
+        drop(guard);
+
+        let mut effect = Effect::new();
+        let sender = self.rid;
+        effect.broadcast(targets, Message::ProbeRtt(ProbeRtt { sender, time }));
+        Ok(effect)
+    }
+
+    async fn handle_probe_rtt(&self, msg: ProbeRtt) -> Result<Effect<S::Command>> {
+        let mut effect: _ = Effect::new();
+        let target = msg.sender;
+        let sender = self.rid;
+        let time = msg.time;
+        effect.reply(target, Message::ProbeRttOk(ProbeRttOk { sender, time }));
+        Ok(effect)
+    }
+
+    async fn handle_probe_rtt_ok(
+        &self,
+        msg: ProbeRttOk,
+        time: LocalInstant,
+    ) -> Result<Effect<S::Command>> {
+        let peer = msg.sender;
+        let rtt = time.saturating_duration_since(msg.time);
+
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        s.peers.set_rtt(peer, rtt);
 
         drop(guard);
 

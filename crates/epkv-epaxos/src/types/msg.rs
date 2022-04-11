@@ -3,6 +3,7 @@ use super::id::{Ballot, InstanceId, ReplicaId, Seq};
 use super::ins::Status;
 use super::Epoch;
 
+use epkv_utils::time::LocalInstant;
 use epkv_utils::vecset::VecSet;
 
 use serde::{Deserialize, Serialize};
@@ -124,6 +125,18 @@ pub struct Leave {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct ProbeRtt {
+    pub sender: ReplicaId,
+    pub time: LocalInstant,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProbeRttOk {
+    pub sender: ReplicaId,
+    pub time: LocalInstant,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Message<C> {
     PreAccept(PreAccept<C>),
     PreAcceptOk(PreAcceptOk),
@@ -138,6 +151,8 @@ pub enum Message<C> {
     Join(Join),
     JoinOk(JoinOk),
     Leave(Leave),
+    ProbeRtt(ProbeRtt),
+    ProbeRttOk(ProbeRttOk),
 }
 
 pub enum PreAcceptReply {
