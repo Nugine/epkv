@@ -12,6 +12,7 @@ pub mod asc;
 pub mod atomic_flag;
 pub mod cmp;
 pub mod codec;
+pub mod time;
 pub mod vecmap;
 pub mod vecset;
 
