@@ -25,6 +25,9 @@ pub struct Round(u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Ballot(pub Round, pub ReplicaId);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct SyncId(u64);
+
 macro_rules! impl_newtype {
     ($($ty: ident($inner: ident),)+) => {
         $(
@@ -59,6 +62,7 @@ impl_newtype!(
     Epoch(u64),
     Seq(u64),
     Round(u64),
+    SyncId(u64),
 );
 
 macro_rules! impl_add_one {
@@ -76,7 +80,7 @@ macro_rules! impl_add_one {
     };
 }
 
-impl_add_one!(LocalInstanceId, Seq, Round,);
+impl_add_one!(LocalInstanceId, Seq, Round, SyncId,);
 
 macro_rules! impl_sub_one {
     ($($ty: ident,)+) => {

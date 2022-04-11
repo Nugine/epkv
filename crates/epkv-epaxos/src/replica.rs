@@ -104,6 +104,15 @@ impl<S: LogStore> Replica<S> {
             Message::ProbeRttOk(msg) => {
                 self.handle_probe_rtt_ok(msg, time).await //
             }
+            Message::AskLog(msg) => {
+                self.handle_ask_log(msg).await //
+            }
+            Message::SyncLog(msg) => {
+                self.handle_sync_log(msg).await //
+            }
+            Message::SyncLogOk(msg) => {
+                self.handle_sync_log_ok(msg).await //
+            }
         }
     }
 
@@ -1079,5 +1088,20 @@ impl<S: LogStore> Replica<S> {
         drop(guard);
 
         Ok(Effect::new())
+    }
+
+    async fn handle_ask_log(&self, msg: AskLog) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_sync_log(
+        &self,
+        msg: SyncLog<<S as LogStore>::Command>,
+    ) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_sync_log_ok(&self, msg: SyncLogOk) -> Result<Effect<S::Command>> {
+        todo!()
     }
 }

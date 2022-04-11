@@ -13,6 +13,7 @@ pub enum Status {
     Executed = 5,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Instance<C> {
     pub pbal: Ballot,
     pub cmd: C,

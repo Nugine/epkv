@@ -1,9 +1,10 @@
 use super::deps::Deps;
 use super::id::{Ballot, InstanceId, ReplicaId, Seq};
 use super::ins::Status;
-use super::Epoch;
+use super::{Epoch, Instance, LocalInstanceId, SyncId};
 
 use epkv_utils::time::LocalInstant;
+use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
 use serde::{Deserialize, Serialize};
@@ -137,6 +138,26 @@ pub struct ProbeRttOk {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct AskLog {
+    pub sender: ReplicaId,
+    pub known_up_to: VecMap<ReplicaId, LocalInstanceId>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncLog<C> {
+    pub sender: ReplicaId,
+    pub needs_reply: bool,
+    pub sync_id: SyncId,
+    pub instances: Vec<(InstanceId, Instance<C>)>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncLogOk {
+    pub sender: ReplicaId,
+    pub sync_id: SyncId,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Message<C> {
     PreAccept(PreAccept<C>),
     PreAcceptOk(PreAcceptOk),
@@ -153,6 +174,9 @@ pub enum Message<C> {
     Leave(Leave),
     ProbeRtt(ProbeRtt),
     ProbeRttOk(ProbeRttOk),
+    AskLog(AskLog),
+    SyncLog(SyncLog<C>),
+    SyncLogOk(SyncLogOk),
 }
 
 pub enum PreAcceptReply {
