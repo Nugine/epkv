@@ -49,6 +49,10 @@ impl<S: LogStore> Replica<S> {
         Ok(Self { rid, config, state, epoch })
     }
 
+    pub fn config(&self) -> &ReplicaConfig {
+        &self.config
+    }
+
     pub async fn handle_message(
         &self,
         msg: Message<S::Command>,
@@ -99,6 +103,39 @@ impl<S: LogStore> Replica<S> {
             }
             Message::ProbeRttOk(msg) => {
                 self.handle_probe_rtt_ok(msg, time).await //
+            }
+        }
+    }
+
+    pub async fn handle_timeout(&self, kind: TimeoutKind) -> Result<Effect<S::Command>> {
+        match kind {
+            TimeoutKind::Recover { id } => {
+                self.recover(id).await //
+            }
+            TimeoutKind::PreAccept { id } => {
+                let mut guard = self.state.lock().await;
+                let s = &mut *guard;
+
+                let temp = match s.temporaries.get_mut(&id) {
+                    Some(Temporary::PreAccepting(t)) => t,
+                    _ => return Ok(Effect::new()),
+                };
+
+                let cluster_size = s.peers.cluster_size();
+                if temp.received.len() < cluster_size / 2 {
+                    return Ok(Effect::new());
+                }
+
+                s.log.load(id).await?;
+                let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
+
+                let cmd = None;
+                let seq = temp.seq;
+                let deps = mem::take(&mut temp.deps);
+                let acc = mem::take(&mut temp.acc);
+                let _ = s.temporaries.remove(&id);
+
+                self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
             }
         }
     }
@@ -171,7 +208,7 @@ impl<S: LogStore> Replica<S> {
             );
         }
         if pbal.0 == Round::ZERO {
-            let conf = &self.config.recover;
+            let conf = &self.config.recover_timeout;
             let duration = conf.with(avg_rtt, |d| {
                 let rate: f64 = rand::thread_rng().gen_range(3.0..5.0);
                 #[allow(clippy::float_arithmetic)]
@@ -344,11 +381,11 @@ impl<S: LogStore> Replica<S> {
 
                 drop(guard);
 
-                let conf = &self.config.fastpath_timeout;
+                let conf = &self.config.preaccept_timeout;
                 let duration = conf.with(avg_rtt, |d| d / 2);
 
                 let mut effect = Effect::new();
-                effect.timeout(duration, TimeoutKind::PreAcceptFastPath { id });
+                effect.timeout(duration, TimeoutKind::PreAccept { id });
                 Ok(effect)
             }
         }
@@ -682,7 +719,7 @@ impl<S: LogStore> Replica<S> {
             )
         }
         {
-            let conf = &self.config.recover;
+            let conf = &self.config.recover_timeout;
             let duration = conf.with(avg_rtt, |d| {
                 let rate: f64 = rand::thread_rng().gen_range(3.0..5.0);
                 #[allow(clippy::float_arithmetic)]
@@ -825,7 +862,7 @@ impl<S: LogStore> Replica<S> {
 
                 drop(guard);
 
-                let conf = &self.config.recover;
+                let conf = &self.config.recover_timeout;
                 let duration = conf.with(avg_rtt, |d| {
                     let rate: f64 = rand::thread_rng().gen_range(1.0..4.0);
                     #[allow(clippy::float_arithmetic)]

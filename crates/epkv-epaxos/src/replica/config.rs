@@ -5,17 +5,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ReplicaConfig {
-    pub fastpath_timeout: FastPathTimeout,
-    pub recover: Recover,
+    pub preaccept_timeout: PreAcceptTimeout,
+    pub recover_timeout: RecoverTimeout,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct FastPathTimeout {
+pub struct PreAcceptTimeout {
     pub default: Duration,
     pub enable_adaptive: bool,
 }
 
-impl FastPathTimeout {
+impl PreAcceptTimeout {
     pub fn with(
         &self,
         avg_rtt: Option<Duration>,
@@ -33,12 +33,12 @@ impl FastPathTimeout {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Recover {
+pub struct RecoverTimeout {
     pub default: Duration,
     pub enable_adaptive: bool,
 }
 
-impl Recover {
+impl RecoverTimeout {
     pub fn with(
         &self,
         avg_rtt: Option<Duration>,

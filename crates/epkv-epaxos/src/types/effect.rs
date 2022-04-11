@@ -37,7 +37,7 @@ pub struct Execution<C> {
 }
 
 pub enum TimeoutKind {
-    PreAcceptFastPath { id: InstanceId },
+    PreAccept { id: InstanceId },
     Recover { id: InstanceId },
 }
 
