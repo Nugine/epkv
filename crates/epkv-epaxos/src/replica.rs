@@ -1090,15 +1090,103 @@ impl<S: LogStore> Replica<S> {
         Ok(Effect::new())
     }
 
-    async fn handle_ask_log(&self, msg: AskLog) -> Result<Effect<S::Command>> {
-        todo!()
+    pub async fn start_syncing(&self) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        s.log.update_bounds();
+        let known_up_to = s.log.known_up_to();
+
+        let target = s.peers.select_one();
+
+        drop(guard);
+
+        let mut effect = Effect::new();
+        {
+            let sender = self.rid;
+            let targets = VecSet::from_iter(Some(target));
+            effect.broadcast(targets, Message::AskLog(AskLog { sender, known_up_to }));
+        }
+        Ok(effect)
     }
 
-    async fn handle_sync_log(
-        &self,
-        msg: SyncLog<<S as LogStore>::Command>,
-    ) -> Result<Effect<S::Command>> {
-        todo!()
+    async fn handle_ask_log(&self, msg: AskLog) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        s.log.update_bounds();
+        let local_known_up_to = s.log.known_up_to();
+
+        let target = msg.sender;
+        let sender = self.rid;
+        let mut effect = Effect::new();
+        for &(rid, lower) in msg.known_up_to.iter() {
+            let mut instances: Vec<(InstanceId, Instance<S::Command>)> = Vec::new();
+            if let Some(&higher) = local_known_up_to.get(&rid) {
+                let limit = self.config.sync_limits.max_instance_num;
+                let start = lower.add_one().raw_value();
+                let end = start.saturating_add(limit).min(higher.raw_value());
+                for raw_lid in start..=end {
+                    let lid = LocalInstanceId::from(raw_lid);
+                    let id = InstanceId(rid, lid);
+                    s.log.load(id).await?;
+                    if let Some(ins) = s.log.get_cached_ins(id) {
+                        instances.push((id, ins.clone()))
+                    }
+                }
+            }
+
+            let sync_id = s.sync_id_head.gen_next();
+            let needs_reply = false;
+            effect.reply(
+                target,
+                Message::SyncLog(SyncLog { sender, needs_reply, sync_id, instances }),
+            )
+        }
+
+        drop(guard);
+
+        Ok(effect)
+    }
+
+    async fn handle_sync_log(&self, msg: SyncLog<S::Command>) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let mut effect = Effect::new();
+        for (id, mut ins) in msg.instances {
+            s.log.load(id).await?;
+            match s.log.get_cached_ins(id) {
+                None => {
+                    s.log.save(id, ins, UpdateMode::Full).await?;
+                }
+                Some(saved_ins) => {
+                    if saved_ins.status < Status::Committed && ins.status >= Status::Committed {
+                        max_assign(&mut ins.pbal, saved_ins.pbal);
+                        max_assign(&mut ins.abal, saved_ins.abal);
+                        let _ = ins.acc.insert(self.rid);
+                        let mode = if saved_ins.cmd.is_nop() != ins.cmd.is_nop() {
+                            UpdateMode::Full
+                        } else {
+                            UpdateMode::Partial
+                        };
+                        effect.execution(id, ins.cmd.clone(), ins.seq, ins.deps.clone());
+                        s.log.save(id, ins, mode).await?;
+                    }
+                }
+            }
+        }
+
+        drop(guard);
+
+        if msg.needs_reply {
+            let target = msg.sender;
+            let sender = self.rid;
+            let sync_id = msg.sync_id;
+            effect.reply(target, Message::SyncLogOk(SyncLogOk { sender, sync_id }));
+        }
+
+        Ok(effect)
     }
 
     async fn handle_sync_log_ok(&self, msg: SyncLogOk) -> Result<Effect<S::Command>> {

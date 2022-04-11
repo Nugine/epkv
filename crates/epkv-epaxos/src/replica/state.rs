@@ -19,6 +19,7 @@ pub struct State<S: LogStore> {
     pub temporaries: FnvHashMap<InstanceId, Temporary<S::Command>>,
     pub joining: Option<VecSet<ReplicaId>>,
     pub lid_head: LidHead,
+    pub sync_id_head: SyncIdHead,
     pub log: Log<S>,
 }
 
@@ -26,6 +27,15 @@ pub struct LidHead(LocalInstanceId);
 
 impl LidHead {
     pub fn gen_next(&mut self) -> LocalInstanceId {
+        self.0 = self.0.add_one();
+        self.0
+    }
+}
+
+pub struct SyncIdHead(SyncId);
+
+impl SyncIdHead {
+    pub fn gen_next(&mut self) -> SyncId {
         self.0 = self.0.add_one();
         self.0
     }
@@ -73,6 +83,8 @@ impl<S: LogStore> State<S> {
         let lid_head =
             LidHead(attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO));
 
+        let sync_id_head = SyncIdHead(SyncId::ZERO);
+
         let max_key_map = HashMap::new();
 
         let max_lid_map = attr_bounds
@@ -100,7 +112,7 @@ impl<S: LogStore> State<S> {
             pbal_cache,
         };
 
-        Ok(Self { peers, temporaries, joining, lid_head, log })
+        Ok(Self { peers, temporaries, joining, lid_head, sync_id_head, log })
     }
 }
 
@@ -271,5 +283,13 @@ impl<S: LogStore> Log<S> {
             }
         }
         false
+    }
+
+    pub fn update_bounds(&mut self) {
+        self.status_bounds.update_bounds();
+    }
+
+    pub fn known_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
+        self.status_bounds.known_up_to()
     }
 }

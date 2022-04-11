@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct ReplicaConfig {
     pub preaccept_timeout: PreAcceptTimeout,
     pub recover_timeout: RecoverTimeout,
+    pub sync_limits: SyncLimits,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,4 +54,9 @@ impl RecoverTimeout {
             self.default
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SyncLimits {
+    pub max_instance_num: u64,
 }

@@ -57,6 +57,7 @@ where
 impl Peers {
     #[must_use]
     pub fn new(peers: VecSet<ReplicaId>) -> Self {
+        assert!(peers.len() >= 2);
         let mut rank: Vec<_> = copied_map_collect(peers.iter(), |peer| (u64::MAX, peer));
         sort_rank(&mut rank);
         Self { peers, rank, avg: Avg { sum: 0, cnt: 0 } }
@@ -126,5 +127,10 @@ impl Peers {
         };
 
         SelectedPeers { acc: ans_acc, others: ans_others }
+    }
+
+    #[must_use]
+    pub fn select_one(&self) -> ReplicaId {
+        self.rank.first().expect("peer should exist").1
     }
 }
