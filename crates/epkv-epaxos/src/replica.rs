@@ -94,9 +94,9 @@ impl<S: LogStore> Replica<S> {
 
     pub async fn propose(&self, cmd: S::Command) -> Result<Effect<S::Command>> {
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
-        let id = InstanceId(self.rid, state.generate_lid());
+        let id = InstanceId(self.rid, s.lid_head.gen_next());
         let pbal = Ballot(Round::ZERO, self.rid);
         let acc = VecSet::<ReplicaId>::with_capacity(1);
 
@@ -111,19 +111,19 @@ impl<S: LogStore> Replica<S> {
         cmd: Option<S::Command>,
         mut acc: VecSet<ReplicaId>,
     ) -> Result<Effect<S::Command>> {
-        let state = &mut *guard;
+        let s = &mut *guard;
 
-        state.load(id).await?;
+        s.log.load(id).await?;
 
         let (cmd, mode) = match cmd {
             Some(cmd) => (cmd, UpdateMode::Full),
             None => {
-                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
                 (ins.cmd.clone(), UpdateMode::Partial)
             }
         };
 
-        let (seq, deps) = state.calc_attributes(id, &cmd.keys());
+        let (seq, deps) = s.log.calc_attributes(id, &cmd.keys());
 
         let abal = pbal;
         let status = Status::PreAccepted;
@@ -132,20 +132,20 @@ impl<S: LogStore> Replica<S> {
         {
             clone!(cmd, deps, acc);
             let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            state.save(id, ins, mode).await?;
+            s.log.save(id, ins, mode).await?;
         }
 
-        let quorum = state.peers.cluster_size().wrapping_sub(2);
-        let selected_peers = state.peers.select(quorum, &acc);
+        let quorum = s.peers.cluster_size().wrapping_sub(2);
+        let selected_peers = s.peers.select(quorum, &acc);
 
         {
             clone!(deps, acc);
             let received = VecSet::new();
             let temp = PreAccepting { received, seq, deps, all_same: true, acc };
-            let _ = state.temporaries.insert(id, Temporary::PreAccepting(temp));
+            let _ = s.temporaries.insert(id, Temporary::PreAccepting(temp));
         }
 
-        let avg_rtt = state.peers.get_avg_rtt();
+        let avg_rtt = s.peers.get_avg_rtt();
 
         drop(guard);
 
@@ -178,29 +178,29 @@ impl<S: LogStore> Replica<S> {
         }
 
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let id = msg.id;
         let pbal = msg.pbal;
 
-        state.load(id).await?;
+        s.log.load(id).await?;
 
-        if state.should_ignore_pbal(id, pbal) {
+        if s.log.should_ignore_pbal(id, pbal) {
             return Ok(Effect::new());
         }
-        if state.should_ignore_status(id, pbal, Status::PreAccepted) {
+        if s.log.should_ignore_status(id, pbal, Status::PreAccepted) {
             return Ok(Effect::new());
         }
 
         let (cmd, mode) = match msg.cmd {
             Some(cmd) => (cmd, UpdateMode::Full),
             None => {
-                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
                 (ins.cmd.clone(), UpdateMode::Partial)
             }
         };
 
-        let (mut seq, mut deps) = state.calc_attributes(id, &cmd.keys());
+        let (mut seq, mut deps) = s.log.calc_attributes(id, &cmd.keys());
         max_assign(&mut seq, msg.seq);
         deps.merge(&msg.deps);
 
@@ -215,7 +215,7 @@ impl<S: LogStore> Replica<S> {
         {
             clone!(deps);
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            state.save(id, ins, mode).await?
+            s.log.save(id, ins, mode).await?
         }
 
         drop(guard);
@@ -248,26 +248,26 @@ impl<S: LogStore> Replica<S> {
         }
 
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let (id, pbal) = match msg {
             PreAcceptReply::Ok(ref msg) => (msg.id, msg.pbal),
             PreAcceptReply::Diff(ref msg) => (msg.id, msg.pbal),
         };
 
-        state.load(id).await?;
+        s.log.load(id).await?;
 
-        if state.should_ignore_pbal(id, pbal) {
+        if s.log.should_ignore_pbal(id, pbal) {
             return Ok(Effect::new());
         }
 
-        let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+        let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
 
         if ins.status != Status::PreAccepted {
             return Ok(Effect::new());
         }
 
-        let temp = match state.temporaries.get_mut(&id) {
+        let temp = match s.temporaries.get_mut(&id) {
             Some(Temporary::PreAccepting(t)) => t,
             _ => return Ok(Effect::new()),
         };
@@ -298,7 +298,7 @@ impl<S: LogStore> Replica<S> {
             }
         }
 
-        let cluster_size = state.peers.cluster_size();
+        let cluster_size = s.peers.cluster_size();
 
         if temp.received.len() < cluster_size / 2 {
             return Ok(Effect::new());
@@ -320,7 +320,7 @@ impl<S: LogStore> Replica<S> {
                 let seq = temp.seq;
                 let deps = mem::take(&mut temp.deps);
                 let acc = mem::take(&mut temp.acc);
-                let _ = state.temporaries.remove(&id);
+                let _ = s.temporaries.remove(&id);
 
                 if is_fast_path {
                     self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await
@@ -329,7 +329,7 @@ impl<S: LogStore> Replica<S> {
                 }
             }
             None => {
-                let avg_rtt = state.peers.get_avg_rtt();
+                let avg_rtt = s.peers.get_avg_rtt();
 
                 drop(guard);
 
@@ -354,19 +354,19 @@ impl<S: LogStore> Replica<S> {
         deps: Deps,
         acc: VecSet<ReplicaId>,
     ) -> Result<Effect<S::Command>> {
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let abal = pbal;
         let status = Status::Accepted;
 
-        let quorum = state.peers.cluster_size() / 2;
-        let selected_peers = state.peers.select(quorum, &acc);
+        let quorum = s.peers.cluster_size() / 2;
+        let selected_peers = s.peers.select(quorum, &acc);
 
         let (cmd, mode) = match cmd {
             Some(cmd) => (cmd, UpdateMode::Full),
             None => {
-                state.load(id).await?;
-                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                s.log.load(id).await?;
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
                 (ins.cmd.clone(), UpdateMode::Partial)
             }
         };
@@ -374,14 +374,14 @@ impl<S: LogStore> Replica<S> {
         {
             clone!(cmd, deps, acc);
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            state.save(id, ins, mode).await?;
+            s.log.save(id, ins, mode).await?;
         }
 
         {
             clone!(acc);
             let received = VecSet::new();
             let temp = Accepting { received, acc };
-            let _ = state.temporaries.insert(id, Temporary::Accepting(temp));
+            let _ = s.temporaries.insert(id, Temporary::Accepting(temp));
         }
 
         drop(guard);
@@ -405,17 +405,17 @@ impl<S: LogStore> Replica<S> {
         }
 
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let id = msg.id;
         let pbal = msg.pbal;
 
-        state.load(id).await?;
+        s.log.load(id).await?;
 
-        if state.should_ignore_pbal(id, pbal) {
+        if s.log.should_ignore_pbal(id, pbal) {
             return Ok(Effect::new());
         }
-        if state.should_ignore_status(id, pbal, Status::Accepted) {
+        if s.log.should_ignore_status(id, pbal, Status::Accepted) {
             return Ok(Effect::new());
         }
 
@@ -431,14 +431,14 @@ impl<S: LogStore> Replica<S> {
         let (cmd, mode) = match msg.cmd {
             Some(cmd) => (cmd, UpdateMode::Full),
             None => {
-                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
                 (ins.cmd.clone(), UpdateMode::Partial)
             }
         };
 
         {
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            state.save(id, ins, mode).await?;
+            s.log.save(id, ins, mode).await?;
         }
 
         drop(guard);
@@ -464,18 +464,18 @@ impl<S: LogStore> Replica<S> {
         }
 
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let id = msg.id;
         let pbal = msg.pbal;
 
-        state.load(id).await?;
+        s.log.load(id).await?;
 
-        if state.should_ignore_pbal(id, pbal) {
+        if s.log.should_ignore_pbal(id, pbal) {
             return Ok(Effect::new());
         }
 
-        let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+        let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
 
         if ins.status != Status::Accepted {
             return Ok(Effect::new());
@@ -484,7 +484,7 @@ impl<S: LogStore> Replica<S> {
         let seq = ins.seq;
         let deps = ins.deps.clone();
 
-        let temp = match state.temporaries.get_mut(&id) {
+        let temp = match s.temporaries.get_mut(&id) {
             Some(Temporary::Accepting(t)) => t,
             _ => return Ok(Effect::new()),
         };
@@ -496,14 +496,14 @@ impl<S: LogStore> Replica<S> {
             let _ = temp.acc.insert(msg.sender);
         }
 
-        let cluster_size = state.peers.cluster_size();
+        let cluster_size = s.peers.cluster_size();
 
         if temp.received.len() < cluster_size / 2 {
             return Ok(Effect::new());
         }
 
         let acc = mem::take(&mut temp.acc);
-        let _ = state.temporaries.remove(&id);
+        let _ = s.temporaries.remove(&id);
 
         let cmd = None;
         self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await
@@ -520,19 +520,19 @@ impl<S: LogStore> Replica<S> {
         deps: Deps,
         acc: VecSet<ReplicaId>,
     ) -> Result<Effect<S::Command>> {
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let abal = pbal;
         let status = Status::Committed;
 
-        let quorum = state.peers.cluster_size().wrapping_sub(1);
-        let selected_peers = state.peers.select(quorum, &acc);
+        let quorum = s.peers.cluster_size().wrapping_sub(1);
+        let selected_peers = s.peers.select(quorum, &acc);
 
         let (cmd, mode) = match cmd {
             Some(cmd) => (cmd, UpdateMode::Full),
             None => {
-                state.load(id).await?;
-                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                s.log.load(id).await?;
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
                 (ins.cmd.clone(), UpdateMode::Partial)
             }
         };
@@ -540,7 +540,7 @@ impl<S: LogStore> Replica<S> {
         {
             clone!(cmd, deps, acc);
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            state.save(id, ins, mode).await?;
+            s.log.save(id, ins, mode).await?;
         }
 
         drop(guard);
@@ -575,31 +575,31 @@ impl<S: LogStore> Replica<S> {
         }
 
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let id = msg.id;
         let pbal = msg.pbal;
 
-        state.load(id).await?;
+        s.log.load(id).await?;
 
-        if state.should_ignore_pbal(id, pbal) {
+        if s.log.should_ignore_pbal(id, pbal) {
             return Ok(Effect::new());
         }
 
-        if state.should_ignore_status(id, pbal, Status::Committed) {
+        if s.log.should_ignore_status(id, pbal, Status::Committed) {
             return Ok(Effect::new());
         }
 
         let (cmd, mode) = match msg.cmd {
             Some(cmd) => (cmd, UpdateMode::Full),
             None => {
-                state.load(id).await?;
-                let ins: _ = state.get_cached_ins(id).expect("instance should exist");
+                s.log.load(id).await?;
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
                 (ins.cmd.clone(), UpdateMode::Partial)
             }
         };
 
-        let (status, exec) = match state.get_cached_ins(id) {
+        let (status, exec) = match s.log.get_cached_ins(id) {
             Some(ins) if ins.status > Status::Committed => (ins.status, false),
             _ => (Status::Committed, true),
         };
@@ -615,7 +615,7 @@ impl<S: LogStore> Replica<S> {
         {
             clone!(cmd, deps);
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            state.save(id, ins, mode).await?
+            s.log.save(id, ins, mode).await?
         }
 
         drop(guard);
@@ -629,32 +629,32 @@ impl<S: LogStore> Replica<S> {
 
     async fn recover(&self, id: InstanceId) -> Result<Effect<S::Command>> {
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
-        state.load(id).await?;
+        s.log.load(id).await?;
 
-        if let Some(ins) = state.get_cached_ins(id) {
+        if let Some(ins) = s.log.get_cached_ins(id) {
             if ins.status >= Status::Committed {
                 return Ok(Effect::new());
             }
         }
 
-        let pbal = match state.get_cached_pbal(id) {
+        let pbal = match s.log.get_cached_pbal(id) {
             Some(Ballot(rnd, _)) => Ballot(rnd.add_one(), self.rid),
             None => Ballot(Round::ZERO, self.rid),
         };
 
-        let known = matches!(state.get_cached_ins(id), Some(ins) if ins.cmd.is_nop().not());
+        let known = matches!(s.log.get_cached_ins(id), Some(ins) if ins.cmd.is_nop().not());
 
-        let mut targets = state.peers.select_all();
+        let mut targets = s.peers.select_all();
 
         {
             let received = VecSet::new();
             let temp: _ = Preparing { received, max_abal: None, cmd: None, tuples: Vec::new() };
-            let _ = state.temporaries.insert(id, Temporary::Preparing(temp));
+            let _ = s.temporaries.insert(id, Temporary::Preparing(temp));
         }
 
-        let avg_rtt = state.peers.get_avg_rtt();
+        let avg_rtt = s.peers.get_avg_rtt();
 
         drop(guard);
 
@@ -690,15 +690,15 @@ impl<S: LogStore> Replica<S> {
         }
 
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let id = msg.id;
 
-        state.load(id).await?;
+        s.log.load(id).await?;
 
         let epoch = self.epoch.load();
 
-        if let Some(pbal) = state.get_cached_pbal(id) {
+        if let Some(pbal) = s.log.get_cached_pbal(id) {
             if pbal >= msg.pbal {
                 drop(guard);
                 let mut effect = Effect::new();
@@ -714,9 +714,9 @@ impl<S: LogStore> Replica<S> {
 
         let pbal = msg.pbal;
 
-        state.save_pbal(id, pbal).await?;
+        s.log.save_pbal(id, pbal).await?;
 
-        let ins: _ = match state.get_cached_ins(id) {
+        let ins: _ = match s.log.get_cached_ins(id) {
             Some(ins) => ins,
             None => {
                 drop(guard);
@@ -781,7 +781,7 @@ impl<S: LogStore> Replica<S> {
         }
 
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let id = match msg {
             PrepareReply::Ok(ref msg) => msg.id,
@@ -789,14 +789,14 @@ impl<S: LogStore> Replica<S> {
             PrepareReply::Unchosen(ref msg) => msg.id,
         };
 
-        state.load(id).await?;
+        s.log.load(id).await?;
         if let PrepareReply::Ok(ref msg) = msg {
-            if state.should_ignore_pbal(id, msg.pbal) {
+            if s.log.should_ignore_pbal(id, msg.pbal) {
                 return Ok(Effect::new());
             }
         }
 
-        let temp: _ = match state.temporaries.get_mut(&id) {
+        let temp: _ = match s.temporaries.get_mut(&id) {
             Some(Temporary::Preparing(t)) => t,
             _ => return Ok(Effect::new()),
         };
@@ -806,11 +806,11 @@ impl<S: LogStore> Replica<S> {
                 let _ = temp.received.insert(msg.sender);
             }
             PrepareReply::Nack(msg) => {
-                state.save_pbal(id, msg.pbal).await?;
+                s.log.save_pbal(id, msg.pbal).await?;
 
-                let avg_rtt = state.peers.get_avg_rtt();
+                let avg_rtt = s.peers.get_avg_rtt();
 
-                let _ = state.temporaries.remove(&id);
+                let _ = s.temporaries.remove(&id);
 
                 drop(guard);
 
@@ -851,7 +851,7 @@ impl<S: LogStore> Replica<S> {
             }
         }
 
-        let cluster_size = state.peers.cluster_size();
+        let cluster_size = s.peers.cluster_size();
         if temp.received.len() <= cluster_size / 2 {
             return Ok(Effect::new());
         }
@@ -863,11 +863,11 @@ impl<S: LogStore> Replica<S> {
 
         let cmd = temp.cmd.take();
         let mut tuples = mem::take(&mut temp.tuples);
-        let _ = state.temporaries.remove(&id);
+        let _ = s.temporaries.remove(&id);
 
-        let pbal = state.get_cached_pbal(id).expect("pbal should exist");
+        let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
 
-        let mut acc = match state.get_cached_ins(id) {
+        let mut acc = match s.log.get_cached_ins(id) {
             Some(ins) => ins.acc.clone(),
             None => VecSet::new(),
         };
@@ -918,7 +918,7 @@ impl<S: LogStore> Replica<S> {
             return self.start_phase_preaccept(guard, id, pbal, cmd, acc).await;
         }
 
-        let cmd = match state.get_cached_ins(id) {
+        let cmd = match s.log.get_cached_ins(id) {
             Some(_) => None,
             None => {
                 acc = VecSet::new();
@@ -931,11 +931,11 @@ impl<S: LogStore> Replica<S> {
 
     pub async fn start_joining(&self) -> Result<Effect<S::Command>> {
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
-        state.joining = Some(VecSet::new());
+        s.joining = Some(VecSet::new());
 
-        let targets = state.peers.select_all();
+        let targets = s.peers.select_all();
 
         drop(guard);
 
@@ -947,9 +947,9 @@ impl<S: LogStore> Replica<S> {
 
     async fn handle_join(&self, msg: Join) -> Result<Effect<S::Command>> {
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
-        state.peers.add(msg.sender);
+        s.peers.add(msg.sender);
         self.epoch.update_max(msg.epoch);
 
         drop(guard);
@@ -964,14 +964,14 @@ impl<S: LogStore> Replica<S> {
 
     async fn handle_join_ok(&self, msg: JoinOk) -> Result<Effect<S::Command>> {
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
         let mut effect = Effect::new();
 
-        if let Some(ref mut j) = state.joining {
+        if let Some(ref mut j) = s.joining {
             let _ = j.insert(msg.sender);
-            if j.len() > state.peers.cluster_size() / 2 {
-                state.joining = None;
+            if j.len() > s.peers.cluster_size() / 2 {
+                s.joining = None;
                 effect.join_finished = true;
             }
         }
@@ -983,9 +983,9 @@ impl<S: LogStore> Replica<S> {
 
     async fn handle_leave(&self, msg: Leave) -> Result<Effect<S::Command>> {
         let mut guard = self.state.lock().await;
-        let state = &mut *guard;
+        let s = &mut *guard;
 
-        state.peers.remove(msg.sender);
+        s.peers.remove(msg.sender);
 
         drop(guard);
 

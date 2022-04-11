@@ -18,10 +18,21 @@ pub struct State<S: LogStore> {
     pub peers: Peers,
     pub temporaries: FnvHashMap<InstanceId, Temporary<S::Command>>,
     pub joining: Option<VecSet<ReplicaId>>,
+    pub lid_head: LidHead,
+    pub log: Log<S>,
+}
 
+pub struct LidHead(LocalInstanceId);
+
+impl LidHead {
+    pub fn gen_next(&mut self) -> LocalInstanceId {
+        self.0 = self.0.add_one();
+        self.0
+    }
+}
+
+pub struct Log<S: LogStore> {
     store: S,
-
-    lid_head: LocalInstanceId,
 
     max_key_map: HashMap<CommandKey<S>, MaxKey>,
     max_lid_map: VecMap<ReplicaId, MaxLid>,
@@ -56,7 +67,8 @@ impl<S: LogStore> State<S> {
 
         let attr_bounds = store.load_attr_bounds().await?;
 
-        let lid_head = attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO);
+        let lid_head =
+            LidHead(attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO));
 
         let max_key_map = HashMap::new();
 
@@ -75,25 +87,20 @@ impl<S: LogStore> State<S> {
         let ins_cache = FnvHashMap::default();
         let pbal_cache = FnvHashMap::default();
 
-        Ok(Self {
-            peers,
-            temporaries,
-            joining,
+        let log = Log {
             store,
-            lid_head,
             max_key_map,
             max_lid_map,
             max_seq,
             ins_cache,
             pbal_cache,
-        })
-    }
+        };
 
-    pub fn generate_lid(&mut self) -> LocalInstanceId {
-        self.lid_head = self.lid_head.add_one();
-        self.lid_head
+        Ok(Self { peers, temporaries, joining, lid_head, log })
     }
+}
 
+impl<S: LogStore> Log<S> {
     pub fn calc_attributes(&self, id: InstanceId, keys: &Keys<S::Command>) -> (Seq, Deps) {
         let mut deps = Deps::with_capacity(self.max_lid_map.len());
         let mut seq = Seq::ZERO;
