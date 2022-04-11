@@ -216,6 +216,12 @@ impl<K: Ord, V> VecMap<K, V> {
     pub fn iter(&self) -> Iter<'_, K, V> {
         Iter(self.0.as_slice().iter())
     }
+
+    #[inline]
+    #[must_use]
+    pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
+        IterMut(self.0.as_mut_slice().iter_mut())
+    }
 }
 
 impl<K: Ord, V> From<Vec<(K, V)>> for VecMap<K, V> {
@@ -244,6 +250,22 @@ pub struct Iter<'a, K, V>(slice::Iter<'a, (K, V)>);
 
 impl<'a, K, V> Iterator for Iter<'a, K, V> {
     type Item = &'a (K, V);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+pub struct IterMut<'a, K, V>(slice::IterMut<'a, (K, V)>);
+
+impl<'a, K, V> Iterator for IterMut<'a, K, V> {
+    type Item = &'a mut (K, V);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
