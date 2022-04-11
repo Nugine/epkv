@@ -145,6 +145,8 @@ impl<S: LogStore> Replica<S> {
             let _ = state.temporaries.insert(id, Temporary::PreAccepting(temp));
         }
 
+        let avg_rtt = state.peers.get_avg_rtt();
+
         drop(guard);
 
         let mut effect = Effect::new();
@@ -156,6 +158,16 @@ impl<S: LogStore> Replica<S> {
                 selected_peers.others,
                 PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
             );
+        }
+        if pbal.0 == Round::ZERO {
+            let conf = &self.config.recover;
+            let duration = conf.with(avg_rtt, |d| {
+                let rate: f64 = rand::thread_rng().gen_range(3.0..5.0);
+                #[allow(clippy::float_arithmetic)]
+                let delta = Duration::from_secs_f64(d.as_secs_f64() * rate);
+                conf.default + delta
+            });
+            effect.timeout(duration, TimeoutKind::Recover { id })
         }
         Ok(effect)
     }
@@ -317,13 +329,13 @@ impl<S: LogStore> Replica<S> {
                 }
             }
             None => {
-                let conf = &self.config.fastpath_timeout;
-                let duration = if conf.enable_adaptive {
-                    state.peers.get_avg_rtt().unwrap_or(conf.default)
-                } else {
-                    conf.default
-                };
+                let avg_rtt = state.peers.get_avg_rtt();
+
                 drop(guard);
+
+                let conf = &self.config.fastpath_timeout;
+                let duration = conf.with(avg_rtt, |d| d / 2);
+
                 let mut effect = Effect::new();
                 effect.timeout(duration, TimeoutKind::PreAcceptFastPath { id });
                 Ok(effect)
@@ -642,6 +654,8 @@ impl<S: LogStore> Replica<S> {
             let _ = state.temporaries.insert(id, Temporary::Preparing(temp));
         }
 
+        let avg_rtt = state.peers.get_avg_rtt();
+
         drop(guard);
 
         let _ = targets.insert(self.rid);
@@ -655,6 +669,16 @@ impl<S: LogStore> Replica<S> {
                 targets,
                 Message::Prepare(Prepare { sender, epoch, id, pbal, known }),
             )
+        }
+        {
+            let conf = &self.config.recover;
+            let duration = conf.with(avg_rtt, |d| {
+                let rate: f64 = rand::thread_rng().gen_range(3.0..5.0);
+                #[allow(clippy::float_arithmetic)]
+                let delta = Duration::from_secs_f64(d.as_secs_f64() * rate);
+                conf.default + delta
+            });
+            effect.timeout(duration, TimeoutKind::Recover { id })
         }
 
         Ok(effect)
@@ -784,24 +808,18 @@ impl<S: LogStore> Replica<S> {
             PrepareReply::Nack(msg) => {
                 state.save_pbal(id, msg.pbal).await?;
 
-                let conf = &self.config.recover;
-                let duration = if conf.enable_adaptive {
-                    match state.peers.get_avg_rtt() {
-                        Some(d) => {
-                            let rate: f64 = rand::thread_rng().gen_range(1.0..4.0);
-                            #[allow(clippy::float_arithmetic)]
-                            Duration::from_secs_f64(d.as_secs_f64() * rate)
-                        }
-                        None => conf.default,
-                    }
-                } else {
-                    conf.default
-                };
+                let avg_rtt = state.peers.get_avg_rtt();
 
                 let _ = state.temporaries.remove(&id);
 
                 drop(guard);
 
+                let conf = &self.config.recover;
+                let duration = conf.with(avg_rtt, |d| {
+                    let rate: f64 = rand::thread_rng().gen_range(1.0..4.0);
+                    #[allow(clippy::float_arithmetic)]
+                    Duration::from_secs_f64(d.as_secs_f64() * rate)
+                });
                 let mut effect = Effect::new();
                 effect.timeout(duration, TimeoutKind::Recover { id });
                 return Ok(effect);
@@ -896,7 +914,7 @@ impl<S: LogStore> Replica<S> {
             }
         }
 
-        if let Some(t) = tuples.first_mut() {
+        if tuples.is_empty().not() {
             return self.start_phase_preaccept(guard, id, pbal, cmd, acc).await;
         }
 
