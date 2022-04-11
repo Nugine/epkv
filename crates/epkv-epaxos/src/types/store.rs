@@ -19,6 +19,7 @@ pub trait LogStore: Send + Sync + 'static {
     async fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Result<()>;
 
     async fn load_attr_bounds(&mut self) -> Result<AttrBounds>;
+    async fn load_status_bounds(&mut self) -> Result<StatusBounds>;
 }
 
 pub enum UpdateMode {

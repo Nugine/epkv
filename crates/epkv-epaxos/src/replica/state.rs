@@ -38,6 +38,8 @@ pub struct Log<S: LogStore> {
     max_lid_map: VecMap<ReplicaId, MaxLid>,
     max_seq: MaxSeq,
 
+    status_bounds: StatusBounds,
+
     ins_cache: FnvHashMap<InstanceId, Instance<S::Command>>,
     pbal_cache: FnvHashMap<InstanceId, Ballot>,
 }
@@ -66,6 +68,7 @@ impl<S: LogStore> State<S> {
         let joining = None;
 
         let attr_bounds = store.load_attr_bounds().await?;
+        let status_bounds = store.load_status_bounds().await?;
 
         let lid_head =
             LidHead(attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO));
@@ -92,6 +95,7 @@ impl<S: LogStore> State<S> {
             max_key_map,
             max_lid_map,
             max_seq,
+            status_bounds,
             ins_cache,
             pbal_cache,
         };
@@ -199,6 +203,8 @@ impl<S: LogStore> Log<S> {
             self.update_attrs(id, ins.cmd.keys(), ins.seq);
         }
 
+        self.status_bounds.set(id, ins.status);
+
         let _ = self.ins_cache.insert(id, ins);
         let _ = self.pbal_cache.remove(&id);
         Ok(())
@@ -207,6 +213,7 @@ impl<S: LogStore> Log<S> {
     pub async fn load(&mut self, id: InstanceId) -> Result<()> {
         if self.ins_cache.contains_key(&id).not() {
             if let Some(ins) = self.store.load_instance(id).await? {
+                self.status_bounds.set(id, ins.status);
                 let _ = self.ins_cache.insert(id, ins);
                 let _ = self.pbal_cache.remove(&id);
             } else if self.pbal_cache.contains_key(&id).not() {
