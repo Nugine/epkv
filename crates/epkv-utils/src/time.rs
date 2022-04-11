@@ -25,7 +25,7 @@ impl LocalInstant {
 
     #[inline]
     #[must_use]
-    pub fn saturating_duration_since(&self, earlier: Self) -> Duration {
+    pub const fn saturating_duration_since(&self, earlier: Self) -> Duration {
         let nanos = self.0.saturating_sub(earlier.0);
         Duration::from_nanos(nanos)
     }

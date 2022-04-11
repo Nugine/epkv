@@ -15,7 +15,7 @@ pub struct VecMap<K: Ord, V>(Vec<(K, V)>);
 impl<K: Ord, V> VecMap<K, V> {
     #[inline]
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self(Vec::new())
     }
 
