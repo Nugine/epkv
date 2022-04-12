@@ -152,6 +152,50 @@ impl<T: Ord> VecSet<T> {
     }
 
     #[inline]
+    pub fn intersection_copied(&mut self, other: &Self)
+    where
+        T: Copy,
+    {
+        let lhs = &mut self.0;
+        let rhs = &other.0;
+
+        let ans_cap = lhs.len().checked_add(rhs.len()).unwrap();
+        lhs.reserve(ans_cap);
+
+        unsafe {
+            let mut p1 = lhs.as_ptr();
+            let mut p2 = rhs.as_ptr();
+            let mut p3 = lhs.as_mut_ptr().add(lhs.len());
+            let e1 = p1.add(lhs.len());
+            let e2 = p2.add(rhs.len());
+
+            while p1 < e1 && p2 < e2 {
+                match Ord::cmp(&*p1, &*p2) {
+                    Ordering::Less => {
+                        p1 = p1.add(1);
+                    }
+                    Ordering::Greater => {
+                        p2 = p2.add(1);
+                    }
+                    Ordering::Equal => {
+                        ptr::copy_nonoverlapping(p1, p3, 1);
+                        p1 = p1.add(1);
+                        p2 = p2.add(1);
+                        p3 = p3.add(1);
+                    }
+                }
+            }
+            {
+                let dst = lhs.as_mut_ptr();
+                let src = dst.add(lhs.len());
+                let cnt = p3.offset_from(src) as usize;
+                ptr::copy(src, dst, cnt);
+                lhs.set_len(cnt)
+            }
+        }
+    }
+
+    #[inline]
     #[must_use]
     pub fn iter(&self) -> Iter<'_, T> {
         Iter(self.0.as_slice().iter())
@@ -239,5 +283,13 @@ mod tests {
         let s2 = VecSet::<u64>::from_vec(vec![2, 4, 5, 6]);
         s1.union_copied(&s2);
         assert_eq!(s1.as_slice(), &[1, 2, 3, 4, 5, 6])
+    }
+
+    #[test]
+    fn intersection() {
+        let mut s1 = VecSet::<u64>::from_vec(vec![1, 2, 3, 5]);
+        let s2 = VecSet::<u64>::from_vec(vec![2, 4, 5, 6]);
+        s1.intersection_copied(&s2);
+        assert_eq!(s1.as_slice(), &[2, 5])
     }
 }
