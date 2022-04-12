@@ -4,7 +4,7 @@ mod state;
 mod temporary;
 
 pub use self::config::ReplicaConfig;
-use self::state::State;
+use self::state::{State, Syncing};
 use self::temporary::{Accepting, PreAccepting, Preparing, Temporary};
 
 use crate::types::*;
@@ -1093,7 +1093,7 @@ impl<S: LogStore> Replica<S> {
         Ok(Effect::new())
     }
 
-    pub async fn start_syncing(&self) -> Result<Effect<S::Command>> {
+    pub async fn start_syncing_known(&self) -> Result<Effect<S::Command>> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1199,8 +1199,92 @@ impl<S: LogStore> Replica<S> {
         Ok(effect)
     }
 
+    pub async fn start_syncing_committed(&self) -> Result<Effect<S::Command>> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        s.log.update_bounds();
+
+        let local_bounds = s.log.committed_up_to();
+        let peer_bounds = s.peer_status_bounds.committed_up_to();
+
+        let targets = s.peers.select_all();
+        let sender = self.rid;
+
+        let mut effect = Effect::new();
+        for &(rid, higher) in local_bounds.iter() {
+            let lower: _ = peer_bounds.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO);
+
+            let start = lower.add_one();
+            let end = higher;
+
+            let conf = &self.config.sync_limits;
+            let limit: usize = conf.max_instance_num.try_into().expect("usize overflow");
+
+            let mut groups = Vec::new();
+            let mut instances: _ = <Vec<(InstanceId, Instance<S::Command>)>>::new();
+
+            for lid in LocalInstanceId::range_inclusive(start, end) {
+                let id: _ = InstanceId(rid, lid);
+                s.log.load(id).await?;
+                let ins = match s.log.get_cached_ins(id) {
+                    Some(ins) if ins.status >= Status::Committed => ins,
+                    _ => continue,
+                };
+
+                instances.push((id, ins.clone()));
+
+                if instances.len() >= limit {
+                    groups.push(mem::take(&mut instances));
+                }
+            }
+            if instances.is_empty().not() {
+                groups.push(instances);
+            }
+
+            for instances in groups {
+                clone!(targets);
+                let needs_reply = true;
+                let sync_id = s.sync_id_head.gen_next();
+
+                s.syncing_map.insert(sync_id, Syncing { oks: VecSet::new() });
+
+                effect.broadcast(
+                    targets,
+                    Message::SyncLog(SyncLog { sender, needs_reply, sync_id, instances }),
+                )
+            }
+        }
+
+        drop(guard);
+
+        Ok(effect)
+    }
+
     async fn handle_sync_log_ok(&self, msg: SyncLogOk) -> Result<Effect<S::Command>> {
-        todo!()
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let sync_id = msg.sync_id;
+        let syncing = match s.syncing_map.get_mut(&sync_id) {
+            None => return Ok(Effect::new()),
+            Some(syncing) => syncing,
+        };
+
+        let _ = syncing.oks.insert(msg.sender);
+
+        let cluster_size = s.peers.cluster_size();
+        if syncing.oks.len() >= cluster_size / 2 {
+            let _ = s.syncing_map.remove(&sync_id);
+        }
+
+        let sync_finished = s.syncing_map.is_empty();
+
+        drop(guard);
+
+        let mut effect = Effect::new();
+        effect.sync_finished = sync_finished;
+        Ok(effect)
     }
 
     async fn handle_peer_bounds(&self, msg: PeerBounds) -> Result<Effect<S::Command>> {

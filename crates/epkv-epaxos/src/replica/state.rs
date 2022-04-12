@@ -22,6 +22,11 @@ pub struct State<S: LogStore> {
     pub sync_id_head: SyncIdHead,
     pub log: Log<S>,
     pub peer_status_bounds: PeerStatusBounds,
+    pub syncing_map: FnvHashMap<SyncId, Syncing>,
+}
+
+pub struct Syncing {
+    pub oks: VecSet<ReplicaId>,
 }
 
 pub struct LidHead(LocalInstanceId);
@@ -115,6 +120,8 @@ impl<S: LogStore> State<S> {
 
         let peer_status_bounds = PeerStatusBounds::new();
 
+        let syncing_map = FnvHashMap::default();
+
         Ok(Self {
             peers,
             temporaries,
@@ -123,6 +130,7 @@ impl<S: LogStore> State<S> {
             sync_id_head,
             log,
             peer_status_bounds,
+            syncing_map,
         })
     }
 }
@@ -302,5 +310,9 @@ impl<S: LogStore> Log<S> {
 
     pub fn known_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
         self.status_bounds.known_up_to()
+    }
+
+    pub fn committed_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
+        self.status_bounds.committed_up_to()
     }
 }
