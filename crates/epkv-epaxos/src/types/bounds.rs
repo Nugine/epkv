@@ -61,3 +61,28 @@ impl StatusBounds {
             .collect()
     }
 }
+
+#[derive(Default)]
+pub struct PeerStatusBounds {
+    committed: VecMap<ReplicaId, VecMap<ReplicaId, LocalInstanceId>>,
+}
+
+impl PeerStatusBounds {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { committed: VecMap::new() }
+    }
+
+    pub fn set_committed(&mut self, rid: ReplicaId, bounds: VecMap<ReplicaId, LocalInstanceId>) {
+        let _ = self.committed.insert(rid, bounds);
+    }
+
+    #[must_use]
+    pub fn committed_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
+        let mut ans = VecMap::new();
+        for (_, m) in self.committed.iter() {
+            ans.merge_copied_with(m, |lhs, rhs| lhs.min(rhs))
+        }
+        ans
+    }
+}
