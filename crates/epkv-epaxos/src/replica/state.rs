@@ -21,6 +21,7 @@ pub struct State<S: LogStore> {
     pub lid_head: LidHead,
     pub sync_id_head: SyncIdHead,
     pub log: Log<S>,
+    pub peer_status_bounds: PeerStatusBounds,
 }
 
 pub struct LidHead(LocalInstanceId);
@@ -112,7 +113,17 @@ impl<S: LogStore> State<S> {
             pbal_cache,
         };
 
-        Ok(Self { peers, temporaries, joining, lid_head, sync_id_head, log })
+        let peer_status_bounds = PeerStatusBounds::new();
+
+        Ok(Self {
+            peers,
+            temporaries,
+            joining,
+            lid_head,
+            sync_id_head,
+            log,
+            peer_status_bounds,
+        })
     }
 }
 
