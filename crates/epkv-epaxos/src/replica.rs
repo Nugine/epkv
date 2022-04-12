@@ -1124,19 +1124,26 @@ impl<S: LogStore> Replica<S> {
         let sender = self.rid;
         let mut effect = Effect::new();
         for &(rid, lower) in msg.known_up_to.iter() {
+            let higher = match local_known_up_to.get(&rid) {
+                Some(&h) => h,
+                None => continue,
+            };
+
+            let limit = self.config.sync_limits.max_instance_num;
+            let start = lower.add_one();
+            let end = LocalInstanceId::from(start.raw_value().saturating_add(limit)).min(higher);
+
             let mut instances: Vec<(InstanceId, Instance<S::Command>)> = Vec::new();
-            if let Some(&higher) = local_known_up_to.get(&rid) {
-                let limit = self.config.sync_limits.max_instance_num;
-                let start = lower.add_one().raw_value();
-                let end = start.saturating_add(limit).min(higher.raw_value());
-                for raw_lid in start..=end {
-                    let lid = LocalInstanceId::from(raw_lid);
-                    let id = InstanceId(rid, lid);
-                    s.log.load(id).await?;
-                    if let Some(ins) = s.log.get_cached_ins(id) {
-                        instances.push((id, ins.clone()))
-                    }
+            for lid in LocalInstanceId::range_inclusive(start, end) {
+                let id = InstanceId(rid, lid);
+                s.log.load(id).await?;
+                if let Some(ins) = s.log.get_cached_ins(id) {
+                    instances.push((id, ins.clone()))
                 }
+            }
+
+            if instances.is_empty() {
+                continue;
             }
 
             let sync_id = s.sync_id_head.gen_next();

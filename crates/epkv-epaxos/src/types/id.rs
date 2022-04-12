@@ -37,6 +37,7 @@ macro_rules! impl_newtype {
                 #[track_caller]
                 fn from(val: $inner) -> Self {
                     assert!(val != 0, concat!("Zero ", stringify!($ty), " is reserved"));
+                    assert!(val != $inner::MAX, concat!("Max ", stringify!($ty), " is reserved"));
                     Self(val)
                 }
             }
@@ -119,6 +120,42 @@ impl AtomicEpoch {
     }
 }
 
+impl LocalInstanceId {
+    #[inline]
+    pub fn range_inclusive(start: Self, end: Self) -> impl Iterator<Item = Self> {
+        struct Iter {
+            i: u64,
+            end: u64,
+        }
+
+        impl Iterator for Iter {
+            type Item = LocalInstanceId;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.i <= self.end {
+                    let ans = LocalInstanceId(self.i);
+                    self.i = self.i.wrapping_add(1);
+                    Some(ans)
+                } else {
+                    None
+                }
+            }
+
+            fn size_hint(&self) -> (usize, Option<usize>) {
+                let cnt = if self.i <= self.end {
+                    usize::try_from(self.end.wrapping_sub(self.i)).unwrap_or(usize::MAX)
+                } else {
+                    0
+                };
+                (cnt, Some(cnt))
+            }
+        }
+
+        assert!(end.0 != u64::MAX);
+        Iter { i: start.0, end: end.0 }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +176,15 @@ mod tests {
     #[should_panic]
     fn nonzero() {
         let _ = ReplicaId::from(0);
+    }
+
+    #[test]
+    fn range() {
+        let mut range: _ = LocalInstanceId::range_inclusive(1.into(), 3.into());
+        assert_eq!(range.next(), Some(1.into()));
+        assert_eq!(range.next(), Some(2.into()));
+        assert_eq!(range.next(), Some(3.into()));
+        assert_eq!(range.next(), None);
+        assert_eq!(range.next(), None);
     }
 }
