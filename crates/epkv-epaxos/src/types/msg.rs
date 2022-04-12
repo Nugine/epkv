@@ -158,6 +158,12 @@ pub struct SyncLogOk {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct PeerBounds {
+    pub sender: ReplicaId,
+    pub committed_up_to: Option<VecMap<ReplicaId, LocalInstanceId>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Message<C> {
     PreAccept(PreAccept<C>),
     PreAcceptOk(PreAcceptOk),
@@ -177,6 +183,7 @@ pub enum Message<C> {
     AskLog(AskLog),
     SyncLog(SyncLog<C>),
     SyncLogOk(SyncLogOk),
+    PeerBounds(PeerBounds),
 }
 
 pub enum PreAcceptReply {

@@ -113,6 +113,9 @@ impl<S: LogStore> Replica<S> {
             Message::SyncLogOk(msg) => {
                 self.handle_sync_log_ok(msg).await //
             }
+            Message::PeerBounds(msg) => {
+                self.handle_peer_bounds(msg).await //
+            }
         }
     }
 
@@ -1190,6 +1193,10 @@ impl<S: LogStore> Replica<S> {
     }
 
     async fn handle_sync_log_ok(&self, msg: SyncLogOk) -> Result<Effect<S::Command>> {
+        todo!()
+    }
+
+    async fn handle_peer_bounds(&self, msg: PeerBounds) -> Result<Effect<S::Command>> {
         todo!()
     }
 }
