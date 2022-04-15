@@ -16,18 +16,24 @@ fmt:
     cargo fmt
     cargo sort -w > /dev/null
 
-build: fmt
+build:
     mold -run cargo build --release --offline
 
-test: fmt
-    cargo miri test -p epkv-utils 
+miri:
+    MIRIFLAGS=-Zmiri-backtrace=full \
+    cargo miri test -p epkv-utils -- --nocapture --test-threads=1 \
+        asc atomic_flag onemap radixmap vecmap vecset
+
+test:
     mold -run cargo test --release --offline
 
 dev:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
+    just fmt
     cargo check
     cargo clippy
+    just miri
     just test
 
 udeps:

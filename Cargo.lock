@@ -171,8 +171,10 @@ dependencies = [
  "bytes",
  "minstant",
  "once_cell",
+ "parking_lot",
  "roaring",
  "serde",
+ "tokio",
  "triomphe",
 ]
 
