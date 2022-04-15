@@ -133,6 +133,7 @@ mod tests {
             (3003, "d", true),
             (3002, "e", true),
             (4004, "f", true),
+            (10000, "g", true),
         ];
 
         for sample in samples {
@@ -141,19 +142,40 @@ mod tests {
         }
 
         let mut ans = Vec::new();
-        m.drain_less_equal(3, |k, v| ans.push((k, v)));
 
-        let expected = vec![
-            (1001, "a"),
-            (2002, "c"),
-            (3002, "e"),
-            (3003, "d"),
-            (4004, "f"),
-        ];
+        {
+            m.drain_less_equal(3, |k, v| ans.push((k, v)));
+            assert!(ans.is_empty());
+        }
+        {
+            let expected = vec![
+                (1001, "a"),
+                (2002, "c"),
+                (3002, "e"),
+                (3003, "d"),
+                (4004, "f"),
+            ];
 
-        for (a, e) in ans.iter().zip(expected.iter()) {
-            assert_eq!(a.0, e.0);
-            assert_eq!(a.1, e.1);
+            ans.clear();
+            m.drain_less_equal(4005, |k, v| ans.push((k, v)));
+
+            for (i, e) in expected.iter().enumerate() {
+                let a = &ans[i];
+                assert_eq!(a.0, e.0);
+                assert_eq!(a.1, e.1);
+            }
+        }
+        {
+            let expected = vec![(10000, "g")];
+
+            ans.clear();
+            m.drain_less_equal(10000, |k, v| ans.push((k, v)));
+
+            for (i, e) in expected.iter().enumerate() {
+                let a = &ans[i];
+                assert_eq!(a.0, e.0);
+                assert_eq!(a.1, e.1);
+            }
         }
     }
 }
