@@ -219,6 +219,45 @@ impl<K: Ord, V> VecMap<K, V> {
     pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
         IterMut(self.0.as_mut_slice().iter_mut())
     }
+
+    #[inline]
+    pub fn remove_less_than<Q>(&mut self, key: &Q)
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        struct Guard<'a, K, V> {
+            cnt: usize,
+            v: &'a mut Vec<(K, V)>,
+        }
+
+        impl<K, V> Drop for Guard<'_, K, V> {
+            fn drop(&mut self) {
+                let cnt = self.cnt;
+                let v = &mut *self.v;
+                unsafe {
+                    let dst = v.as_mut_ptr();
+                    let src = dst.add(cnt);
+                    ptr::copy(src, dst, cnt);
+                    v.set_len(cnt)
+                }
+            }
+        }
+
+        let cnt = match self.search(key) {
+            Ok(idx) => idx,
+            Err(idx) => idx,
+        };
+        if cnt == 0 || cnt >= self.0.len() {
+            return;
+        }
+        let guard = Guard { cnt, v: &mut self.0 };
+        unsafe {
+            let entries: *mut [(K, V)] = guard.v.get_unchecked_mut(..cnt);
+            ptr::drop_in_place(entries);
+        }
+        drop(guard);
+    }
 }
 
 impl<K: Ord, V> From<Vec<(K, V)>> for VecMap<K, V> {
@@ -299,5 +338,22 @@ mod tests {
         assert_eq!(*m1.get(&3).unwrap(), 3);
         assert_eq!(*m1.get(&4).unwrap(), 4);
         assert_eq!(*m1.get(&5).unwrap(), 6);
+    }
+
+    #[test]
+    fn remove_less_than() {
+        let mut m: VecMap<u8, String> = VecMap::from_vec(vec![
+            (4, 1.to_string()),
+            (2, 3.to_string()),
+            (5, 7.to_string()),
+            (2, 9.to_string()),
+            (4, 6.to_string()),
+            (7, 8.to_string()),
+        ]);
+        m.remove_less_than(&5);
+        assert!(m.get(&2).is_none());
+        assert!(m.get(&4).is_none());
+        assert!(m.get(&5).is_some());
+        assert!(m.get(&7).is_some());
     }
 }
