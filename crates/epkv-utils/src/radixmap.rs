@@ -3,7 +3,8 @@
 use crate::vecmap::VecMap;
 
 use std::alloc::{alloc, handle_alloc_error, Layout};
-use std::mem::{self, MaybeUninit};
+use std::mem::MaybeUninit;
+use std::ops::Not;
 use std::ptr;
 
 #[derive(Default)]
@@ -42,10 +43,10 @@ impl<T> RadixMap<T> {
     }
 
     #[inline]
-    pub fn insert(&mut self, key: u64, val: T) -> Option<T> {
+    pub fn init_with(&mut self, key: u64, g: impl FnOnce() -> T) -> (bool, &mut T) {
         let (prefix, idx) = split(key);
         let (_, bucket) = self.map.init_with(prefix, Bucket::new_boxed);
-        unsafe { bucket.insert(idx, val) }
+        unsafe { bucket.init_with(idx, g) }
     }
 
     #[inline]
@@ -92,15 +93,15 @@ impl<T> Bucket<T> {
         }
     }
 
-    unsafe fn insert(&mut self, idx: u8, val: T) -> Option<T> {
+    unsafe fn init_with(&mut self, idx: u8, g: impl FnOnce() -> T) -> (bool, &mut T) {
         let slot = self.slots.get_unchecked_mut(idx as usize);
-        if is_init(self.inited, idx) {
-            Some(mem::replace(slot.assume_init_mut(), val))
-        } else {
+        let is_first = is_init(self.inited, idx).not();
+        if is_first {
+            let val = g();
             slot.write(val);
             set_init(&mut self.inited, idx);
-            None
         }
+        (is_first, slot.assume_init_mut())
     }
 }
 
@@ -125,18 +126,25 @@ mod tests {
     fn simple() {
         let mut m = RadixMap::<String>::new();
 
-        assert!(m.insert(1001, "a".into()).is_none());
-        assert!(m.insert(1001, "b".into()).is_some());
-        assert!(m.insert(2002, "c".into()).is_none());
-        assert!(m.insert(3003, "d".into()).is_none());
-        assert!(m.insert(3002, "e".into()).is_none());
-        assert!(m.insert(4004, "f".into()).is_none());
+        let samples = vec![
+            (1001, "a", true),
+            (1001, "b", false),
+            (2002, "c", true),
+            (3003, "d", true),
+            (3002, "e", true),
+            (4004, "f", true),
+        ];
+
+        for sample in samples {
+            let (is_first, _) = m.init_with(sample.0, || sample.1.to_owned());
+            assert_eq!(is_first, sample.2);
+        }
 
         let mut ans = Vec::new();
         m.drain_less_equal(3, |k, v| ans.push((k, v)));
 
         let expected = vec![
-            (1001, "b"),
+            (1001, "a"),
             (2002, "c"),
             (3002, "e"),
             (3003, "d"),
