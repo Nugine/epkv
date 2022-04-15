@@ -22,7 +22,7 @@ pub struct StatusMap {
 impl StatusBounds {
     pub fn set(&mut self, id: InstanceId, status: Status) {
         let InstanceId(rid, lid) = id;
-        let (_, m) = self.maps.init_with(&rid, || (rid, StatusMap::default()));
+        let (_, m) = self.maps.init_with(rid, StatusMap::default);
         m.known.set(lid.raw_value());
         if status >= Status::Committed {
             m.committed.set(lid.raw_value());
