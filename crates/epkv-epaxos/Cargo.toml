@@ -11,4 +11,4 @@ fnv = "1.0.7"
 rand = "0.8.5"
 serde = { version = "1.0.136", features = ["derive"] }
 tokio = { version = "1.17.0", features = ["full"] }
-tracing = "0.1.32"
+tracing = "0.1.34"
