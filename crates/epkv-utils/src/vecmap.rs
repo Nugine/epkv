@@ -227,33 +227,34 @@ impl<K: Ord, V> VecMap<K, V> {
         Q: Ord + ?Sized,
     {
         struct Guard<'a, K, V> {
-            cnt: usize,
             v: &'a mut Vec<(K, V)>,
+            remove_cnt: usize,
         }
 
         impl<K, V> Drop for Guard<'_, K, V> {
             fn drop(&mut self) {
-                let cnt = self.cnt;
                 let v = &mut *self.v;
+                let remove_cnt = self.remove_cnt;
+                let remain_cnt = v.len().wrapping_sub(remove_cnt);
                 unsafe {
                     let dst = v.as_mut_ptr();
-                    let src = dst.add(cnt);
-                    ptr::copy(src, dst, cnt);
-                    v.set_len(cnt)
+                    let src = dst.add(remove_cnt);
+                    ptr::copy(src, dst, remain_cnt);
+                    v.set_len(remain_cnt)
                 }
             }
         }
 
-        let cnt = match self.search(key) {
+        let remove_cnt = match self.search(key) {
             Ok(idx) => idx,
             Err(idx) => idx,
         };
-        if cnt == 0 || cnt >= self.0.len() {
+        if remove_cnt == 0 || remove_cnt >= self.0.len() {
             return;
         }
-        let guard = Guard { cnt, v: &mut self.0 };
+        let guard = Guard { remove_cnt, v: &mut self.0 };
         unsafe {
-            let entries: *mut [(K, V)] = guard.v.get_unchecked_mut(..cnt);
+            let entries: *mut [(K, V)] = guard.v.get_unchecked_mut(..remove_cnt);
             ptr::drop_in_place(entries);
         }
         drop(guard);
