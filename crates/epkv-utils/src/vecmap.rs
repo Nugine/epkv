@@ -265,6 +265,12 @@ impl<K: Ord, V> VecMap<K, V> {
         }
         drop(guard);
     }
+
+    #[inline]
+    #[must_use]
+    pub fn pop_max(&mut self) -> Option<(K, V)> {
+        self.0.pop()
+    }
 }
 
 impl<K: Ord, V> From<Vec<(K, V)>> for VecMap<K, V> {
