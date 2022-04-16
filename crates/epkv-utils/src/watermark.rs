@@ -6,12 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering::*};
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
-#[derive(Clone)]
 pub struct WaterMark {
-    inner: Asc<Inner>,
-}
-
-struct Inner {
     level: AtomicU64,
     queue: Mutex<RadixMap<Asc<Notify>>>,
 }
@@ -19,51 +14,47 @@ struct Inner {
 impl WaterMark {
     #[inline]
     #[must_use]
-    pub fn new(lv: u64) -> Self {
+    pub const fn new(lv: u64) -> Self {
         Self {
-            inner: Asc::new(Inner {
-                level: AtomicU64::new(lv),
-                queue: Mutex::new(RadixMap::new()),
-            }),
+            level: AtomicU64::new(lv),
+            queue: Mutex::new(RadixMap::new()),
         }
     }
 
     #[inline]
     pub fn bump_level(&self, lv: u64) {
-        let prev = self.inner.level.fetch_max(lv, Relaxed);
+        let prev = self.level.fetch_max(lv, Relaxed);
         if prev < lv {
             self.flush_queue(lv);
         }
     }
 
+    fn flush_queue(&self, lv: u64) {
+        let mut guard = self.queue.lock();
+        let q = &mut *guard;
+        q.drain_less_equal(lv, |_, n| n.notify_waiters())
+    }
+
     #[inline]
     #[must_use]
     pub fn level(&self) -> u64 {
-        self.inner.level.load(SeqCst)
+        self.level.load(SeqCst)
     }
 
     #[inline]
     #[must_use]
-    pub fn until(&self, lv: u64) -> Token {
-        let mut guard = self.inner.queue.lock();
+    pub fn until(this: Asc<Self>, lv: u64) -> Token {
+        let mut guard = this.queue.lock();
         let q = &mut *guard;
         let (_, n) = q.init_with(lv, || Asc::new(Notify::new()));
-        Token {
-            inner: self.inner.asc_clone(),
-            until: lv,
-            notify: n.asc_clone(),
-        }
-    }
-
-    fn flush_queue(&self, lv: u64) {
-        let mut guard = self.inner.queue.lock();
-        let q = &mut *guard;
-        q.drain_less_equal(lv, |_, n| n.notify_waiters())
+        let notify = n.asc_clone();
+        drop(guard);
+        Token { watermark: this, until: lv, notify }
     }
 }
 
 pub struct Token {
-    inner: Asc<Inner>,
+    watermark: Asc<WaterMark>,
     until: u64,
     notify: Asc<Notify>,
 }
@@ -72,7 +63,7 @@ impl Token {
     #[inline]
     #[must_use]
     pub fn level(&self) -> u64 {
-        self.inner.level.load(SeqCst)
+        self.watermark.level.load(SeqCst)
     }
 
     #[inline]
@@ -89,6 +80,17 @@ impl Token {
     }
 }
 
+pub trait WaterMarkExt {
+    fn until(self, lv: u64) -> Token;
+}
+
+impl WaterMarkExt for &'_ Asc<WaterMark> {
+    #[inline]
+    fn until(self, lv: u64) -> Token {
+        WaterMark::until(self.asc_clone(), lv)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,7 +99,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn tokio() {
-        let wm = WaterMark::new(0);
+        let wm = Asc::new(WaterMark::new(0));
         wm.until(0).wait().await;
         assert_eq!(wm.level(), 0);
 
