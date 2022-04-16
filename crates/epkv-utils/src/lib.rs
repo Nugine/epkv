@@ -13,6 +13,7 @@ pub mod asc;
 pub mod atomic_flag;
 pub mod cmp;
 pub mod codec;
+pub mod multi_semaphore;
 pub mod onemap;
 pub mod radixmap;
 pub mod time;
