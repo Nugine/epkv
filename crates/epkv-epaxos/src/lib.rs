@@ -34,4 +34,5 @@ pub mod types {
     pub use self::bounds::*;
 }
 
+pub mod executor;
 pub mod replica;
