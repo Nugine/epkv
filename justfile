@@ -27,12 +27,14 @@ miri:
 test:
     mold -run cargo test --release --offline
 
+check: fmt
+    cargo check
+    cargo clippy
+
 dev:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
-    just fmt
-    cargo check
-    cargo clippy
+    just check
     just miri
     just test
 
