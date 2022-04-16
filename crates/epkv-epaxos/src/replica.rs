@@ -1107,7 +1107,7 @@ impl<S: LogStore> Replica<S> {
         let mut effect = Effect::new();
         {
             let sender = self.rid;
-            let targets = VecSet::from_iter(Some(target));
+            let targets = VecSet::from_single(target);
             effect.broadcast(targets, Message::AskLog(AskLog { sender, known_up_to }));
         }
         Ok(effect)

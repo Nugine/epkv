@@ -21,6 +21,12 @@ impl<K: Ord, V> VecMap<K, V> {
 
     #[inline]
     #[must_use]
+    pub fn from_single(key: K, value: V) -> Self {
+        Self(vec![(key, value)])
+    }
+
+    #[inline]
+    #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         Self(Vec::with_capacity(cap))
     }

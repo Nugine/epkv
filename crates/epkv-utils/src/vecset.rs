@@ -19,6 +19,12 @@ impl<T: Ord> VecSet<T> {
 
     #[inline]
     #[must_use]
+    pub fn from_single(val: T) -> Self {
+        Self(vec![val])
+    }
+
+    #[inline]
+    #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         Self(Vec::with_capacity(cap))
     }
