@@ -204,6 +204,36 @@ pub enum PrepareReply<C> {
     Unchosen(PrepareUnchosen),
 }
 
+impl PreAcceptReply {
+    pub fn convert<C>(msg: Message<C>) -> Option<Self> {
+        match msg {
+            Message::PreAcceptOk(msg) => Some(Self::Ok(msg)),
+            Message::PreAcceptDiff(msg) => Some(Self::Diff(msg)),
+            _ => None,
+        }
+    }
+}
+
+impl AcceptReply {
+    pub fn convert<C>(msg: Message<C>) -> Option<Self> {
+        match msg {
+            Message::AcceptOk(msg) => Some(Self::Ok(msg)),
+            _ => None,
+        }
+    }
+}
+
+impl<C> PrepareReply<C> {
+    pub fn convert(msg: Message<C>) -> Option<Self> {
+        match msg {
+            Message::PrepareOk(msg) => Some(Self::Ok(msg)),
+            Message::PrepareNack(msg) => Some(Self::Nack(msg)),
+            Message::PrepareUnchosen(msg) => Some(Self::Unchosen(msg)),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
