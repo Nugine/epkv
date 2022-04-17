@@ -24,20 +24,32 @@ use anyhow::{ensure, Result};
 use rand::Rng;
 use tokio::sync::{Mutex, MutexGuard};
 
-pub struct Replica<S: LogStore> {
+pub struct Replica<C, S, E>
+where
+    C: CommandLike,
+    S: LogStore<C>,
+    E: Effect<C>,
+{
     rid: ReplicaId,
     config: ReplicaConfig,
-    state: Mutex<State<S>>,
+    state: Mutex<State<C, S>>,
     epoch: AtomicEpoch,
+    effect: E,
 }
 
-impl<S: LogStore> Replica<S> {
+impl<C, S, E> Replica<C, S, E>
+where
+    C: CommandLike,
+    S: LogStore<C>,
+    E: Effect<C>,
+{
     pub async fn new(
         rid: ReplicaId,
         store: S,
         epoch: Epoch,
         peers: VecSet<ReplicaId>,
         config: ReplicaConfig,
+        effect: E,
     ) -> Result<Self> {
         let cluster_size = peers.len().wrapping_add(1);
         ensure!(peers.iter().all(|&p| p != rid));
@@ -46,18 +58,14 @@ impl<S: LogStore> Replica<S> {
         let state = Mutex::new(State::new(rid, store, peers).await?);
         let epoch = AtomicEpoch::new(epoch);
 
-        Ok(Self { rid, config, state, epoch })
+        Ok(Self { rid, config, state, epoch, effect })
     }
 
     pub fn config(&self) -> &ReplicaConfig {
         &self.config
     }
 
-    pub async fn handle_message(
-        &self,
-        msg: Message<S::Command>,
-        time: LocalInstant,
-    ) -> Result<Effect<S::Command>> {
+    pub async fn handle_message(&self, msg: Message<C>, time: LocalInstant) -> Result<()> {
         match msg {
             Message::PreAccept(msg) => {
                 self.handle_preaccept(msg).await //
@@ -119,23 +127,23 @@ impl<S: LogStore> Replica<S> {
         }
     }
 
-    pub async fn handle_timeout(&self, kind: TimeoutKind) -> Result<Effect<S::Command>> {
-        match kind {
-            TimeoutKind::Recover { id } => {
+    pub async fn handle_timeout(&self, event: TimeoutEvent) -> Result<()> {
+        match event {
+            TimeoutEvent::Recover { id } => {
                 self.recover(id).await //
             }
-            TimeoutKind::PreAccept { id } => {
+            TimeoutEvent::PreAccept { id } => {
                 let mut guard = self.state.lock().await;
                 let s = &mut *guard;
 
                 let temp = match s.temporaries.get_mut(&id) {
                     Some(Temporary::PreAccepting(t)) => t,
-                    _ => return Ok(Effect::new()),
+                    _ => return Ok(()),
                 };
 
                 let cluster_size = s.peers.cluster_size();
                 if temp.received.len() < cluster_size / 2 {
-                    return Ok(Effect::new());
+                    return Ok(());
                 }
 
                 s.log.load(id).await?;
@@ -152,7 +160,7 @@ impl<S: LogStore> Replica<S> {
         }
     }
 
-    pub async fn propose(&self, cmd: S::Command) -> Result<Effect<S::Command>> {
+    pub async fn propose(&self, cmd: C) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -165,12 +173,12 @@ impl<S: LogStore> Replica<S> {
 
     async fn start_phase_preaccept(
         &self,
-        mut guard: MutexGuard<'_, State<S>>,
+        mut guard: MutexGuard<'_, State<C, S>>,
         id: InstanceId,
         pbal: Ballot,
-        cmd: Option<S::Command>,
+        cmd: Option<C>,
         mut acc: VecSet<ReplicaId>,
-    ) -> Result<Effect<S::Command>> {
+    ) -> Result<()> {
         let s = &mut *guard;
 
         s.log.load(id).await?;
@@ -209,11 +217,11 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         {
             let sender = self.rid;
             let epoch = self.epoch.load();
-            effect.broadcast_preaccept(
+            broadcast_preaccept(
+                &self.effect,
                 selected_peers.acc,
                 selected_peers.others,
                 PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
@@ -227,14 +235,14 @@ impl<S: LogStore> Replica<S> {
                 let delta = Duration::from_secs_f64(d.as_secs_f64() * rate);
                 conf.default + delta
             });
-            effect.timeout(duration, TimeoutKind::Recover { id })
+            self.effect.set_timeout(duration, TimeoutEvent::Recover { id })
         }
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_preaccept(&self, msg: PreAccept<S::Command>) -> Result<Effect<S::Command>> {
+    async fn handle_preaccept(&self, msg: PreAccept<C>) -> Result<()> {
         if msg.epoch < self.epoch.load() {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let mut guard = self.state.lock().await;
@@ -246,10 +254,10 @@ impl<S: LogStore> Replica<S> {
         s.log.load(id).await?;
 
         if s.log.should_ignore_pbal(id, pbal) {
-            return Ok(Effect::new());
+            return Ok(());
         }
         if s.log.should_ignore_status(id, pbal, Status::PreAccepted) {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let (cmd, mode) = match msg.cmd {
@@ -280,12 +288,11 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         {
             let target = msg.sender;
             let sender = self.rid;
             let epoch = self.epoch.load();
-            effect.reply(
+            self.effect.send(
                 target,
                 if is_changed {
                     Message::PreAcceptDiff(PreAcceptDiff { sender, epoch, id, pbal, seq, deps })
@@ -294,17 +301,17 @@ impl<S: LogStore> Replica<S> {
                 },
             );
         }
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_preaccept_reply(&self, msg: PreAcceptReply) -> Result<Effect<S::Command>> {
+    async fn handle_preaccept_reply(&self, msg: PreAcceptReply) -> Result<()> {
         let msg_epoch = match msg {
             PreAcceptReply::Ok(ref msg) => msg.epoch,
             PreAcceptReply::Diff(ref msg) => msg.epoch,
         };
 
         if msg_epoch < self.epoch.load() {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let mut guard = self.state.lock().await;
@@ -318,18 +325,18 @@ impl<S: LogStore> Replica<S> {
         s.log.load(id).await?;
 
         if s.log.should_ignore_pbal(id, pbal) {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
 
         if ins.status != Status::PreAccepted {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let temp = match s.temporaries.get_mut(&id) {
             Some(Temporary::PreAccepting(t)) => t,
-            _ => return Ok(Effect::new()),
+            _ => return Ok(()),
         };
 
         {
@@ -338,7 +345,7 @@ impl<S: LogStore> Replica<S> {
                 PreAcceptReply::Diff(ref msg) => msg.sender,
             };
             if temp.received.insert(msg_sender).is_some() {
-                return Ok(Effect::new());
+                return Ok(());
             }
             let _ = temp.acc.insert(msg_sender);
         }
@@ -361,7 +368,7 @@ impl<S: LogStore> Replica<S> {
         let cluster_size = s.peers.cluster_size();
 
         if temp.received.len() < cluster_size / 2 {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let which_path = if temp.all_same {
@@ -396,9 +403,8 @@ impl<S: LogStore> Replica<S> {
                 let conf = &self.config.preaccept_timeout;
                 let duration = conf.with(avg_rtt, |d| d / 2);
 
-                let mut effect = Effect::new();
-                effect.timeout(duration, TimeoutKind::PreAccept { id });
-                Ok(effect)
+                self.effect.set_timeout(duration, TimeoutEvent::PreAccept { id });
+                Ok(())
             }
         }
     }
@@ -406,14 +412,14 @@ impl<S: LogStore> Replica<S> {
     #[allow(clippy::too_many_arguments)]
     async fn start_phase_accept(
         &self,
-        mut guard: MutexGuard<'_, State<S>>,
+        mut guard: MutexGuard<'_, State<C, S>>,
         id: InstanceId,
         pbal: Ballot,
-        cmd: Option<S::Command>,
+        cmd: Option<C>,
         seq: Seq,
         deps: Deps,
         acc: VecSet<ReplicaId>,
-    ) -> Result<Effect<S::Command>> {
+    ) -> Result<()> {
         let s = &mut *guard;
 
         let abal = pbal;
@@ -446,22 +452,22 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         {
             let sender = self.rid;
             let epoch = self.epoch.load();
-            effect.broadcast_accept(
+            broadcast_accept(
+                &self.effect,
                 selected_peers.acc,
                 selected_peers.others,
                 Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
             );
         }
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_accept(&self, msg: Accept<S::Command>) -> Result<Effect<S::Command>> {
+    async fn handle_accept(&self, msg: Accept<C>) -> Result<()> {
         if msg.epoch < self.epoch.load() {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let mut guard = self.state.lock().await;
@@ -473,10 +479,10 @@ impl<S: LogStore> Replica<S> {
         s.log.load(id).await?;
 
         if s.log.should_ignore_pbal(id, pbal) {
-            return Ok(Effect::new());
+            return Ok(());
         }
         if s.log.should_ignore_status(id, pbal, Status::Accepted) {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let abal = pbal;
@@ -503,24 +509,23 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         {
             let target = msg.sender;
             let sender = self.rid;
             let epoch = self.epoch.load();
-            effect.reply(
+            self.effect.send(
                 target,
                 Message::AcceptOk(AcceptOk { sender, epoch, id, pbal }),
             );
         }
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_accept_reply(&self, msg: AcceptReply) -> Result<Effect<S::Command>> {
+    async fn handle_accept_reply(&self, msg: AcceptReply) -> Result<()> {
         let AcceptReply::Ok(msg) = msg;
 
         if msg.epoch < self.epoch.load() {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let mut guard = self.state.lock().await;
@@ -532,13 +537,13 @@ impl<S: LogStore> Replica<S> {
         s.log.load(id).await?;
 
         if s.log.should_ignore_pbal(id, pbal) {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
 
         if ins.status != Status::Accepted {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let seq = ins.seq;
@@ -546,12 +551,12 @@ impl<S: LogStore> Replica<S> {
 
         let temp = match s.temporaries.get_mut(&id) {
             Some(Temporary::Accepting(t)) => t,
-            _ => return Ok(Effect::new()),
+            _ => return Ok(()),
         };
 
         {
             if temp.received.insert(msg.sender).is_some() {
-                return Ok(Effect::new());
+                return Ok(());
             }
             let _ = temp.acc.insert(msg.sender);
         }
@@ -559,7 +564,7 @@ impl<S: LogStore> Replica<S> {
         let cluster_size = s.peers.cluster_size();
 
         if temp.received.len() < cluster_size / 2 {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let acc = mem::take(&mut temp.acc);
@@ -572,14 +577,14 @@ impl<S: LogStore> Replica<S> {
     #[allow(clippy::too_many_arguments)]
     async fn start_phase_commit(
         &self,
-        mut guard: MutexGuard<'_, State<S>>,
+        mut guard: MutexGuard<'_, State<C, S>>,
         id: InstanceId,
         pbal: Ballot,
-        cmd: Option<S::Command>,
+        cmd: Option<C>,
         seq: Seq,
         deps: Deps,
         acc: VecSet<ReplicaId>,
-    ) -> Result<Effect<S::Command>> {
+    ) -> Result<()> {
         let s = &mut *guard;
 
         let abal = pbal;
@@ -605,17 +610,16 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
-
         if let Some(n) = cmd.notify_committed() {
-            effect.notify(n);
+            self.effect.cmd_notify(n);
         }
 
         {
             let sender = self.rid;
             let epoch = self.epoch.load();
             clone!(cmd, deps);
-            effect.broadcast_commit(
+            broadcast_commit(
+                &self.effect,
                 selected_peers.acc,
                 selected_peers.others,
                 Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
@@ -623,15 +627,15 @@ impl<S: LogStore> Replica<S> {
         }
 
         {
-            effect.execution(id, cmd, seq, deps);
+            self.effect.start_execution(id, cmd, seq, deps);
         }
 
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_commit(&self, msg: Commit<S::Command>) -> Result<Effect<S::Command>> {
+    async fn handle_commit(&self, msg: Commit<C>) -> Result<()> {
         if msg.epoch < self.epoch.load() {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let mut guard = self.state.lock().await;
@@ -643,11 +647,11 @@ impl<S: LogStore> Replica<S> {
         s.log.load(id).await?;
 
         if s.log.should_ignore_pbal(id, pbal) {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         if s.log.should_ignore_status(id, pbal, Status::Committed) {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let (cmd, mode) = match msg.cmd {
@@ -680,14 +684,13 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         if exec {
-            effect.execution(id, cmd, seq, deps)
+            self.effect.start_execution(id, cmd, seq, deps)
         }
-        Ok(effect)
+        Ok(())
     }
 
-    async fn recover(&self, id: InstanceId) -> Result<Effect<S::Command>> {
+    async fn recover(&self, id: InstanceId) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -695,7 +698,7 @@ impl<S: LogStore> Replica<S> {
 
         if let Some(ins) = s.log.get_cached_ins(id) {
             if ins.status >= Status::Committed {
-                return Ok(Effect::new());
+                return Ok(());
             }
         }
 
@@ -720,12 +723,11 @@ impl<S: LogStore> Replica<S> {
 
         let _ = targets.insert(self.rid);
 
-        let mut effect = Effect::new();
         {
             let sender = self.rid;
             let epoch = self.epoch.load();
 
-            effect.broadcast(
+            self.effect.broadcast(
                 targets,
                 Message::Prepare(Prepare { sender, epoch, id, pbal, known }),
             )
@@ -738,15 +740,15 @@ impl<S: LogStore> Replica<S> {
                 let delta = Duration::from_secs_f64(d.as_secs_f64() * rate);
                 conf.default + delta
             });
-            effect.timeout(duration, TimeoutKind::Recover { id })
+            self.effect.set_timeout(duration, TimeoutEvent::Recover { id })
         }
 
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_prepare(&self, msg: Prepare) -> Result<Effect<S::Command>> {
+    async fn handle_prepare(&self, msg: Prepare) -> Result<()> {
         if msg.epoch < self.epoch.load() {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let mut guard = self.state.lock().await;
@@ -761,14 +763,14 @@ impl<S: LogStore> Replica<S> {
         if let Some(pbal) = s.log.get_cached_pbal(id) {
             if pbal >= msg.pbal {
                 drop(guard);
-                let mut effect = Effect::new();
+
                 let target = msg.sender;
                 let sender = self.rid;
-                effect.reply(
+                self.effect.send(
                     target,
                     Message::PrepareNack(PrepareNack { sender, epoch, id, pbal }),
                 );
-                return Ok(effect);
+                return Ok(());
             }
         }
 
@@ -780,14 +782,14 @@ impl<S: LogStore> Replica<S> {
             Some(ins) => ins,
             None => {
                 drop(guard);
-                let mut effect = Effect::new();
+
                 let target = msg.sender;
                 let sender = self.rid;
-                effect.reply(
+                self.effect.send(
                     target,
                     Message::PrepareUnchosen(PrepareUnchosen { sender, epoch, id }),
                 );
-                return Ok(effect);
+                return Ok(());
             }
         };
 
@@ -805,10 +807,9 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         let target = msg.sender;
         let sender = self.rid;
-        effect.reply(
+        self.effect.send(
             target,
             Message::PrepareOk(PrepareOk {
                 sender,
@@ -823,13 +824,10 @@ impl<S: LogStore> Replica<S> {
                 acc,
             }),
         );
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_prepare_reply(
-        &self,
-        msg: PrepareReply<S::Command>,
-    ) -> Result<Effect<S::Command>> {
+    async fn handle_prepare_reply(&self, msg: PrepareReply<C>) -> Result<()> {
         let msg_epoch = match msg {
             PrepareReply::Ok(ref msg) => msg.epoch,
             PrepareReply::Nack(ref msg) => msg.epoch,
@@ -837,7 +835,7 @@ impl<S: LogStore> Replica<S> {
         };
 
         if msg_epoch < self.epoch.load() {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let mut guard = self.state.lock().await;
@@ -852,13 +850,13 @@ impl<S: LogStore> Replica<S> {
         s.log.load(id).await?;
         if let PrepareReply::Ok(ref msg) = msg {
             if s.log.should_ignore_pbal(id, msg.pbal) {
-                return Ok(Effect::new());
+                return Ok(());
             }
         }
 
         let temp: _ = match s.temporaries.get_mut(&id) {
             Some(Temporary::Preparing(t)) => t,
-            _ => return Ok(Effect::new()),
+            _ => return Ok(()),
         };
 
         match msg {
@@ -880,9 +878,9 @@ impl<S: LogStore> Replica<S> {
                     #[allow(clippy::float_arithmetic)]
                     Duration::from_secs_f64(d.as_secs_f64() * rate)
                 });
-                let mut effect = Effect::new();
-                effect.timeout(duration, TimeoutKind::Recover { id });
-                return Ok(effect);
+
+                self.effect.set_timeout(duration, TimeoutEvent::Recover { id });
+                return Ok(());
             }
             PrepareReply::Ok(msg) => {
                 let _ = temp.received.insert(msg.sender);
@@ -904,7 +902,7 @@ impl<S: LogStore> Replica<S> {
                     }
                 };
                 if is_max_abal.not() {
-                    return Ok(Effect::new());
+                    return Ok(());
                 }
                 temp.cmd = msg.cmd;
                 temp.tuples.push((msg.sender, msg.seq, msg.deps, msg.status, msg.acc));
@@ -913,12 +911,12 @@ impl<S: LogStore> Replica<S> {
 
         let cluster_size = s.peers.cluster_size();
         if temp.received.len() <= cluster_size / 2 {
-            return Ok(Effect::new());
+            return Ok(());
         }
 
         let max_abal = match temp.max_abal {
             Some(b) => b,
-            None => return Ok(Effect::new()),
+            None => return Ok(()),
         };
 
         let cmd = temp.cmd.take();
@@ -982,14 +980,14 @@ impl<S: LogStore> Replica<S> {
             Some(_) => None,
             None => {
                 acc = VecSet::new();
-                Some(S::Command::create_nop())
+                Some(C::create_nop())
             }
         };
 
         self.start_phase_preaccept(guard, id, pbal, cmd, acc).await
     }
 
-    pub async fn start_joining(&self) -> Result<Effect<S::Command>> {
+    pub async fn start_joining(&self) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -999,13 +997,12 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         let sender = self.rid;
-        effect.broadcast(targets, Message::JoinOk(JoinOk { sender }));
-        Ok(effect)
+        self.effect.broadcast(targets, Message::JoinOk(JoinOk { sender }));
+        Ok(())
     }
 
-    async fn handle_join(&self, msg: Join) -> Result<Effect<S::Command>> {
+    async fn handle_join(&self, msg: Join) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1014,34 +1011,31 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         {
             let target = msg.sender;
-            effect.reply(target, Message::JoinOk(JoinOk { sender: self.rid }));
+            self.effect.send(target, Message::JoinOk(JoinOk { sender: self.rid }));
         }
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_join_ok(&self, msg: JoinOk) -> Result<Effect<S::Command>> {
+    async fn handle_join_ok(&self, msg: JoinOk) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
-
-        let mut effect = Effect::new();
 
         if let Some(ref mut j) = s.joining {
             let _ = j.insert(msg.sender);
             if j.len() > s.peers.cluster_size() / 2 {
                 s.joining = None;
-                effect.join_finished = true;
+                self.effect.join_finished();
             }
         }
 
         drop(guard);
 
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_leave(&self, msg: Leave) -> Result<Effect<S::Command>> {
+    async fn handle_leave(&self, msg: Leave) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1049,10 +1043,10 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        Ok(Effect::new())
+        Ok(())
     }
 
-    pub async fn probe_rtt(&self, time: LocalInstant) -> Result<Effect<S::Command>> {
+    pub async fn probe_rtt(&self, time: LocalInstant) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1060,26 +1054,20 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         let sender = self.rid;
-        effect.broadcast(targets, Message::ProbeRtt(ProbeRtt { sender, time }));
-        Ok(effect)
+        self.effect.broadcast(targets, Message::ProbeRtt(ProbeRtt { sender, time }));
+        Ok(())
     }
 
-    async fn handle_probe_rtt(&self, msg: ProbeRtt) -> Result<Effect<S::Command>> {
-        let mut effect: _ = Effect::new();
+    async fn handle_probe_rtt(&self, msg: ProbeRtt) -> Result<()> {
         let target = msg.sender;
         let sender = self.rid;
         let time = msg.time;
-        effect.reply(target, Message::ProbeRttOk(ProbeRttOk { sender, time }));
-        Ok(effect)
+        self.effect.send(target, Message::ProbeRttOk(ProbeRttOk { sender, time }));
+        Ok(())
     }
 
-    async fn handle_probe_rtt_ok(
-        &self,
-        msg: ProbeRttOk,
-        time: LocalInstant,
-    ) -> Result<Effect<S::Command>> {
+    async fn handle_probe_rtt_ok(&self, msg: ProbeRttOk, time: LocalInstant) -> Result<()> {
         let peer = msg.sender;
         let rtt = time.saturating_duration_since(msg.time);
 
@@ -1090,10 +1078,10 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        Ok(Effect::new())
+        Ok(())
     }
 
-    pub async fn start_syncing_known(&self) -> Result<Effect<S::Command>> {
+    pub async fn start_syncing_known(&self) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1104,16 +1092,15 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
         {
             let sender = self.rid;
             let targets = VecSet::from_single(target);
-            effect.broadcast(targets, Message::AskLog(AskLog { sender, known_up_to }));
+            self.effect.broadcast(targets, Message::AskLog(AskLog { sender, known_up_to }));
         }
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_ask_log(&self, msg: AskLog) -> Result<Effect<S::Command>> {
+    async fn handle_ask_log(&self, msg: AskLog) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1122,7 +1109,7 @@ impl<S: LogStore> Replica<S> {
 
         let target = msg.sender;
         let sender = self.rid;
-        let mut effect = Effect::new();
+
         for &(rid, lower) in msg.known_up_to.iter() {
             let higher = match local_known_up_to.get(&rid) {
                 Some(&h) => h,
@@ -1133,7 +1120,7 @@ impl<S: LogStore> Replica<S> {
             let start = lower.add_one();
             let end = LocalInstanceId::from(start.raw_value().saturating_add(limit)).min(higher);
 
-            let mut instances: Vec<(InstanceId, Instance<S::Command>)> = Vec::new();
+            let mut instances: Vec<(InstanceId, Instance<C>)> = Vec::new();
             for lid in LocalInstanceId::range_inclusive(start, end) {
                 let id = InstanceId(rid, lid);
                 s.log.load(id).await?;
@@ -1148,7 +1135,7 @@ impl<S: LogStore> Replica<S> {
 
             let sync_id = s.sync_id_head.gen_next();
             let needs_reply = false;
-            effect.reply(
+            self.effect.send(
                 target,
                 Message::SyncLog(SyncLog { sender, needs_reply, sync_id, instances }),
             )
@@ -1156,14 +1143,13 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_sync_log(&self, msg: SyncLog<S::Command>) -> Result<Effect<S::Command>> {
+    async fn handle_sync_log(&self, msg: SyncLog<C>) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
-        let mut effect = Effect::new();
         for (id, mut ins) in msg.instances {
             s.log.load(id).await?;
             match s.log.get_cached_ins(id) {
@@ -1180,7 +1166,7 @@ impl<S: LogStore> Replica<S> {
                         } else {
                             UpdateMode::Partial
                         };
-                        effect.execution(id, ins.cmd.clone(), ins.seq, ins.deps.clone());
+                        self.effect.start_execution(id, ins.cmd.clone(), ins.seq, ins.deps.clone());
                         s.log.save(id, ins, mode).await?;
                     }
                 }
@@ -1193,13 +1179,13 @@ impl<S: LogStore> Replica<S> {
             let target = msg.sender;
             let sender = self.rid;
             let sync_id = msg.sync_id;
-            effect.reply(target, Message::SyncLogOk(SyncLogOk { sender, sync_id }));
+            self.effect.send(target, Message::SyncLogOk(SyncLogOk { sender, sync_id }));
         }
 
-        Ok(effect)
+        Ok(())
     }
 
-    pub async fn start_syncing_committed(&self) -> Result<Effect<S::Command>> {
+    pub async fn start_syncing_committed(&self) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1211,7 +1197,6 @@ impl<S: LogStore> Replica<S> {
         let targets = s.peers.select_all();
         let sender = self.rid;
 
-        let mut effect = Effect::new();
         for &(rid, higher) in local_bounds.iter() {
             let lower: _ = peer_bounds.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO);
 
@@ -1222,7 +1207,7 @@ impl<S: LogStore> Replica<S> {
             let limit: usize = conf.max_instance_num.try_into().expect("usize overflow");
 
             let mut groups = Vec::new();
-            let mut instances: _ = <Vec<(InstanceId, Instance<S::Command>)>>::new();
+            let mut instances: _ = <Vec<(InstanceId, Instance<C>)>>::new();
 
             for lid in LocalInstanceId::range_inclusive(start, end) {
                 let id: _ = InstanceId(rid, lid);
@@ -1249,7 +1234,7 @@ impl<S: LogStore> Replica<S> {
 
                 s.syncing_map.insert(sync_id, Syncing { oks: VecSet::new() });
 
-                effect.broadcast(
+                self.effect.broadcast(
                     targets,
                     Message::SyncLog(SyncLog { sender, needs_reply, sync_id, instances }),
                 )
@@ -1258,16 +1243,16 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        Ok(effect)
+        Ok(())
     }
 
-    async fn handle_sync_log_ok(&self, msg: SyncLogOk) -> Result<Effect<S::Command>> {
+    async fn handle_sync_log_ok(&self, msg: SyncLogOk) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
         let sync_id = msg.sync_id;
         let syncing = match s.syncing_map.get_mut(&sync_id) {
-            None => return Ok(Effect::new()),
+            None => return Ok(()),
             Some(syncing) => syncing,
         };
 
@@ -1282,12 +1267,13 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        let mut effect = Effect::new();
-        effect.sync_finished = sync_finished;
-        Ok(effect)
+        if sync_finished {
+            self.effect.sync_finished()
+        }
+        Ok(())
     }
 
-    async fn handle_peer_bounds(&self, msg: PeerBounds) -> Result<Effect<S::Command>> {
+    async fn handle_peer_bounds(&self, msg: PeerBounds) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1297,6 +1283,6 @@ impl<S: LogStore> Replica<S> {
 
         drop(guard);
 
-        Ok(Effect::new())
+        Ok(())
     }
 }

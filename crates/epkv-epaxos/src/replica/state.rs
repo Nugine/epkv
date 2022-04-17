@@ -14,13 +14,17 @@ use std::ops::Not;
 use anyhow::Result;
 use fnv::FnvHashMap;
 
-pub struct State<S: LogStore> {
+pub struct State<C, S>
+where
+    C: CommandLike,
+    S: LogStore<C>,
+{
     pub peers: Peers,
-    pub temporaries: FnvHashMap<InstanceId, Temporary<S::Command>>,
+    pub temporaries: FnvHashMap<InstanceId, Temporary<C>>,
     pub joining: Option<VecSet<ReplicaId>>,
     pub lid_head: LidHead,
     pub sync_id_head: SyncIdHead,
-    pub log: Log<S>,
+    pub log: Log<C, S>,
     pub peer_status_bounds: PeerStatusBounds,
     pub syncing_map: FnvHashMap<SyncId, Syncing>,
 }
@@ -47,20 +51,22 @@ impl SyncIdHead {
     }
 }
 
-pub struct Log<S: LogStore> {
+pub struct Log<C, S>
+where
+    C: CommandLike,
+    S: LogStore<C>,
+{
     store: S,
 
-    max_key_map: HashMap<CommandKey<S>, MaxKey>,
+    max_key_map: HashMap<C::Key, MaxKey>,
     max_lid_map: VecMap<ReplicaId, MaxLid>,
     max_seq: MaxSeq,
 
     status_bounds: StatusBounds,
 
-    ins_cache: FnvHashMap<InstanceId, Instance<S::Command>>,
+    ins_cache: FnvHashMap<InstanceId, Instance<C>>,
     pbal_cache: FnvHashMap<InstanceId, Ballot>,
 }
-
-type CommandKey<S> = <<S as LogStore>::Command as CommandLike>::Key;
 
 struct MaxKey {
     seq: Seq,
@@ -77,7 +83,11 @@ struct MaxSeq {
     any: Seq,
 }
 
-impl<S: LogStore> State<S> {
+impl<C, S> State<C, S>
+where
+    C: CommandLike,
+    S: LogStore<C>,
+{
     pub async fn new(rid: ReplicaId, mut store: S, peers: VecSet<ReplicaId>) -> Result<Self> {
         let peers = Peers::new(peers);
         let temporaries = FnvHashMap::default();
@@ -135,8 +145,12 @@ impl<S: LogStore> State<S> {
     }
 }
 
-impl<S: LogStore> Log<S> {
-    pub fn calc_attributes(&self, id: InstanceId, keys: &Keys<S::Command>) -> (Seq, Deps) {
+impl<C, S> Log<C, S>
+where
+    C: CommandLike,
+    S: LogStore<C>,
+{
+    pub fn calc_attributes(&self, id: InstanceId, keys: &Keys<C>) -> (Seq, Deps) {
         let mut deps = Deps::with_capacity(self.max_lid_map.len());
         let mut seq = Seq::ZERO;
         let InstanceId(rid, lid) = id;
@@ -172,7 +186,7 @@ impl<S: LogStore> Log<S> {
         (seq, deps)
     }
 
-    fn update_attrs(&mut self, id: InstanceId, keys: Keys<S::Command>, seq: Seq) {
+    fn update_attrs(&mut self, id: InstanceId, keys: Keys<C>, seq: Seq) {
         let InstanceId(rid, lid) = id;
 
         match keys {
@@ -216,12 +230,7 @@ impl<S: LogStore> Log<S> {
         }
     }
 
-    pub async fn save(
-        &mut self,
-        id: InstanceId,
-        ins: Instance<S::Command>,
-        mode: UpdateMode,
-    ) -> Result<()> {
+    pub async fn save(&mut self, id: InstanceId, ins: Instance<C>, mode: UpdateMode) -> Result<()> {
         let needs_update_attrs = if let Some(saved) = self.ins_cache.get(&id) {
             saved.seq != ins.seq || saved.deps != ins.deps
         } else {
@@ -278,7 +287,7 @@ impl<S: LogStore> Log<S> {
         self.pbal_cache.get(&id).copied()
     }
 
-    pub fn get_cached_ins(&self, id: InstanceId) -> Option<&Instance<S::Command>> {
+    pub fn get_cached_ins(&self, id: InstanceId) -> Option<&Instance<C>> {
         self.ins_cache.get(&id)
     }
 
