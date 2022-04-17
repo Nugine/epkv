@@ -10,14 +10,16 @@
 
 pub mod bounds;
 pub mod cmd;
-pub mod config;
 pub mod deps;
 pub mod exec;
 pub mod id;
 pub mod ins;
-pub mod log;
 pub mod msg;
 pub mod net;
-pub mod peers;
 pub mod status;
 pub mod store;
+
+pub mod config;
+pub mod log;
+pub mod peers;
+pub mod state;
