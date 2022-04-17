@@ -1,5 +1,7 @@
 use super::*;
 
+use epkv_utils::asc::Asc;
+
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -11,6 +13,7 @@ pub trait LogStore<C>: Send + Sync + 'static {
         ins: &Instance<C>,
         mode: UpdateMode,
     ) -> Result<()>;
+
     async fn load_instance(&mut self, id: InstanceId) -> Result<Option<Instance<C>>>;
 
     async fn load_pbal(&mut self, id: InstanceId) -> Result<Option<Ballot>>;
@@ -23,4 +26,9 @@ pub trait LogStore<C>: Send + Sync + 'static {
 pub enum UpdateMode {
     Full,
     Partial,
+}
+
+#[async_trait]
+pub trait DataStore<C>: Send + Sync + 'static {
+    async fn issue(&self, id: InstanceId, cmd: C, notify: Asc<ExecNotify>) -> Result<()>;
 }
