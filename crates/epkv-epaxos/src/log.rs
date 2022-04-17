@@ -53,7 +53,7 @@ where
     C: CommandLike,
     S: LogStore<C>,
 {
-    pub fn new(store: S, attr_bounds: &AttrBounds, status_bounds: StatusBounds) -> Self {
+    pub fn new(store: S, attr_bounds: AttrBounds, status_bounds: StatusBounds) -> Self {
         let max_key_map = HashMap::new();
 
         let max_lid_map = copied_map_collect(attr_bounds.max_lids.iter(), |(rid, lid)| {
