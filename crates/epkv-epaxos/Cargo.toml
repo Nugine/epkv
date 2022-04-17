@@ -6,4 +6,6 @@ edition = "2021"
 
 [dependencies]
 epkv-utils = { path = "../epkv-utils" }
+futures-util = "0.3.21"
 serde = { version = "1.0.136", features = ["derive"] }
+tokio = { version = "1.17.0", features = ["full"] }
