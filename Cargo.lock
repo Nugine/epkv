@@ -19,6 +19,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "epkv-epaxos"
+version = "0.1.0-dev"
+
+[[package]]
 name = "epkv-utils"
 version = "0.1.0-dev"
 dependencies = [
