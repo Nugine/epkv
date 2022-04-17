@@ -11,6 +11,7 @@ use epkv_utils::vecset::VecSet;
 
 use anyhow::{ensure, Result};
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::MutexGuard as AsyncMutexGuard;
 
 pub struct Replica<C, S, N>
 where
@@ -115,6 +116,28 @@ where
                 self.handle_peer_bounds(msg).await //
             }
         }
+    }
+
+    pub async fn propose(&self, cmd: C) -> Result<()> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let id = InstanceId(self.rid, s.lid_head.gen_next());
+        let pbal = Ballot(Round::ZERO, self.rid);
+        let acc = VecSet::<ReplicaId>::with_capacity(1);
+
+        self.phase_preaccept(guard, id, pbal, Some(cmd), acc).await
+    }
+
+    async fn phase_preaccept(
+        &self,
+        mut guard: AsyncMutexGuard<'_, State<C, S>>,
+        id: InstanceId,
+        pbal: Ballot,
+        cmd: Option<C>,
+        mut acc: VecSet<ReplicaId>,
+    ) -> Result<()> {
+        todo!()
     }
 
     async fn handle_preaccept(&self, msg: PreAccept<C>) -> Result<()> {
