@@ -178,6 +178,15 @@ where
     }
 
     async fn handle_peer_bounds(&self, msg: PeerBounds) -> Result<()> {
-        todo!()
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        if let Some(bounds) = msg.committed_up_to {
+            s.peer_status_bounds.set_committed(msg.sender, bounds);
+        }
+
+        drop(guard);
+
+        Ok(())
     }
 }
