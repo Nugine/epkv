@@ -9,4 +9,5 @@
 #![warn(clippy::todo)]
 
 pub mod cmd;
+pub mod deps;
 pub mod id;
