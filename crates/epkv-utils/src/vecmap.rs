@@ -327,6 +327,17 @@ impl<'a, K, V> Iterator for IterMut<'a, K, V> {
     }
 }
 
+impl<'a, K: Ord, V> IntoIterator for &'a VecMap<K, V> {
+    type Item = &'a (K, V);
+
+    type IntoIter = Iter<'a, K, V>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

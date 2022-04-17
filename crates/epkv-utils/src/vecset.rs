@@ -273,6 +273,17 @@ impl<T: Ord> IntoIterator for VecSet<T> {
     }
 }
 
+impl<'a, T: Ord> IntoIterator for &'a VecSet<T> {
+    type Item = &'a T;
+
+    type IntoIter = Iter<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
