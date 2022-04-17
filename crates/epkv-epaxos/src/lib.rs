@@ -11,4 +11,5 @@
 pub mod cmd;
 pub mod deps;
 pub mod id;
+pub mod ins;
 pub mod status;
