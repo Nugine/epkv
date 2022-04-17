@@ -17,5 +17,6 @@ pub mod id;
 pub mod ins;
 pub mod msg;
 pub mod net;
+pub mod peers;
 pub mod status;
 pub mod store;
