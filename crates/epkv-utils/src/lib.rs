@@ -9,6 +9,15 @@
     clippy::missing_const_for_fn
 )]
 
+#[macro_export]
+macro_rules! clone {
+    ($($id:ident),+) => {
+        $(
+            let $id = $id.clone();
+        )+
+    };
+}
+
 pub mod asc;
 pub mod cmp;
 pub mod codec;
