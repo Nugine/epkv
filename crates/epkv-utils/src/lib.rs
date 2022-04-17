@@ -11,6 +11,7 @@
 
 pub mod asc;
 pub mod cmp;
+pub mod codec;
 pub mod time;
 pub mod vecmap;
 pub mod vecset;
