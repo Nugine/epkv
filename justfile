@@ -21,8 +21,7 @@ build:
 
 miri:
     MIRIFLAGS=-Zmiri-backtrace=full \
-    cargo miri test -p epkv-utils -- --nocapture --test-threads=1 \
-        asc atomic_flag onemap radixmap vecmap vecset
+    cargo miri test -p epkv-utils -- --nocapture --test-threads=1
 
 test:
     mold -run cargo test --release --offline
