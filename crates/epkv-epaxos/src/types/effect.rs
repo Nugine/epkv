@@ -2,6 +2,7 @@ use super::*;
 
 use epkv_utils::vecset::VecSet;
 
+use std::net::SocketAddr;
 use std::ops::Not;
 use std::time::Duration;
 
@@ -13,6 +14,7 @@ pub trait Effect<C: CommandLike>: Send + Sync + 'static {
     fn join_finished(&self);
     fn sync_finished(&self);
     fn start_execution(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps);
+    fn register_peer(&self, rid: ReplicaId, address: SocketAddr);
 }
 
 pub enum TimeoutEvent {

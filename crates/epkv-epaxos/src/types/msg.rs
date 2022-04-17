@@ -7,6 +7,8 @@ use epkv_utils::time::LocalInstant;
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
+use std::net::SocketAddr;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +115,7 @@ pub struct PrepareOk<C> {
 pub struct Join {
     pub sender: ReplicaId,
     pub epoch: Epoch,
+    pub address: SocketAddr,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

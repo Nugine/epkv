@@ -1013,6 +1013,7 @@ where
 
         {
             let target = msg.sender;
+            self.effect.register_peer(target, msg.address);
             self.effect.send(target, Message::JoinOk(JoinOk { sender: self.rid }));
         }
         Ok(())
