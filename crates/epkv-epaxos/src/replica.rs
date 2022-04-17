@@ -6,8 +6,9 @@ use crate::net::Network;
 use crate::state::State;
 use crate::store::LogStore;
 
-use epkv_utils::time::LocalInstant;
 use epkv_utils::vecset::VecSet;
+
+use std::sync::Arc;
 
 use anyhow::{ensure, Result};
 use tokio::sync::Mutex as AsyncMutex;
@@ -41,7 +42,7 @@ where
         config: ReplicaConfig,
         store: S,
         net: N,
-    ) -> Result<Self> {
+    ) -> Result<Arc<Self>> {
         let cluster_size = peers.len().wrapping_add(1);
         ensure!(peers.iter().all(|&p| p != rid));
         ensure!(cluster_size >= 3);
@@ -49,14 +50,14 @@ where
         let epoch = AtomicEpoch::new(epoch);
         let state = AsyncMutex::new(State::new(rid, store, peers).await?);
 
-        Ok(Self { rid, config, state, epoch, net })
+        Ok(Arc::new(Self { rid, config, state, epoch, net }))
     }
 
     pub fn config(&self) -> &ReplicaConfig {
         &self.config
     }
 
-    pub async fn handle_message(&self, msg: Message<C>, time: LocalInstant) -> Result<()> {
+    pub async fn handle_message(self: &Arc<Self>, msg: Message<C>) -> Result<()> {
         match msg {
             Message::PreAccept(msg) => {
                 self.handle_preaccept(msg).await //
@@ -101,7 +102,7 @@ where
                 self.handle_probe_rtt(msg).await //
             }
             Message::ProbeRttOk(msg) => {
-                self.handle_probe_rtt_ok(msg, time).await //
+                self.handle_probe_rtt_ok(msg).await //
             }
             Message::AskLog(msg) => {
                 self.handle_ask_log(msg).await //
@@ -118,7 +119,7 @@ where
         }
     }
 
-    pub async fn propose(&self, cmd: C) -> Result<()> {
+    pub async fn propose(self: &Arc<Self>, cmd: C) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -130,7 +131,7 @@ where
     }
 
     async fn phase_preaccept(
-        &self,
+        self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, S>>,
         id: InstanceId,
         pbal: Ballot,
@@ -140,67 +141,67 @@ where
         todo!()
     }
 
-    async fn handle_preaccept(&self, msg: PreAccept<C>) -> Result<()> {
+    async fn handle_preaccept(self: &Arc<Self>, msg: PreAccept<C>) -> Result<()> {
         todo!()
     }
 
-    async fn handle_preaccept_reply(&self, msg: PreAcceptReply) -> Result<()> {
+    async fn handle_preaccept_reply(self: &Arc<Self>, msg: PreAcceptReply) -> Result<()> {
         todo!()
     }
 
-    async fn handle_accept(&self, msg: Accept<C>) -> Result<()> {
+    async fn handle_accept(self: &Arc<Self>, msg: Accept<C>) -> Result<()> {
         todo!()
     }
 
-    async fn handle_accept_reply(&self, msg: AcceptReply) -> Result<()> {
+    async fn handle_accept_reply(self: &Arc<Self>, msg: AcceptReply) -> Result<()> {
         todo!()
     }
 
-    async fn handle_commit(&self, msg: Commit<C>) -> Result<()> {
+    async fn handle_commit(self: &Arc<Self>, msg: Commit<C>) -> Result<()> {
         todo!()
     }
 
-    async fn handle_prepare(&self, msg: Prepare) -> Result<()> {
+    async fn handle_prepare(self: &Arc<Self>, msg: Prepare) -> Result<()> {
         todo!()
     }
 
-    async fn handle_prepare_reply(&self, msg: PrepareReply<C>) -> Result<()> {
+    async fn handle_prepare_reply(self: &Arc<Self>, msg: PrepareReply<C>) -> Result<()> {
         todo!()
     }
 
-    async fn handle_join(&self, msg: Join) -> Result<()> {
+    async fn handle_join(self: &Arc<Self>, msg: Join) -> Result<()> {
         todo!()
     }
 
-    async fn handle_join_ok(&self, msg: JoinOk) -> Result<()> {
+    async fn handle_join_ok(self: &Arc<Self>, msg: JoinOk) -> Result<()> {
         todo!()
     }
 
-    async fn handle_leave(&self, msg: Leave) -> Result<()> {
+    async fn handle_leave(self: &Arc<Self>, msg: Leave) -> Result<()> {
         todo!()
     }
 
-    async fn handle_probe_rtt(&self, msg: ProbeRtt) -> Result<()> {
+    async fn handle_probe_rtt(self: &Arc<Self>, msg: ProbeRtt) -> Result<()> {
         todo!()
     }
 
-    async fn handle_probe_rtt_ok(&self, msg: ProbeRttOk, time: LocalInstant) -> Result<()> {
+    async fn handle_probe_rtt_ok(self: &Arc<Self>, msg: ProbeRttOk) -> Result<()> {
         todo!()
     }
 
-    async fn handle_ask_log(&self, msg: AskLog) -> Result<()> {
+    async fn handle_ask_log(self: &Arc<Self>, msg: AskLog) -> Result<()> {
         todo!()
     }
 
-    async fn handle_sync_log(&self, msg: SyncLog<C>) -> Result<()> {
+    async fn handle_sync_log(self: &Arc<Self>, msg: SyncLog<C>) -> Result<()> {
         todo!()
     }
 
-    async fn handle_sync_log_ok(&self, msg: SyncLogOk) -> Result<()> {
+    async fn handle_sync_log_ok(self: &Arc<Self>, msg: SyncLogOk) -> Result<()> {
         todo!()
     }
 
-    async fn handle_peer_bounds(&self, msg: PeerBounds) -> Result<()> {
+    async fn handle_peer_bounds(self: &Arc<Self>, msg: PeerBounds) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
