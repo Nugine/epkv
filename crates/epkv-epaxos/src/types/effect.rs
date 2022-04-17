@@ -15,6 +15,8 @@ pub trait Effect<C: CommandLike>: Send + Sync + 'static {
     fn sync_finished(&self);
     fn start_execution(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps);
     fn register_peer(&self, rid: ReplicaId, address: SocketAddr);
+    fn ins_issued(&self, id: InstanceId);
+    fn ins_executed(&self, id: InstanceId);
 }
 
 pub enum TimeoutEvent {
