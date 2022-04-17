@@ -11,6 +11,8 @@ use epkv_utils::vecset::VecSet;
 use std::sync::Arc;
 
 use anyhow::{ensure, Result};
+use dashmap::DashMap;
+use tokio::sync::mpsc;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::MutexGuard as AsyncMutexGuard;
 
@@ -25,6 +27,7 @@ where
 
     epoch: AtomicEpoch,
     state: AsyncMutex<State<C, S>>,
+    callback: DashMap<InstanceId, mpsc::Sender<Message<C>>>,
 
     net: N,
 }
@@ -49,8 +52,9 @@ where
 
         let epoch = AtomicEpoch::new(epoch);
         let state = AsyncMutex::new(State::new(rid, store, peers).await?);
+        let callback = DashMap::new();
 
-        Ok(Arc::new(Self { rid, config, state, epoch, net }))
+        Ok(Arc::new(Self { rid, config, state, epoch, callback, net }))
     }
 
     pub fn config(&self) -> &ReplicaConfig {
