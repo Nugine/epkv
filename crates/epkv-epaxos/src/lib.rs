@@ -32,6 +32,9 @@ pub mod types {
 
     mod bounds;
     pub use self::bounds::*;
+
+    mod exec;
+    pub use self::exec::*;
 }
 
 pub mod executor;
