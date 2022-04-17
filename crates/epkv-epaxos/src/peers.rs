@@ -1,5 +1,6 @@
 use crate::id::ReplicaId;
 
+use epkv_utils::iter::copied_map_collect;
 use epkv_utils::vecset::VecSet;
 
 use std::ops::Not;
@@ -44,14 +45,6 @@ impl Avg {
     fn get(&self) -> Option<u64> {
         self.sum.checked_div(self.cnt)
     }
-}
-
-fn copied_map_collect<'a, C, T, U>(iter: impl Iterator<Item = &'a T>, f: impl FnMut(T) -> U) -> C
-where
-    T: Copy + 'a,
-    C: FromIterator<U>,
-{
-    iter.copied().map(f).collect()
 }
 
 impl Peers {

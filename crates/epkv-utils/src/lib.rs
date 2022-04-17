@@ -12,6 +12,7 @@
 pub mod asc;
 pub mod cmp;
 pub mod codec;
+pub mod iter;
 pub mod onemap;
 pub mod radixmap;
 pub mod time;
