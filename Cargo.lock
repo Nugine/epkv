@@ -21,6 +21,9 @@ dependencies = [
 [[package]]
 name = "epkv-epaxos"
 version = "0.1.0-dev"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "epkv-utils"
