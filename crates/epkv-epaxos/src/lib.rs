@@ -15,6 +15,7 @@ pub mod deps;
 pub mod exec;
 pub mod id;
 pub mod ins;
+pub mod log;
 pub mod msg;
 pub mod net;
 pub mod peers;
