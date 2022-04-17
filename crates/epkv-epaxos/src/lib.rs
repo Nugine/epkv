@@ -8,6 +8,7 @@
 )]
 #![warn(clippy::todo)]
 
+pub mod bounds;
 pub mod cmd;
 pub mod deps;
 pub mod exec;
