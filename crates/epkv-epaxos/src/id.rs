@@ -156,6 +156,31 @@ impl LocalInstanceId {
     }
 }
 
+pub struct Head<T>(T);
+
+impl<T> Head<T> {
+    #[inline]
+    pub const fn new(val: T) -> Self {
+        Self(val)
+    }
+}
+
+impl Head<LocalInstanceId> {
+    #[inline]
+    pub fn gen_next(&mut self) -> LocalInstanceId {
+        self.0 = self.0.add_one();
+        self.0
+    }
+}
+
+impl Head<SyncId> {
+    #[inline]
+    pub fn gen_next(&mut self) -> SyncId {
+        self.0 = self.0.add_one();
+        self.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,5 +211,12 @@ mod tests {
         assert_eq!(range.next(), Some(3.into()));
         assert_eq!(range.next(), None);
         assert_eq!(range.next(), None);
+    }
+
+    #[test]
+    fn head() {
+        let mut lid_head = Head(LocalInstanceId::ZERO);
+        assert_eq!(lid_head.gen_next(), LocalInstanceId::ONE);
+        assert_eq!(lid_head.gen_next(), LocalInstanceId::from(2));
     }
 }
