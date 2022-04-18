@@ -16,6 +16,7 @@ use crate::store::UpdateMode;
 use epkv_utils::chan::recv_timeout;
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
+use epkv_utils::time::LocalInstant;
 use epkv_utils::vecset::VecSet;
 
 use std::ops::Not;
@@ -795,6 +796,20 @@ where
 
         drop(guard);
 
+        Ok(())
+    }
+
+    pub async fn probe_rtt(&self) -> Result<()> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let targets = s.peers.select_all();
+
+        drop(guard);
+
+        let sender = self.rid;
+        let time = LocalInstant::now();
+        self.net.broadcast(targets, Message::ProbeRtt(ProbeRtt { sender, time }));
         Ok(())
     }
 
