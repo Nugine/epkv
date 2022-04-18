@@ -23,6 +23,5 @@ pub mod config;
 pub mod graph;
 pub mod log;
 pub mod peers;
-pub mod state;
 
 pub mod replica;

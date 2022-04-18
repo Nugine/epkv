@@ -1,18 +1,15 @@
+use crate::bounds::PeerStatusBounds;
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
 use crate::deps::Deps;
 use crate::id::*;
 use crate::ins::Instance;
+use crate::log::Log;
 use crate::msg::*;
-use crate::net::broadcast_accept;
-use crate::net::broadcast_commit;
-use crate::net::broadcast_preaccept;
-use crate::net::Network;
-use crate::state::State;
+use crate::net::{broadcast_accept, broadcast_commit, broadcast_preaccept, Network};
+use crate::peers::Peers;
 use crate::status::Status;
-use crate::store::DataStore;
-use crate::store::LogStore;
-use crate::store::UpdateMode;
+use crate::store::{DataStore, LogStore, UpdateMode};
 
 use epkv_utils::chan::recv_timeout;
 use epkv_utils::clone;
@@ -64,6 +61,22 @@ where
     data_store: D,
 
     net: N,
+}
+
+struct State<C, L>
+where
+    C: CommandLike,
+    L: LogStore<C>,
+{
+    peers: Peers,
+
+    log: Log<C, L>,
+
+    peer_status_bounds: PeerStatusBounds,
+
+    lid_head: Head<LocalInstanceId>,
+
+    sync_id_head: Head<SyncId>,
 }
 
 pub struct ReplicaBuilder<C, L, D, N> {
@@ -118,7 +131,7 @@ where
         let epoch = builder.epoch.unwrap();
         let peers = builder.peers.unwrap();
         let config = builder.config.unwrap();
-        let log_store = builder.log_store.unwrap();
+        let mut log_store = builder.log_store.unwrap();
         let data_store = builder.data_store.unwrap();
         let net = builder.net.unwrap();
 
@@ -129,8 +142,26 @@ where
         ensure!(addr_set.len() == peers.len());
 
         let epoch = AtomicEpoch::new(epoch);
-        let peers_set: VecSet<_> = map_collect(&peers, |&(p, _)| p);
-        let state = AsyncMutex::new(State::new(rid, log_store, peers_set).await?);
+
+        let state = {
+            let peers_set: VecSet<_> = map_collect(&peers, |&(p, _)| p);
+
+            let peers = Peers::new(peers_set);
+
+            let attr_bounds = log_store.load_attr_bounds().await?;
+            let status_bounds = log_store.load_status_bounds().await?;
+
+            let lid_head =
+                Head::new(attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO));
+
+            let sync_id_head = Head::new(SyncId::ZERO);
+
+            let log = Log::new(log_store, attr_bounds, status_bounds);
+
+            let peer_status_bounds = PeerStatusBounds::new();
+
+            AsyncMutex::new(State { peers, lid_head, sync_id_head, log, peer_status_bounds })
+        };
 
         let propose_tx = DashMap::new();
         let join_tx = SyncMutex::new(None);
