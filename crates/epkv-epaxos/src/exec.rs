@@ -12,14 +12,14 @@ pub struct ExecNotify {
     waker: AtomicWaker,
 }
 
-const INIT: u8 = 0;
-const ISSUED: u8 = 1;
-const EXECUTED: u8 = 2;
-
 impl ExecNotify {
+    const INIT: u8 = 0;
+    const ISSUED: u8 = 1;
+    const EXECUTED: u8 = 2;
+
     #[must_use]
     pub fn new() -> Self {
-        Self { state: AtomicU8::new(INIT), waker: AtomicWaker::new() }
+        Self { state: AtomicU8::new(Self::INIT), waker: AtomicWaker::new() }
     }
 
     fn register_waker(&self, waker: &Waker) {
@@ -47,17 +47,17 @@ impl ExecNotify {
     }
 
     pub fn notify_issued(&self) {
-        self.set_state(ISSUED);
+        self.set_state(Self::ISSUED);
     }
     pub fn notify_executed(&self) {
-        self.set_state(EXECUTED);
+        self.set_state(Self::EXECUTED);
     }
 
     pub async fn wait_issued(&self) {
-        poll_fn(|cx| self.poll_state(cx, ISSUED)).await;
+        poll_fn(|cx| self.poll_state(cx, Self::ISSUED)).await;
     }
     pub async fn wait_executed(&self) {
-        poll_fn(|cx| self.poll_state(cx, EXECUTED)).await;
+        poll_fn(|cx| self.poll_state(cx, Self::EXECUTED)).await;
     }
 }
 
@@ -79,7 +79,7 @@ mod tests {
     #[tokio::test]
     async fn simple() {
         let n = Asc::new(ExecNotify::new());
-        assert_eq!(n.state(), INIT);
+        assert_eq!(n.state(), ExecNotify::INIT);
 
         {
             let n = n.asc_clone();
@@ -91,9 +91,9 @@ mod tests {
         }
 
         n.wait_issued().await;
-        assert_eq!(n.state(), ISSUED);
+        assert_eq!(n.state(), ExecNotify::ISSUED);
 
         n.wait_executed().await;
-        assert_eq!(n.state(), EXECUTED);
+        assert_eq!(n.state(), ExecNotify::EXECUTED);
     }
 }
