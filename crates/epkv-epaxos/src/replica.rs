@@ -527,7 +527,59 @@ where
     }
 
     async fn handle_accept(self: &Arc<Self>, msg: Accept<C>) -> Result<()> {
-        todo!()
+        if msg.epoch < self.epoch.load() {
+            return Ok(());
+        }
+
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let id = msg.id;
+        let pbal = msg.pbal;
+
+        s.log.load(id).await?;
+
+        if s.log.should_ignore_pbal(id, pbal) {
+            return Ok(());
+        }
+        if s.log.should_ignore_status(id, pbal, Status::Accepted) {
+            return Ok(());
+        }
+
+        let abal = pbal;
+        let status = Status::Accepted;
+
+        let mut acc = msg.acc;
+        let _ = acc.insert(self.rid);
+
+        let seq = msg.seq;
+        let deps = msg.deps;
+
+        let (cmd, mode) = match msg.cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
+            None => {
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
+            }
+        };
+
+        {
+            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            s.log.save(id, ins, mode).await?;
+        }
+
+        drop(guard);
+
+        {
+            let target = msg.sender;
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            self.net.send_one(
+                target,
+                Message::AcceptOk(AcceptOk { sender, epoch, id, pbal }),
+            );
+        }
+        Ok(())
     }
 
     async fn end_phase_accept(
