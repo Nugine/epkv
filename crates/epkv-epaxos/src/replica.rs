@@ -12,6 +12,7 @@ use crate::store::LogStore;
 use crate::store::UpdateMode;
 
 use epkv_utils::clone;
+use epkv_utils::cmp::max_assign;
 use epkv_utils::vecset::VecSet;
 use rand::Rng;
 use tokio::spawn;
@@ -239,7 +240,67 @@ where
     }
 
     async fn handle_preaccept(self: &Arc<Self>, msg: PreAccept<C>) -> Result<()> {
-        todo!()
+        if msg.epoch < self.epoch.load() {
+            return Ok(());
+        }
+
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let id = msg.id;
+        let pbal = msg.pbal;
+
+        s.log.load(id).await?;
+
+        if s.log.should_ignore_pbal(id, pbal) {
+            return Ok(());
+        }
+        if s.log.should_ignore_status(id, pbal, Status::PreAccepted) {
+            return Ok(());
+        }
+
+        let (cmd, mode) = match msg.cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
+            None => {
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
+            }
+        };
+
+        let (mut seq, mut deps) = s.log.calc_attributes(id, &cmd.keys());
+        max_assign(&mut seq, msg.seq);
+        deps.merge(&msg.deps);
+
+        let is_changed = seq != msg.seq || deps != msg.deps;
+
+        let abal = pbal;
+        let status = Status::PreAccepted;
+
+        let mut acc = msg.acc;
+        let _ = acc.insert(self.rid);
+
+        {
+            clone!(deps);
+            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            s.log.save(id, ins, mode).await?
+        }
+
+        drop(guard);
+
+        {
+            let target = msg.sender;
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            self.net.send_one(
+                target,
+                if is_changed {
+                    Message::PreAcceptDiff(PreAcceptDiff { sender, epoch, id, pbal, seq, deps })
+                } else {
+                    Message::PreAcceptOk(PreAcceptOk { sender, epoch, id, pbal })
+                },
+            );
+        }
+        Ok(())
     }
 
     async fn end_phase_preaccept(
