@@ -165,6 +165,7 @@ dependencies = [
  "futures-util",
  "parking_lot",
  "rand",
+ "scopeguard",
  "serde",
  "tokio",
  "tracing",

@@ -31,6 +31,7 @@ use std::time::Duration;
 
 use anyhow::{ensure, Result};
 use dashmap::DashMap;
+use futures_util::future::join_all;
 use parking_lot::Mutex as SyncMutex;
 use rand::Rng;
 use tokio::spawn;
@@ -55,6 +56,7 @@ where
 
     propose_tx: DashMap<InstanceId, mpsc::Sender<Message<C>>>,
     join_tx: SyncMutex<Option<mpsc::Sender<JoinOk>>>,
+    sync_tx: DashMap<SyncId, mpsc::Sender<SyncLogOk>>,
 
     net: N,
 }
@@ -86,6 +88,7 @@ where
 
         let propose_tx = DashMap::new();
         let join_tx = SyncMutex::new(None);
+        let sync_tx = DashMap::new();
 
         for &(p, a) in &peers {
             net.register_peer(p, a)
@@ -99,6 +102,7 @@ where
             epoch,
             propose_tx,
             join_tx,
+            sync_tx,
             net,
         }))
     }
@@ -161,7 +165,7 @@ where
                 self.handle_sync_log(msg).await //
             }
             Message::SyncLogOk(msg) => {
-                self.handle_sync_log_ok(msg).await //
+                self.resume_sync(msg).await //
             }
             Message::PeerBounds(msg) => {
                 self.handle_peer_bounds(msg).await //
@@ -1250,8 +1254,8 @@ where
             )
         };
 
-        let limit: usize =
-            self.config.sync_limits.max_instance_num.try_into().expect("usize overflow");
+        let conf = &self.config.sync_limits;
+        let limit: usize = conf.max_instance_num.try_into().expect("usize overflow");
 
         for &(rid, lower) in msg.known_up_to.iter() {
             let higher = match local_known_up_to.get(&rid) {
@@ -1282,6 +1286,99 @@ where
         drop(guard);
 
         Ok(())
+    }
+
+    pub async fn run_sync_committed(self: &Arc<Self>) -> Result<bool> {
+        let (rxs, quorum) = {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+
+            s.log.update_bounds();
+
+            let local_bounds = s.log.committed_up_to();
+            let peer_bounds = s.peer_status_bounds.committed_up_to();
+
+            let mut rxs = Vec::new();
+
+            let targets = s.peers.select_all();
+            let sender = self.rid;
+            let mut send_log = |s: &mut State<_, _>, instances| {
+                let sync_id = s.sync_id_head.gen_next();
+                let (tx, rx) = mpsc::channel(targets.len());
+                let _ = self.sync_tx.insert(sync_id, tx);
+                rxs.push((sync_id, rx));
+
+                clone!(targets);
+                self.net.broadcast(
+                    targets,
+                    Message::SyncLog(SyncLog { sender, sync_id, instances }),
+                )
+            };
+
+            for &(rid, higher) in local_bounds.iter() {
+                let lower: _ = peer_bounds.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO);
+
+                let conf = &self.config.sync_limits;
+                let limit: usize = conf.max_instance_num.try_into().expect("usize overflow");
+
+                let mut instances: _ = <Vec<(InstanceId, Instance<C>)>>::new();
+
+                for lid in LocalInstanceId::range_inclusive(lower.add_one(), higher) {
+                    let id: _ = InstanceId(rid, lid);
+
+                    s.log.load(id).await?;
+
+                    let ins = match s.log.get_cached_ins(id) {
+                        Some(ins) if ins.status >= Status::Committed => ins,
+                        _ => continue,
+                    };
+
+                    instances.push((id, ins.clone()));
+
+                    if instances.len() >= limit {
+                        send_log(s, mem::take(&mut instances));
+                    }
+                }
+
+                if instances.is_empty().not() {
+                    send_log(s, instances);
+                }
+            }
+
+            drop(guard);
+
+            (rxs, targets.len())
+        };
+
+        let mut handles = Vec::with_capacity(rxs.len());
+        let mut sync_ids = Vec::with_capacity(rxs.len());
+        for (sync_id, mut rx) in rxs {
+            let this = Arc::clone(self);
+            let handle = spawn(async move {
+                let mut received: VecSet<ReplicaId> = VecSet::new();
+                while let Some(msg) = rx.recv().await {
+                    let _ = received.insert(msg.sender);
+                    if received.len() >= quorum / 2 {
+                        break;
+                    }
+                }
+                let _ = this.sync_tx.remove(&sync_id);
+                received.len() >= quorum / 2
+            });
+            handles.push(handle);
+            sync_ids.push(sync_id);
+        }
+
+        let _guard: _ = scopeguard::guard_on_success(sync_ids, |sync_ids: _| {
+            for sync_id in sync_ids {
+                let _ = self.sync_tx.remove(&sync_id);
+            }
+        });
+
+        let ans = join_all(handles).await;
+        let is_succeeded = ans.iter().all(|ret| matches!(ret, Ok(true)));
+
+        Ok(is_succeeded)
     }
 
     async fn handle_sync_log(self: &Arc<Self>, msg: SyncLog<C>) -> Result<()> {
@@ -1333,8 +1430,12 @@ where
         Ok(())
     }
 
-    async fn handle_sync_log_ok(self: &Arc<Self>, msg: SyncLogOk) -> Result<()> {
-        todo!()
+    async fn resume_sync(self: &Arc<Self>, msg: SyncLogOk) -> Result<()> {
+        let tx = self.sync_tx.get(&msg.sync_id).as_deref().cloned();
+        if let Some(tx) = tx {
+            let _ = tx.send(msg).await;
+        }
+        Ok(())
     }
 
     async fn handle_peer_bounds(self: &Arc<Self>, msg: PeerBounds) -> Result<()> {
