@@ -5,6 +5,7 @@ use crate::id::*;
 use crate::ins::Instance;
 use crate::msg::*;
 use crate::net::broadcast_accept;
+use crate::net::broadcast_commit;
 use crate::net::broadcast_preaccept;
 use crate::net::Network;
 use crate::state::State;
@@ -229,7 +230,7 @@ where
         //             error!(?err);
         //         }
         //     });
-        // }
+        // } // TODO
 
         {
             let this = Arc::clone(self);
@@ -657,8 +658,52 @@ where
         deps: Deps,
         acc: VecSet<ReplicaId>,
     ) -> Result<()> {
-        todo!()
+        let s = &mut *guard;
+
+        let abal = pbal;
+        let status = Status::Committed;
+
+        let quorum = s.peers.cluster_size().wrapping_sub(1);
+        let selected_peers = s.peers.select(quorum, &acc);
+
+        let (cmd, mode) = match cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
+            None => {
+                s.log.load(id).await?;
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
+            }
+        };
+
+        {
+            clone!(cmd, deps, acc);
+            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            s.log.save(id, ins, mode).await?;
+        }
+
+        drop(guard);
+
+        cmd.notify_committed();
+
+        {
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            clone!(cmd, deps);
+            broadcast_commit(
+                &self.net,
+                selected_peers.acc,
+                selected_peers.others,
+                Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
+            );
+        }
+
+        // {
+        //     self.effect.start_execution(id, cmd, seq, deps); TODO
+        // }
+
+        Ok(())
     }
+
     async fn handle_commit(self: &Arc<Self>, msg: Commit<C>) -> Result<()> {
         todo!()
     }
