@@ -16,12 +16,15 @@ use crate::store::UpdateMode;
 use epkv_utils::chan::recv_timeout;
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
+use epkv_utils::iter::map_collect;
 use epkv_utils::time::LocalInstant;
+use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::mem;
+use std::net::SocketAddr;
 use std::ops::Not;
 use std::sync::Arc;
 use std::time::Duration;
@@ -43,6 +46,7 @@ where
     N: Network<C>,
 {
     rid: ReplicaId,
+    address: SocketAddr,
     config: ReplicaConfig,
 
     epoch: AtomicEpoch,
@@ -60,26 +64,35 @@ where
 {
     pub async fn new(
         rid: ReplicaId,
+        address: SocketAddr,
         epoch: Epoch,
-        peers: VecSet<ReplicaId>,
+        peers: VecMap<ReplicaId, SocketAddr>,
         config: ReplicaConfig,
         store: S,
         net: N,
     ) -> Result<Arc<Self>> {
         let cluster_size = peers.len().wrapping_add(1);
-        ensure!(peers.iter().all(|&p| p != rid));
+        let addr_set: VecSet<_> = map_collect(&peers, |&(_, a)| a);
         ensure!(cluster_size >= 3);
+        ensure!(peers.iter().all(|&(p, a)| p != rid && a != address));
+        ensure!(addr_set.len() == peers.len());
 
         let epoch = AtomicEpoch::new(epoch);
-        let state = AsyncMutex::new(State::new(rid, store, peers).await?);
-        let cb_propose = DashMap::new();
+        let peers_set: VecSet<_> = map_collect(&peers, |&(p, _)| p);
+        let state = AsyncMutex::new(State::new(rid, store, peers_set).await?);
+        let propose_tx = DashMap::new();
+
+        for &(p, a) in &peers {
+            net.register_peer(p, a)
+        }
 
         Ok(Arc::new(Self {
             rid,
+            address,
             config,
             state,
             epoch,
-            propose_tx: cb_propose,
+            propose_tx,
             net,
         }))
     }
