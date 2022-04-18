@@ -788,7 +788,14 @@ where
     }
 
     async fn handle_leave(self: &Arc<Self>, msg: Leave) -> Result<()> {
-        todo!()
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        s.peers.remove(msg.sender);
+
+        drop(guard);
+
+        Ok(())
     }
 
     async fn handle_probe_rtt(self: &Arc<Self>, msg: ProbeRtt) -> Result<()> {
