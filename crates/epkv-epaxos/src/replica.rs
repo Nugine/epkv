@@ -1285,7 +1285,52 @@ where
     }
 
     async fn handle_sync_log(self: &Arc<Self>, msg: SyncLog<C>) -> Result<()> {
-        todo!()
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        for (id, mut ins) in msg.instances {
+            s.log.load(id).await?;
+            match s.log.get_cached_ins(id) {
+                None => {
+                    s.log.save(id, ins, UpdateMode::Full).await?;
+                }
+                Some(saved_ins) => {
+                    if saved_ins.status < Status::Committed && ins.status >= Status::Committed {
+                        max_assign(&mut ins.pbal, saved_ins.pbal);
+                        max_assign(&mut ins.abal, saved_ins.abal);
+                        ins.status = Status::Committed;
+
+                        let _ = ins.acc.insert(self.rid);
+                        let mode = if saved_ins.cmd.is_nop() != ins.cmd.is_nop() {
+                            UpdateMode::Full
+                        } else {
+                            UpdateMode::Partial
+                        };
+
+                        let (cmd, seq, deps) = (ins.cmd.clone(), ins.seq, ins.deps.clone());
+                        s.log.save(id, ins, mode).await?;
+
+                        let this = Arc::clone(self);
+                        spawn(async move {
+                            if let Err(err) = this.run_execute(id, cmd, seq, deps).await {
+                                error!(?id, ?err);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        drop(guard);
+
+        if msg.sync_id != SyncId::ZERO {
+            let target = msg.sender;
+            let sender = self.rid;
+            let sync_id = msg.sync_id;
+            self.net.send_one(target, Message::SyncLogOk(SyncLogOk { sender, sync_id }));
+        }
+
+        Ok(())
     }
 
     async fn handle_sync_log_ok(self: &Arc<Self>, msg: SyncLogOk) -> Result<()> {
