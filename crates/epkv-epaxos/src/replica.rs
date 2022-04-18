@@ -4,6 +4,7 @@ use crate::deps::Deps;
 use crate::id::*;
 use crate::ins::Instance;
 use crate::msg::*;
+use crate::net::broadcast_accept;
 use crate::net::broadcast_preaccept;
 use crate::net::Network;
 use crate::state::State;
@@ -234,7 +235,7 @@ where
             let this = Arc::clone(self);
             spawn(async move {
                 if let Err(err) = this.end_phase_preaccept(id, rx, seq, deps, acc).await {
-                    error!(?err);
+                    error!(?id, ?err);
                 }
             });
         }
@@ -461,7 +462,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     async fn start_phase_accept(
-        &self,
+        self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, S>>,
         id: InstanceId,
         pbal: Ballot,
@@ -470,10 +471,71 @@ where
         deps: Deps,
         acc: VecSet<ReplicaId>,
     ) -> Result<()> {
-        todo!()
+        let s = &mut *guard;
+
+        let abal = pbal;
+        let status = Status::Accepted;
+
+        let quorum = s.peers.cluster_size() / 2;
+        let selected_peers = s.peers.select(quorum, &acc);
+
+        let (cmd, mode) = match cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
+            None => {
+                s.log.load(id).await?;
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
+            }
+        };
+
+        {
+            clone!(cmd, deps, acc);
+            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            s.log.save(id, ins, mode).await?;
+        }
+
+        let rx = {
+            let (tx, rx) = mpsc::channel(quorum);
+            self.propose_tx.insert(id, tx);
+            rx
+        };
+
+        drop(guard);
+
+        {
+            clone!(acc);
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            broadcast_accept(
+                &self.net,
+                selected_peers.acc,
+                selected_peers.others,
+                Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
+            );
+        }
+
+        {
+            let this = Arc::clone(self);
+            spawn(async move {
+                if let Err(err) = this.end_phase_accept(id, rx, acc).await {
+                    error!(?id, ?err);
+                }
+            });
+        }
+
+        Ok(())
     }
 
     async fn handle_accept(self: &Arc<Self>, msg: Accept<C>) -> Result<()> {
+        todo!()
+    }
+
+    async fn end_phase_accept(
+        self: &Arc<Self>,
+        id: InstanceId,
+        mut rx: mpsc::Receiver<Message<C>>,
+        mut acc: VecSet<ReplicaId>,
+    ) -> Result<()> {
         todo!()
     }
 
