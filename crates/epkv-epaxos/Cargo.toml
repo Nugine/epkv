@@ -14,3 +14,4 @@ futures-util = "0.3.21"
 rand = "0.8.5"
 serde = { version = "1.0.136", features = ["derive"] }
 tokio = { version = "1.17.0", features = ["full"] }
+tracing = "0.1.34"

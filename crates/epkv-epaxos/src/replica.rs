@@ -1,14 +1,25 @@
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
+use crate::deps::Deps;
 use crate::id::*;
+use crate::ins::Instance;
 use crate::msg::*;
+use crate::net::broadcast_preaccept;
 use crate::net::Network;
 use crate::state::State;
+use crate::status::Status;
 use crate::store::LogStore;
+use crate::store::UpdateMode;
 
+use epkv_utils::clone;
 use epkv_utils::vecset::VecSet;
+use rand::Rng;
+use tokio::spawn;
+use tokio::time::sleep;
+use tracing::error;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{ensure, Result};
 use dashmap::DashMap;
@@ -27,7 +38,7 @@ where
 
     epoch: AtomicEpoch,
     state: AsyncMutex<State<C, S>>,
-    callback: DashMap<InstanceId, mpsc::Sender<Message<C>>>,
+    cb_propose: DashMap<InstanceId, mpsc::Sender<Message<C>>>,
 
     net: N,
 }
@@ -52,9 +63,16 @@ where
 
         let epoch = AtomicEpoch::new(epoch);
         let state = AsyncMutex::new(State::new(rid, store, peers).await?);
-        let callback = DashMap::new();
+        let cb_propose = DashMap::new();
 
-        Ok(Arc::new(Self { rid, config, state, epoch, callback, net }))
+        Ok(Arc::new(Self {
+            rid,
+            config,
+            state,
+            epoch,
+            cb_propose,
+            net,
+        }))
     }
 
     pub fn config(&self) -> &ReplicaConfig {
@@ -131,10 +149,10 @@ where
         let pbal = Ballot(Round::ZERO, self.rid);
         let acc = VecSet::<ReplicaId>::with_capacity(1);
 
-        self.phase_preaccept(guard, id, pbal, Some(cmd), acc).await
+        self.start_phase_preaccept(guard, id, pbal, Some(cmd), acc).await
     }
 
-    async fn phase_preaccept(
+    async fn start_phase_preaccept(
         self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, S>>,
         id: InstanceId,
@@ -142,10 +160,95 @@ where
         cmd: Option<C>,
         mut acc: VecSet<ReplicaId>,
     ) -> Result<()> {
-        todo!()
+        let s = &mut *guard;
+
+        s.log.load(id).await?;
+
+        let (cmd, mode) = match cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
+            None => {
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
+            }
+        };
+
+        let (seq, deps) = s.log.calc_attributes(id, &cmd.keys());
+
+        let abal = pbal;
+        let status = Status::PreAccepted;
+        let _ = acc.insert(self.rid);
+
+        {
+            clone!(cmd, deps, acc);
+            let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            s.log.save(id, ins, mode).await?;
+        }
+
+        let quorum = s.peers.cluster_size().wrapping_sub(2);
+        let selected_peers = s.peers.select(quorum, &acc);
+
+        let rx = {
+            let (tx, rx) = mpsc::channel(quorum);
+            self.cb_propose.insert(id, tx);
+            rx
+        };
+
+        // let avg_rtt = s.peers.get_avg_rtt();
+
+        drop(guard);
+
+        {
+            clone!(deps, acc);
+            let sender = self.rid;
+            let epoch = self.epoch.load();
+            broadcast_preaccept(
+                &self.net,
+                selected_peers.acc,
+                selected_peers.others,
+                PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
+            );
+        }
+
+        // if pbal.0 == Round::ZERO {
+        //     let conf = &self.config.recover_timeout;
+        //     let duration = conf.with(avg_rtt, |d| {
+        //         let rate: f64 = rand::thread_rng().gen_range(3.0..5.0);
+        //         #[allow(clippy::float_arithmetic)]
+        //         let delta = Duration::from_secs_f64(d.as_secs_f64() * rate);
+        //         conf.default + delta
+        //     });
+        //     let this = Arc::clone(self);
+        //     spawn(async move {
+        //         sleep(duration).await;
+        //         if let Err(err) = this.recover(id).await {
+        //             error!(?err);
+        //         }
+        //     });
+        // }
+
+        {
+            let this = Arc::clone(self);
+            spawn(async move {
+                if let Err(err) = this.end_phase_preaccept(rx, seq, deps, acc).await {
+                    error!(?err);
+                }
+            });
+        }
+
+        Ok(())
     }
 
     async fn handle_preaccept(self: &Arc<Self>, msg: PreAccept<C>) -> Result<()> {
+        todo!()
+    }
+
+    async fn end_phase_preaccept(
+        self: &Arc<Self>,
+        rx: mpsc::Receiver<Message<C>>,
+        seq: Seq,
+        deps: Deps,
+        acc: VecSet<ReplicaId>,
+    ) -> Result<()> {
         todo!()
     }
 
@@ -162,6 +265,10 @@ where
     }
 
     async fn handle_commit(self: &Arc<Self>, msg: Commit<C>) -> Result<()> {
+        todo!()
+    }
+
+    async fn recover(&self, id: InstanceId) -> Result<()> {
         todo!()
     }
 
