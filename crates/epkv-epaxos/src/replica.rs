@@ -11,22 +11,25 @@ use crate::status::Status;
 use crate::store::LogStore;
 use crate::store::UpdateMode;
 
+use epkv_utils::chan::recv_timeout;
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecset::VecSet;
-use rand::Rng;
-use tokio::spawn;
-use tokio::time::sleep;
-use tracing::error;
 
+use std::ops::Not;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{ensure, Result};
 use dashmap::DashMap;
+use rand::Rng;
+use tokio::spawn;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::MutexGuard as AsyncMutexGuard;
+use tokio::time::sleep;
+use tokio::time::timeout;
+use tracing::error;
 
 pub struct Replica<C, S, N>
 where
@@ -230,7 +233,7 @@ where
         {
             let this = Arc::clone(self);
             spawn(async move {
-                if let Err(err) = this.end_phase_preaccept(rx, seq, deps, acc).await {
+                if let Err(err) = this.end_phase_preaccept(id, rx, seq, deps, acc).await {
                     error!(?err);
                 }
             });
@@ -303,16 +306,6 @@ where
         Ok(())
     }
 
-    async fn end_phase_preaccept(
-        self: &Arc<Self>,
-        rx: mpsc::Receiver<Message<C>>,
-        seq: Seq,
-        deps: Deps,
-        acc: VecSet<ReplicaId>,
-    ) -> Result<()> {
-        todo!()
-    }
-
     async fn resume_propose(self: &Arc<Self>, id: InstanceId, msg: Message<C>) -> Result<()> {
         let tx = self.propose_tx.get(&id).as_deref().cloned();
         if let Some(tx) = tx {
@@ -321,10 +314,182 @@ where
         Ok(())
     }
 
+    async fn end_phase_preaccept(
+        self: &Arc<Self>,
+        id: InstanceId,
+        mut rx: mpsc::Receiver<Message<C>>,
+        mut seq: Seq,
+        mut deps: Deps,
+        mut acc: VecSet<ReplicaId>,
+    ) -> Result<()> {
+        let mut received: VecSet<ReplicaId> = VecSet::new();
+        let mut all_same = true;
+
+        loop {
+            let t = {
+                let mut guard = self.state.lock().await;
+                let s = &mut *guard;
+                let avg_rtt = s.peers.get_avg_rtt();
+                drop(guard);
+                let conf = &self.config.preaccept_timeout;
+                conf.with(avg_rtt, |d| d / 2)
+            };
+
+            match recv_timeout(&mut rx, t).await {
+                Ok(Some(msg)) => {
+                    let msg = match PreAcceptReply::convert(msg) {
+                        Some(m) => m,
+                        None => continue,
+                    };
+
+                    match msg {
+                        PreAcceptReply::Ok(ref msg) => assert_eq!(id, msg.id),
+                        PreAcceptReply::Diff(ref msg) => assert_eq!(id, msg.id),
+                    }
+
+                    let msg_epoch = match msg {
+                        PreAcceptReply::Ok(ref msg) => msg.epoch,
+                        PreAcceptReply::Diff(ref msg) => msg.epoch,
+                    };
+
+                    if msg_epoch < self.epoch.load() {
+                        continue;
+                    }
+
+                    let mut guard = self.state.lock().await;
+                    let s = &mut *guard;
+
+                    let pbal = match msg {
+                        PreAcceptReply::Ok(ref msg) => msg.pbal,
+                        PreAcceptReply::Diff(ref msg) => msg.pbal,
+                    };
+
+                    s.log.load(id).await?;
+
+                    if s.log.should_ignore_pbal(id, pbal) {
+                        return Ok(());
+                    }
+
+                    let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+
+                    if ins.status != Status::PreAccepted {
+                        continue;
+                    }
+
+                    let cluster_size = s.peers.cluster_size();
+
+                    {
+                        let msg_sender = match msg {
+                            PreAcceptReply::Ok(ref msg) => msg.sender,
+                            PreAcceptReply::Diff(ref msg) => msg.sender,
+                        };
+                        if received.insert(msg_sender).is_some() {
+                            return Ok(());
+                        }
+                        let _ = acc.insert(msg_sender);
+                    }
+
+                    match msg {
+                        PreAcceptReply::Ok(_) => {}
+                        PreAcceptReply::Diff(msg) => {
+                            let mut new_seq = msg.seq;
+                            let mut new_deps = msg.deps;
+
+                            max_assign(&mut new_seq, seq);
+                            new_deps.merge(&deps);
+
+                            if received.len() > 1 && (new_seq != seq || new_deps != deps) {
+                                all_same = false;
+                            }
+
+                            seq = new_seq;
+                            deps = new_deps;
+                        }
+                    }
+
+                    if received.len() < cluster_size / 2 {
+                        continue;
+                    }
+
+                    let which_path = if all_same {
+                        if pbal.0 == Round::ZERO && received.len() >= cluster_size.wrapping_sub(2) {
+                            Some(true)
+                        } else {
+                            None
+                        }
+                    } else {
+                        Some(false)
+                    };
+
+                    let is_fast_path = match which_path {
+                        None => continue,
+                        Some(f) => f,
+                    };
+
+                    let cmd = None;
+                    let _ = self.propose_tx.remove(&id);
+
+                    if is_fast_path {
+                        return self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+                    } else {
+                        return self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => break,
+            }
+        }
+
+        {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+
+            let cluster_size = s.peers.cluster_size();
+            if received.len() < cluster_size / 2 {
+                return Ok(());
+            }
+
+            s.log.load(id).await?;
+            let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
+
+            let cmd = None;
+            let _ = self.propose_tx.remove(&id);
+
+            self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn start_phase_accept(
+        &self,
+        mut guard: AsyncMutexGuard<'_, State<C, S>>,
+        id: InstanceId,
+        pbal: Ballot,
+        cmd: Option<C>,
+        seq: Seq,
+        deps: Deps,
+        acc: VecSet<ReplicaId>,
+    ) -> Result<()> {
+        todo!()
+    }
+
     async fn handle_accept(self: &Arc<Self>, msg: Accept<C>) -> Result<()> {
         todo!()
     }
 
+    #[allow(clippy::too_many_arguments)]
+    async fn start_phase_commit(
+        &self,
+        mut guard: AsyncMutexGuard<'_, State<C, S>>,
+        id: InstanceId,
+        pbal: Ballot,
+        cmd: Option<C>,
+        seq: Seq,
+        deps: Deps,
+        acc: VecSet<ReplicaId>,
+    ) -> Result<()> {
+        todo!()
+    }
     async fn handle_commit(self: &Arc<Self>, msg: Commit<C>) -> Result<()> {
         todo!()
     }
