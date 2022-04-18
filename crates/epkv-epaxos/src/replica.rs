@@ -1213,8 +1213,75 @@ where
         Ok(())
     }
 
+    pub async fn run_sync_known(self: &Arc<Self>) -> Result<()> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        s.log.update_bounds();
+        let known_up_to = s.log.known_up_to();
+
+        let target = s.peers.select_one().expect("peer should exist");
+
+        drop(guard);
+
+        {
+            let sender = self.rid;
+            let targets = VecSet::from_single(target);
+            self.net.broadcast(targets, Message::AskLog(AskLog { sender, known_up_to }));
+        }
+
+        Ok(())
+    }
+
     async fn handle_ask_log(self: &Arc<Self>, msg: AskLog) -> Result<()> {
-        todo!()
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        s.log.update_bounds();
+        let local_known_up_to = s.log.known_up_to();
+
+        let target = msg.sender;
+        let sender = self.rid;
+        let sync_id = SyncId::ZERO;
+        let send_log = |instances| {
+            self.net.send_one(
+                target,
+                Message::SyncLog(SyncLog { sender, sync_id, instances }),
+            )
+        };
+
+        let limit: usize =
+            self.config.sync_limits.max_instance_num.try_into().expect("usize overflow");
+
+        for &(rid, lower) in msg.known_up_to.iter() {
+            let higher = match local_known_up_to.get(&rid) {
+                Some(&h) => h,
+                None => continue,
+            };
+
+            let mut instances: Vec<(InstanceId, Instance<C>)> = Vec::new();
+
+            for lid in LocalInstanceId::range_inclusive(lower.add_one(), higher) {
+                let id = InstanceId(rid, lid);
+
+                s.log.load(id).await?;
+
+                if let Some(ins) = s.log.get_cached_ins(id) {
+                    instances.push((id, ins.clone()));
+                    if instances.len() >= limit {
+                        send_log(mem::take(&mut instances))
+                    }
+                }
+            }
+
+            if instances.is_empty().not() {
+                send_log(instances)
+            }
+        }
+
+        drop(guard);
+
+        Ok(())
     }
 
     async fn handle_sync_log(self: &Arc<Self>, msg: SyncLog<C>) -> Result<()> {

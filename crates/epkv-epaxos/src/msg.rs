@@ -149,7 +149,6 @@ pub struct AskLog {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SyncLog<C> {
     pub sender: ReplicaId,
-    pub needs_reply: bool,
     pub sync_id: SyncId,
     pub instances: Vec<(InstanceId, Instance<C>)>,
 }
