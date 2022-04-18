@@ -31,6 +31,7 @@ use std::time::Duration;
 
 use anyhow::{ensure, Result};
 use dashmap::DashMap;
+use parking_lot::Mutex as SyncMutex;
 use rand::Rng;
 use tokio::spawn;
 use tokio::sync::mpsc;
@@ -51,7 +52,9 @@ where
 
     epoch: AtomicEpoch,
     state: AsyncMutex<State<C, S>>,
+
     propose_tx: DashMap<InstanceId, mpsc::Sender<Message<C>>>,
+    join_tx: SyncMutex<Option<mpsc::Sender<JoinOk>>>,
 
     net: N,
 }
@@ -80,7 +83,9 @@ where
         let epoch = AtomicEpoch::new(epoch);
         let peers_set: VecSet<_> = map_collect(&peers, |&(p, _)| p);
         let state = AsyncMutex::new(State::new(rid, store, peers_set).await?);
+
         let propose_tx = DashMap::new();
+        let join_tx = SyncMutex::new(None);
 
         for &(p, a) in &peers {
             net.register_peer(p, a)
@@ -93,6 +98,7 @@ where
             state,
             epoch,
             propose_tx,
+            join_tx,
             net,
         }))
     }
@@ -137,7 +143,7 @@ where
                 self.handle_join(msg).await //
             }
             Message::JoinOk(msg) => {
-                self.handle_join_ok(msg).await //
+                self.resume_join(msg).await //
             }
             Message::Leave(msg) => {
                 self.handle_leave(msg).await //
@@ -1089,12 +1095,74 @@ where
         Ok(())
     }
 
-    async fn handle_join(self: &Arc<Self>, msg: Join) -> Result<()> {
-        todo!()
+    pub async fn run_join(self: &Arc<Self>) -> Result<bool> {
+        let mut rx = {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+
+            let targets = s.peers.select_all();
+
+            drop(guard);
+
+            let rx = {
+                let (tx, rx) = mpsc::channel(targets.len());
+                let _ = self.join_tx.lock().insert(tx);
+                rx
+            };
+            {
+                let sender = self.rid;
+                let epoch = self.epoch.load();
+                let address = self.address;
+                self.net.broadcast(targets, Message::Join(Join { sender, epoch, address }));
+            }
+            rx
+        };
+
+        {
+            let mut received = VecSet::new();
+            while let Some(msg) = rx.recv().await {
+                let _ = received.insert(msg.sender);
+
+                let mut guard = self.state.lock().await;
+                let s = &mut *guard;
+
+                let cluster_size = s.peers.cluster_size();
+
+                drop(guard);
+
+                if received.len() > cluster_size / 2 {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
     }
 
-    async fn handle_join_ok(self: &Arc<Self>, msg: JoinOk) -> Result<()> {
-        todo!()
+    async fn handle_join(self: &Arc<Self>, msg: Join) -> Result<()> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        s.peers.add(msg.sender);
+        self.epoch.update_max(msg.epoch);
+
+        drop(guard);
+
+        {
+            let target = msg.sender;
+            self.net.register_peer(target, msg.address);
+            self.net.send_one(target, Message::JoinOk(JoinOk { sender: self.rid }));
+        }
+
+        Ok(())
+    }
+
+    async fn resume_join(self: &Arc<Self>, msg: JoinOk) -> Result<()> {
+        let tx = self.join_tx.lock().clone();
+        if let Some(tx) = tx {
+            let _ = tx.send(msg).await;
+        }
+        Ok(())
     }
 
     async fn handle_leave(self: &Arc<Self>, msg: Leave) -> Result<()> {
