@@ -649,7 +649,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     async fn start_phase_commit(
-        &self,
+        self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, S>>,
         id: InstanceId,
         pbal: Ballot,
@@ -697,15 +697,78 @@ where
             );
         }
 
-        // {
-        //     self.effect.start_execution(id, cmd, seq, deps); TODO
-        // }
+        {
+            let this = Arc::clone(self);
+            spawn(async move {
+                if let Err(err) = this.execute(id, cmd, seq, deps).await {
+                    error!(?id, ?err)
+                }
+            });
+        }
 
         Ok(())
     }
 
     async fn handle_commit(self: &Arc<Self>, msg: Commit<C>) -> Result<()> {
-        todo!()
+        if msg.epoch < self.epoch.load() {
+            return Ok(());
+        }
+
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let id = msg.id;
+        let pbal = msg.pbal;
+
+        s.log.load(id).await?;
+
+        if s.log.should_ignore_pbal(id, pbal) {
+            return Ok(());
+        }
+
+        if s.log.should_ignore_status(id, pbal, Status::Committed) {
+            return Ok(());
+        }
+
+        let (cmd, mode) = match msg.cmd {
+            Some(cmd) => (cmd, UpdateMode::Full),
+            None => {
+                s.log.load(id).await?;
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+                (ins.cmd.clone(), UpdateMode::Partial)
+            }
+        };
+
+        let (status, exec) = match s.log.get_cached_ins(id) {
+            Some(ins) if ins.status > Status::Committed => (ins.status, false),
+            _ => (Status::Committed, true),
+        };
+
+        let seq = msg.seq;
+        let deps = msg.deps;
+
+        let abal = pbal;
+
+        let mut acc = msg.acc;
+        let _ = acc.insert(self.rid);
+
+        {
+            clone!(cmd, deps);
+            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            s.log.save(id, ins, mode).await?
+        }
+
+        drop(guard);
+
+        if exec {
+            let this = Arc::clone(self);
+            spawn(async move {
+                if let Err(err) = this.execute(id, cmd, seq, deps).await {
+                    error!(?id, ?err)
+                }
+            });
+        }
+        Ok(())
     }
 
     async fn recover(&self, id: InstanceId) -> Result<()> {
@@ -759,5 +822,9 @@ where
         drop(guard);
 
         Ok(())
+    }
+
+    async fn execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps) -> Result<()> {
+        todo!()
     }
 }
