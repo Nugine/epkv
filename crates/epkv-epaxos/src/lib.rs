@@ -20,6 +20,7 @@ pub mod status;
 pub mod store;
 
 pub mod config;
+pub mod graph;
 pub mod log;
 pub mod peers;
 pub mod state;
