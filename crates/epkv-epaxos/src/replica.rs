@@ -799,7 +799,11 @@ where
     }
 
     async fn handle_probe_rtt(self: &Arc<Self>, msg: ProbeRtt) -> Result<()> {
-        todo!()
+        let target = msg.sender;
+        let sender = self.rid;
+        let time = msg.time;
+        self.net.send_one(target, Message::ProbeRttOk(ProbeRttOk { sender, time }));
+        Ok(())
     }
 
     async fn handle_probe_rtt_ok(self: &Arc<Self>, msg: ProbeRttOk) -> Result<()> {
