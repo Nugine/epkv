@@ -10,4 +10,5 @@ minstant = "0.1.1"
 once_cell = "1.10.0"
 roaring = "0.9.0"
 serde = { version = "1.0.136", features = ["derive"] }
+tokio = { version = "1.17.0", features = ["full"] }
 triomphe = { version = "0.1.5", default-features = false, features = ["std", "serde"] }
