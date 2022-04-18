@@ -822,7 +822,18 @@ where
     }
 
     async fn handle_probe_rtt_ok(self: &Arc<Self>, msg: ProbeRttOk) -> Result<()> {
-        todo!()
+        let time = LocalInstant::now();
+        let peer = msg.sender;
+        let rtt = time.saturating_duration_since(msg.time);
+
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        s.peers.set_rtt(peer, rtt);
+
+        drop(guard);
+
+        Ok(())
     }
 
     async fn handle_ask_log(self: &Arc<Self>, msg: AskLog) -> Result<()> {
