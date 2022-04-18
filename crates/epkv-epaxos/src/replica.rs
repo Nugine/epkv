@@ -368,7 +368,7 @@ where
                     s.log.load(id).await?;
 
                     if s.log.should_ignore_pbal(id, pbal) {
-                        return Ok(());
+                        continue;
                     }
 
                     let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
@@ -385,7 +385,7 @@ where
                             PreAcceptReply::Diff(ref msg) => msg.sender,
                         };
                         if received.insert(msg_sender).is_some() {
-                            return Ok(());
+                            continue;
                         }
                         let _ = acc.insert(msg_sender);
                     }
@@ -588,7 +588,62 @@ where
         mut rx: mpsc::Receiver<Message<C>>,
         mut acc: VecSet<ReplicaId>,
     ) -> Result<()> {
-        todo!()
+        let mut received = VecSet::new();
+
+        while let Some(msg) = rx.recv().await {
+            let msg = match AcceptReply::convert(msg) {
+                Some(m) => m,
+                None => continue,
+            };
+
+            let AcceptReply::Ok(msg) = msg;
+
+            if msg.epoch < self.epoch.load() {
+                continue;
+            }
+
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+
+            assert_eq!(id, msg.id);
+
+            let pbal = msg.pbal;
+
+            s.log.load(id).await?;
+
+            if s.log.should_ignore_pbal(id, pbal) {
+                continue;
+            }
+
+            let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+
+            if ins.status != Status::Accepted {
+                continue;
+            }
+
+            let seq = ins.seq;
+            let deps = ins.deps.clone();
+
+            {
+                if received.insert(msg.sender).is_some() {
+                    continue;
+                }
+                let _ = acc.insert(msg.sender);
+            }
+
+            let cluster_size = s.peers.cluster_size();
+
+            if received.len() < cluster_size / 2 {
+                continue;
+            }
+
+            let _ = self.propose_tx.remove(&id);
+
+            let cmd = None;
+            return self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+        }
+
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
