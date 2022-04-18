@@ -34,7 +34,6 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::MutexGuard as AsyncMutexGuard;
 use tokio::time::sleep;
-use tokio::time::timeout;
 use tracing::error;
 
 pub struct Replica<C, S, N>
@@ -151,7 +150,7 @@ where
         }
     }
 
-    pub async fn propose(self: &Arc<Self>, cmd: C) -> Result<()> {
+    pub async fn run_propose(self: &Arc<Self>, cmd: C) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -159,10 +158,10 @@ where
         let pbal = Ballot(Round::ZERO, self.rid);
         let acc = VecSet::<ReplicaId>::with_capacity(1);
 
-        self.start_phase_preaccept(guard, id, pbal, Some(cmd), acc).await
+        self.phase_preaccept(guard, id, pbal, Some(cmd), acc).await
     }
 
-    async fn start_phase_preaccept(
+    async fn phase_preaccept(
         self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, S>>,
         id: InstanceId,
@@ -170,69 +169,202 @@ where
         cmd: Option<C>,
         mut acc: VecSet<ReplicaId>,
     ) -> Result<()> {
-        let s = &mut *guard;
+        let (mut rx, mut seq, mut deps, mut acc) = {
+            let s = &mut *guard;
 
-        s.log.load(id).await?;
+            s.log.load(id).await?;
 
-        let (cmd, mode) = match cmd {
-            Some(cmd) => (cmd, UpdateMode::Full),
-            None => {
-                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-                (ins.cmd.clone(), UpdateMode::Partial)
-            }
-        };
-
-        let (seq, deps) = s.log.calc_attributes(id, &cmd.keys());
-
-        let abal = pbal;
-        let status = Status::PreAccepted;
-        let _ = acc.insert(self.rid);
-
-        {
-            clone!(cmd, deps, acc);
-            let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            s.log.save(id, ins, mode).await?;
-        }
-
-        let quorum = s.peers.cluster_size().wrapping_sub(2);
-        let selected_peers = s.peers.select(quorum, &acc);
-
-        let rx = {
-            let (tx, rx) = mpsc::channel(quorum);
-            self.propose_tx.insert(id, tx);
-            rx
-        };
-
-        let avg_rtt = s.peers.get_avg_rtt();
-
-        drop(guard);
-
-        {
-            clone!(deps, acc);
-            let sender = self.rid;
-            let epoch = self.epoch.load();
-            broadcast_preaccept(
-                &self.net,
-                selected_peers.acc,
-                selected_peers.others,
-                PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
-            );
-        }
-
-        if pbal.0 == Round::ZERO {
-            self.spawn_recover_timeout(id, avg_rtt);
-        }
-
-        {
-            let this = Arc::clone(self);
-            spawn(async move {
-                if let Err(err) = this.end_phase_preaccept(id, rx, seq, deps, acc).await {
-                    error!(?id, ?err);
+            let (cmd, mode) = match cmd {
+                Some(cmd) => (cmd, UpdateMode::Full),
+                None => {
+                    let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+                    (ins.cmd.clone(), UpdateMode::Partial)
                 }
-            });
-        }
+            };
 
-        Ok(())
+            let (seq, deps) = s.log.calc_attributes(id, &cmd.keys());
+
+            let abal = pbal;
+            let status = Status::PreAccepted;
+            let _ = acc.insert(self.rid);
+
+            {
+                clone!(cmd, deps, acc);
+                let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
+                s.log.save(id, ins, mode).await?;
+            }
+
+            let quorum = s.peers.cluster_size().wrapping_sub(2);
+            let selected_peers = s.peers.select(quorum, &acc);
+
+            let rx = {
+                let (tx, rx) = mpsc::channel(quorum);
+                self.propose_tx.insert(id, tx);
+                rx
+            };
+
+            let avg_rtt = s.peers.get_avg_rtt();
+
+            drop(guard);
+
+            {
+                clone!(deps, acc);
+                let sender = self.rid;
+                let epoch = self.epoch.load();
+                broadcast_preaccept(
+                    &self.net,
+                    selected_peers.acc,
+                    selected_peers.others,
+                    PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
+                );
+            }
+
+            if pbal.0 == Round::ZERO {
+                self.spawn_recover_timeout(id, avg_rtt);
+            }
+
+            (rx, seq, deps, acc)
+        };
+
+        {
+            let mut received: VecSet<ReplicaId> = VecSet::new();
+            let mut all_same = true;
+
+            loop {
+                let t = {
+                    let mut guard = self.state.lock().await;
+                    let s = &mut *guard;
+                    let avg_rtt = s.peers.get_avg_rtt();
+                    drop(guard);
+                    let conf = &self.config.preaccept_timeout;
+                    conf.with(avg_rtt, |d| d / 2)
+                };
+
+                match recv_timeout(&mut rx, t).await {
+                    Ok(Some(msg)) => {
+                        let msg = match PreAcceptReply::convert(msg) {
+                            Some(m) => m,
+                            None => continue,
+                        };
+
+                        match msg {
+                            PreAcceptReply::Ok(ref msg) => assert_eq!(id, msg.id),
+                            PreAcceptReply::Diff(ref msg) => assert_eq!(id, msg.id),
+                        }
+
+                        let msg_epoch = match msg {
+                            PreAcceptReply::Ok(ref msg) => msg.epoch,
+                            PreAcceptReply::Diff(ref msg) => msg.epoch,
+                        };
+
+                        if msg_epoch < self.epoch.load() {
+                            continue;
+                        }
+
+                        let mut guard = self.state.lock().await;
+                        let s = &mut *guard;
+
+                        let pbal = match msg {
+                            PreAcceptReply::Ok(ref msg) => msg.pbal,
+                            PreAcceptReply::Diff(ref msg) => msg.pbal,
+                        };
+
+                        s.log.load(id).await?;
+
+                        if s.log.should_ignore_pbal(id, pbal) {
+                            continue;
+                        }
+
+                        let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+
+                        if ins.status != Status::PreAccepted {
+                            continue;
+                        }
+
+                        let cluster_size = s.peers.cluster_size();
+
+                        {
+                            let msg_sender = match msg {
+                                PreAcceptReply::Ok(ref msg) => msg.sender,
+                                PreAcceptReply::Diff(ref msg) => msg.sender,
+                            };
+                            if received.insert(msg_sender).is_some() {
+                                continue;
+                            }
+                            let _ = acc.insert(msg_sender);
+                        }
+
+                        match msg {
+                            PreAcceptReply::Ok(_) => {}
+                            PreAcceptReply::Diff(msg) => {
+                                let mut new_seq = msg.seq;
+                                let mut new_deps = msg.deps;
+
+                                max_assign(&mut new_seq, seq);
+                                new_deps.merge(&deps);
+
+                                if received.len() > 1 && (new_seq != seq || new_deps != deps) {
+                                    all_same = false;
+                                }
+
+                                seq = new_seq;
+                                deps = new_deps;
+                            }
+                        }
+
+                        if received.len() < cluster_size / 2 {
+                            continue;
+                        }
+
+                        let which_path = if all_same {
+                            if pbal.0 == Round::ZERO
+                                && received.len() >= cluster_size.wrapping_sub(2)
+                            {
+                                Some(true)
+                            } else {
+                                None
+                            }
+                        } else {
+                            Some(false)
+                        };
+
+                        let is_fast_path = match which_path {
+                            None => continue,
+                            Some(f) => f,
+                        };
+
+                        let cmd = None;
+                        let _ = self.propose_tx.remove(&id);
+
+                        if is_fast_path {
+                            return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+                        } else {
+                            return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(_) => break,
+                }
+            }
+
+            {
+                let mut guard = self.state.lock().await;
+                let s = &mut *guard;
+
+                let cluster_size = s.peers.cluster_size();
+                if received.len() < cluster_size / 2 {
+                    return Ok(());
+                }
+
+                s.log.load(id).await?;
+                let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
+
+                let cmd = None;
+                let _ = self.propose_tx.remove(&id);
+
+                self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
+            }
+        }
     }
 
     async fn handle_preaccept(self: &Arc<Self>, msg: PreAccept<C>) -> Result<()> {
@@ -307,153 +439,19 @@ where
         Ok(())
     }
 
-    async fn end_phase_preaccept(
-        self: &Arc<Self>,
-        id: InstanceId,
-        mut rx: mpsc::Receiver<Message<C>>,
-        mut seq: Seq,
-        mut deps: Deps,
-        mut acc: VecSet<ReplicaId>,
-    ) -> Result<()> {
-        let mut received: VecSet<ReplicaId> = VecSet::new();
-        let mut all_same = true;
+    // async fn end_phase_preaccept(
+    //     self: &Arc<Self>,
+    //     id: InstanceId,
+    //     mut rx: mpsc::Receiver<Message<C>>,
+    //     mut seq: Seq,
+    //     mut deps: Deps,
+    //     mut acc: VecSet<ReplicaId>,
+    // ) -> Result<()> {
 
-        loop {
-            let t = {
-                let mut guard = self.state.lock().await;
-                let s = &mut *guard;
-                let avg_rtt = s.peers.get_avg_rtt();
-                drop(guard);
-                let conf = &self.config.preaccept_timeout;
-                conf.with(avg_rtt, |d| d / 2)
-            };
-
-            match recv_timeout(&mut rx, t).await {
-                Ok(Some(msg)) => {
-                    let msg = match PreAcceptReply::convert(msg) {
-                        Some(m) => m,
-                        None => continue,
-                    };
-
-                    match msg {
-                        PreAcceptReply::Ok(ref msg) => assert_eq!(id, msg.id),
-                        PreAcceptReply::Diff(ref msg) => assert_eq!(id, msg.id),
-                    }
-
-                    let msg_epoch = match msg {
-                        PreAcceptReply::Ok(ref msg) => msg.epoch,
-                        PreAcceptReply::Diff(ref msg) => msg.epoch,
-                    };
-
-                    if msg_epoch < self.epoch.load() {
-                        continue;
-                    }
-
-                    let mut guard = self.state.lock().await;
-                    let s = &mut *guard;
-
-                    let pbal = match msg {
-                        PreAcceptReply::Ok(ref msg) => msg.pbal,
-                        PreAcceptReply::Diff(ref msg) => msg.pbal,
-                    };
-
-                    s.log.load(id).await?;
-
-                    if s.log.should_ignore_pbal(id, pbal) {
-                        continue;
-                    }
-
-                    let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-
-                    if ins.status != Status::PreAccepted {
-                        continue;
-                    }
-
-                    let cluster_size = s.peers.cluster_size();
-
-                    {
-                        let msg_sender = match msg {
-                            PreAcceptReply::Ok(ref msg) => msg.sender,
-                            PreAcceptReply::Diff(ref msg) => msg.sender,
-                        };
-                        if received.insert(msg_sender).is_some() {
-                            continue;
-                        }
-                        let _ = acc.insert(msg_sender);
-                    }
-
-                    match msg {
-                        PreAcceptReply::Ok(_) => {}
-                        PreAcceptReply::Diff(msg) => {
-                            let mut new_seq = msg.seq;
-                            let mut new_deps = msg.deps;
-
-                            max_assign(&mut new_seq, seq);
-                            new_deps.merge(&deps);
-
-                            if received.len() > 1 && (new_seq != seq || new_deps != deps) {
-                                all_same = false;
-                            }
-
-                            seq = new_seq;
-                            deps = new_deps;
-                        }
-                    }
-
-                    if received.len() < cluster_size / 2 {
-                        continue;
-                    }
-
-                    let which_path = if all_same {
-                        if pbal.0 == Round::ZERO && received.len() >= cluster_size.wrapping_sub(2) {
-                            Some(true)
-                        } else {
-                            None
-                        }
-                    } else {
-                        Some(false)
-                    };
-
-                    let is_fast_path = match which_path {
-                        None => continue,
-                        Some(f) => f,
-                    };
-
-                    let cmd = None;
-                    let _ = self.propose_tx.remove(&id);
-
-                    if is_fast_path {
-                        return self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
-                    } else {
-                        return self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
-                    }
-                }
-                Ok(None) => break,
-                Err(_) => break,
-            }
-        }
-
-        {
-            let mut guard = self.state.lock().await;
-            let s = &mut *guard;
-
-            let cluster_size = s.peers.cluster_size();
-            if received.len() < cluster_size / 2 {
-                return Ok(());
-            }
-
-            s.log.load(id).await?;
-            let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
-
-            let cmd = None;
-            let _ = self.propose_tx.remove(&id);
-
-            self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
-        }
-    }
+    // }
 
     #[allow(clippy::too_many_arguments)]
-    async fn start_phase_accept(
+    async fn phase_accept(
         self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, S>>,
         id: InstanceId,
@@ -463,56 +461,108 @@ where
         deps: Deps,
         acc: VecSet<ReplicaId>,
     ) -> Result<()> {
-        let s = &mut *guard;
+        let (mut rx, mut acc) = {
+            let s = &mut *guard;
 
-        let abal = pbal;
-        let status = Status::Accepted;
+            let abal = pbal;
+            let status = Status::Accepted;
 
-        let quorum = s.peers.cluster_size() / 2;
-        let selected_peers = s.peers.select(quorum, &acc);
+            let quorum = s.peers.cluster_size() / 2;
+            let selected_peers = s.peers.select(quorum, &acc);
 
-        let (cmd, mode) = match cmd {
-            Some(cmd) => (cmd, UpdateMode::Full),
-            None => {
-                s.log.load(id).await?;
-                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-                (ins.cmd.clone(), UpdateMode::Partial)
-            }
-        };
-
-        {
-            clone!(cmd, deps, acc);
-            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            s.log.save(id, ins, mode).await?;
-        }
-
-        let rx = {
-            let (tx, rx) = mpsc::channel(quorum);
-            self.propose_tx.insert(id, tx);
-            rx
-        };
-
-        drop(guard);
-
-        {
-            clone!(acc);
-            let sender = self.rid;
-            let epoch = self.epoch.load();
-            broadcast_accept(
-                &self.net,
-                selected_peers.acc,
-                selected_peers.others,
-                Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
-            );
-        }
-
-        {
-            let this = Arc::clone(self);
-            spawn(async move {
-                if let Err(err) = this.end_phase_accept(id, rx, acc).await {
-                    error!(?id, ?err);
+            let (cmd, mode) = match cmd {
+                Some(cmd) => (cmd, UpdateMode::Full),
+                None => {
+                    s.log.load(id).await?;
+                    let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+                    (ins.cmd.clone(), UpdateMode::Partial)
                 }
-            });
+            };
+
+            {
+                clone!(cmd, deps, acc);
+                let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+                s.log.save(id, ins, mode).await?;
+            }
+
+            let rx = {
+                let (tx, rx) = mpsc::channel(quorum);
+                self.propose_tx.insert(id, tx);
+                rx
+            };
+
+            drop(guard);
+
+            {
+                clone!(acc);
+                let sender = self.rid;
+                let epoch = self.epoch.load();
+                broadcast_accept(
+                    &self.net,
+                    selected_peers.acc,
+                    selected_peers.others,
+                    Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
+                );
+            }
+
+            (rx, acc)
+        };
+
+        {
+            let mut received = VecSet::new();
+
+            while let Some(msg) = rx.recv().await {
+                let msg = match AcceptReply::convert(msg) {
+                    Some(m) => m,
+                    None => continue,
+                };
+
+                let AcceptReply::Ok(msg) = msg;
+
+                if msg.epoch < self.epoch.load() {
+                    continue;
+                }
+
+                let mut guard = self.state.lock().await;
+                let s = &mut *guard;
+
+                assert_eq!(id, msg.id);
+
+                let pbal = msg.pbal;
+
+                s.log.load(id).await?;
+
+                if s.log.should_ignore_pbal(id, pbal) {
+                    continue;
+                }
+
+                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
+
+                if ins.status != Status::Accepted {
+                    continue;
+                }
+
+                let seq = ins.seq;
+                let deps = ins.deps.clone();
+
+                {
+                    if received.insert(msg.sender).is_some() {
+                        continue;
+                    }
+                    let _ = acc.insert(msg.sender);
+                }
+
+                let cluster_size = s.peers.cluster_size();
+
+                if received.len() < cluster_size / 2 {
+                    continue;
+                }
+
+                let _ = self.propose_tx.remove(&id);
+
+                let cmd = None;
+                return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+            }
         }
 
         Ok(())
@@ -574,72 +624,8 @@ where
         Ok(())
     }
 
-    async fn end_phase_accept(
-        self: &Arc<Self>,
-        id: InstanceId,
-        mut rx: mpsc::Receiver<Message<C>>,
-        mut acc: VecSet<ReplicaId>,
-    ) -> Result<()> {
-        let mut received = VecSet::new();
-
-        while let Some(msg) = rx.recv().await {
-            let msg = match AcceptReply::convert(msg) {
-                Some(m) => m,
-                None => continue,
-            };
-
-            let AcceptReply::Ok(msg) = msg;
-
-            if msg.epoch < self.epoch.load() {
-                continue;
-            }
-
-            let mut guard = self.state.lock().await;
-            let s = &mut *guard;
-
-            assert_eq!(id, msg.id);
-
-            let pbal = msg.pbal;
-
-            s.log.load(id).await?;
-
-            if s.log.should_ignore_pbal(id, pbal) {
-                continue;
-            }
-
-            let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-
-            if ins.status != Status::Accepted {
-                continue;
-            }
-
-            let seq = ins.seq;
-            let deps = ins.deps.clone();
-
-            {
-                if received.insert(msg.sender).is_some() {
-                    continue;
-                }
-                let _ = acc.insert(msg.sender);
-            }
-
-            let cluster_size = s.peers.cluster_size();
-
-            if received.len() < cluster_size / 2 {
-                continue;
-            }
-
-            let _ = self.propose_tx.remove(&id);
-
-            let cmd = None;
-            return self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
-        }
-
-        Ok(())
-    }
-
     #[allow(clippy::too_many_arguments)]
-    async fn start_phase_commit(
+    async fn phase_commit(
         self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, S>>,
         id: InstanceId,
@@ -691,7 +677,7 @@ where
         {
             let this = Arc::clone(self);
             spawn(async move {
-                if let Err(err) = this.execute(id, cmd, seq, deps).await {
+                if let Err(err) = this.run_execute(id, cmd, seq, deps).await {
                     error!(?id, ?err)
                 }
             });
@@ -754,7 +740,7 @@ where
         if exec {
             let this = Arc::clone(self);
             spawn(async move {
-                if let Err(err) = this.execute(id, cmd, seq, deps).await {
+                if let Err(err) = this.run_execute(id, cmd, seq, deps).await {
                     error!(?id, ?err)
                 }
             });
@@ -762,7 +748,7 @@ where
         Ok(())
     }
 
-    async fn recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
+    async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
         let mut rx = {
             let mut guard = self.state.lock().await;
             let s = &mut *guard;
@@ -920,10 +906,10 @@ where
                 for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
                     if status >= Status::Committed {
                         let deps = mem::take(deps);
-                        return self.start_phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+                        return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
                     } else if status == Status::Accepted {
                         let deps = mem::take(deps);
-                        return self.start_phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                        return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
                     }
                 }
 
@@ -952,15 +938,13 @@ where
                         if let Some(attr) = max_cnt_attr {
                             let seq = attr.0;
                             let deps = mem::take(attr.1);
-                            return self
-                                .start_phase_accept(guard, id, pbal, cmd, seq, deps, acc)
-                                .await;
+                            return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
                         }
                     }
                 }
 
                 if tuples.is_empty().not() {
-                    return self.start_phase_preaccept(guard, id, pbal, cmd, acc).await;
+                    return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
                 }
 
                 let cmd = match s.log.get_cached_ins(id) {
@@ -971,7 +955,7 @@ where
                     }
                 };
 
-                return self.start_phase_preaccept(guard, id, pbal, cmd, acc).await;
+                return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
             }
         }
 
@@ -989,7 +973,7 @@ where
         let this = Arc::clone(self);
         spawn(async move {
             sleep(duration).await;
-            if let Err(err) = this.recover(id).await {
+            if let Err(err) = this.run_recover(id).await {
                 error!(?id, ?err);
             }
         });
@@ -1005,7 +989,7 @@ where
         let this = Arc::clone(self);
         spawn(async move {
             sleep(duration).await;
-            if let Err(err) = this.recover(id).await {
+            if let Err(err) = this.run_recover(id).await {
                 error!(?id, ?err);
             }
         });
@@ -1111,7 +1095,7 @@ where
         Ok(())
     }
 
-    pub async fn probe_rtt(&self) -> Result<()> {
+    pub async fn run_probe_rtt(&self) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1173,7 +1157,13 @@ where
         Ok(())
     }
 
-    async fn execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps) -> Result<()> {
+    async fn run_execute(
+        self: &Arc<Self>,
+        id: InstanceId,
+        cmd: C,
+        seq: Seq,
+        deps: Deps,
+    ) -> Result<()> {
         todo!()
     }
 }
