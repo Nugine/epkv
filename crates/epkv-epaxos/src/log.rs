@@ -9,12 +9,14 @@ use crate::store::{LogStore, UpdateMode};
 use std::collections::{hash_map, HashMap};
 use std::ops::Not;
 
+use epkv_utils::asc::Asc;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::iter::copied_map_collect;
 use epkv_utils::vecmap::VecMap;
 
 use anyhow::Result;
 use fnv::FnvHashMap;
+use parking_lot::Mutex as SyncMutex;
 
 pub struct Log<C, L>
 where
@@ -27,7 +29,7 @@ where
     max_lid_map: VecMap<ReplicaId, MaxLid>,
     max_seq: MaxSeq,
 
-    status_bounds: StatusBounds,
+    status_bounds: Asc<SyncMutex<StatusBounds>>,
 
     ins_cache: FnvHashMap<InstanceId, Instance<C>>,
     pbal_cache: FnvHashMap<InstanceId, Ballot>,
@@ -53,7 +55,11 @@ where
     C: CommandLike,
     L: LogStore<C>,
 {
-    pub fn new(log_store: L, attr_bounds: AttrBounds, status_bounds: StatusBounds) -> Self {
+    pub fn new(
+        log_store: L,
+        attr_bounds: AttrBounds,
+        status_bounds: Asc<SyncMutex<StatusBounds>>,
+    ) -> Self {
         let max_key_map = HashMap::new();
 
         let max_lid_map = copied_map_collect(attr_bounds.max_lids.iter(), |(rid, lid)| {
@@ -170,7 +176,7 @@ where
             self.update_attrs(id, ins.cmd.keys(), ins.seq);
         }
 
-        self.status_bounds.set(id, ins.status);
+        self.status_bounds.lock().set(id, ins.status);
 
         let _ = self.ins_cache.insert(id, ins);
         let _ = self.pbal_cache.remove(&id);
@@ -180,7 +186,7 @@ where
     pub async fn load(&mut self, id: InstanceId) -> Result<()> {
         if self.ins_cache.contains_key(&id).not() {
             if let Some(ins) = self.log_store.load(id).await? {
-                self.status_bounds.set(id, ins.status);
+                self.status_bounds.lock().set(id, ins.status);
                 let _ = self.ins_cache.insert(id, ins);
                 let _ = self.pbal_cache.remove(&id);
             } else if self.pbal_cache.contains_key(&id).not() {
@@ -241,14 +247,14 @@ where
     }
 
     pub fn update_bounds(&mut self) {
-        self.status_bounds.update_bounds();
+        self.status_bounds.lock().update_bounds();
     }
 
     pub fn known_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
-        self.status_bounds.known_up_to()
+        self.status_bounds.lock().known_up_to()
     }
 
     pub fn committed_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
-        self.status_bounds.committed_up_to()
+        self.status_bounds.lock().committed_up_to()
     }
 }

@@ -11,6 +11,7 @@ use crate::peers::Peers;
 use crate::status::Status;
 use crate::store::{DataStore, LogStore, UpdateMode};
 
+use epkv_utils::asc::Asc;
 use epkv_utils::chan::recv_timeout;
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
@@ -148,8 +149,8 @@ where
 
             let peers = Peers::new(peers_set);
 
-            let attr_bounds = log_store.load_attr_bounds().await?;
-            let status_bounds = log_store.load_status_bounds().await?;
+            let attr_bounds: _ = log_store.load_attr_bounds().await?;
+            let status_bounds: _ = Asc::new(SyncMutex::new(log_store.load_status_bounds().await?));
 
             let lid_head =
                 Head::new(attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO));
