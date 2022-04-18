@@ -10,6 +10,7 @@ use crate::net::broadcast_preaccept;
 use crate::net::Network;
 use crate::state::State;
 use crate::status::Status;
+use crate::store::DataStore;
 use crate::store::LogStore;
 use crate::store::UpdateMode;
 
@@ -23,6 +24,7 @@ use epkv_utils::vecset::VecSet;
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::mem;
 use std::net::SocketAddr;
 use std::ops::Not;
@@ -41,10 +43,11 @@ use tokio::sync::MutexGuard as AsyncMutexGuard;
 use tokio::time::sleep;
 use tracing::error;
 
-pub struct Replica<C, S, N>
+pub struct Replica<C, L, D, N>
 where
     C: CommandLike,
-    S: LogStore<C>,
+    L: LogStore<C>,
+    D: DataStore<C>,
     N: Network<C>,
 {
     rid: ReplicaId,
@@ -52,30 +55,73 @@ where
     config: ReplicaConfig,
 
     epoch: AtomicEpoch,
-    state: AsyncMutex<State<C, S>>,
+    state: AsyncMutex<State<C, L>>,
 
     propose_tx: DashMap<InstanceId, mpsc::Sender<Message<C>>>,
     join_tx: SyncMutex<Option<mpsc::Sender<JoinOk>>>,
     sync_tx: DashMap<SyncId, mpsc::Sender<SyncLogOk>>,
 
+    data_store: D,
+
     net: N,
 }
 
-impl<C, S, N> Replica<C, S, N>
+pub struct ReplicaBuilder<C, L, D, N> {
+    pub rid: Option<ReplicaId>,
+    pub address: Option<SocketAddr>,
+    pub epoch: Option<Epoch>,
+    pub peers: Option<VecMap<ReplicaId, SocketAddr>>,
+    pub config: Option<ReplicaConfig>,
+    pub log_store: Option<L>,
+    pub data_store: Option<D>,
+    pub net: Option<N>,
+    _marker: PhantomData<C>,
+}
+
+impl<C, L, D, N> ReplicaBuilder<C, L, D, N>
 where
     C: CommandLike,
-    S: LogStore<C>,
+    L: LogStore<C>,
+    D: DataStore<C>,
     N: Network<C>,
 {
-    pub async fn new(
-        rid: ReplicaId,
-        address: SocketAddr,
-        epoch: Epoch,
-        peers: VecMap<ReplicaId, SocketAddr>,
-        config: ReplicaConfig,
-        store: S,
-        net: N,
-    ) -> Result<Arc<Self>> {
+    pub async fn build(self) -> Result<Arc<Replica<C, L, D, N>>> {
+        Replica::new(self).await
+    }
+}
+
+impl<C, L, D, N> Replica<C, L, D, N>
+where
+    C: CommandLike,
+    L: LogStore<C>,
+    D: DataStore<C>,
+    N: Network<C>,
+{
+    #[must_use]
+    pub fn builder() -> ReplicaBuilder<C, L, D, N> {
+        ReplicaBuilder {
+            rid: None,
+            address: None,
+            epoch: None,
+            peers: None,
+            config: None,
+            log_store: None,
+            data_store: None,
+            net: None,
+            _marker: PhantomData,
+        }
+    }
+
+    async fn new(builder: ReplicaBuilder<C, L, D, N>) -> Result<Arc<Self>> {
+        let rid = builder.rid.unwrap();
+        let address = builder.address.unwrap();
+        let epoch = builder.epoch.unwrap();
+        let peers = builder.peers.unwrap();
+        let config = builder.config.unwrap();
+        let log_store = builder.log_store.unwrap();
+        let data_store = builder.data_store.unwrap();
+        let net = builder.net.unwrap();
+
         let cluster_size = peers.len().wrapping_add(1);
         let addr_set: VecSet<_> = map_collect(&peers, |&(_, a)| a);
         ensure!(cluster_size >= 3);
@@ -84,7 +130,7 @@ where
 
         let epoch = AtomicEpoch::new(epoch);
         let peers_set: VecSet<_> = map_collect(&peers, |&(p, _)| p);
-        let state = AsyncMutex::new(State::new(rid, store, peers_set).await?);
+        let state = AsyncMutex::new(State::new(rid, log_store, peers_set).await?);
 
         let propose_tx = DashMap::new();
         let join_tx = SyncMutex::new(None);
@@ -103,6 +149,7 @@ where
             propose_tx,
             join_tx,
             sync_tx,
+            data_store,
             net,
         }))
     }
@@ -186,7 +233,7 @@ where
 
     async fn phase_preaccept(
         self: &Arc<Self>,
-        mut guard: AsyncMutexGuard<'_, State<C, S>>,
+        mut guard: AsyncMutexGuard<'_, State<C, L>>,
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,
@@ -476,7 +523,7 @@ where
     #[allow(clippy::too_many_arguments)]
     async fn phase_accept(
         self: &Arc<Self>,
-        mut guard: AsyncMutexGuard<'_, State<C, S>>,
+        mut guard: AsyncMutexGuard<'_, State<C, L>>,
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,
@@ -650,7 +697,7 @@ where
     #[allow(clippy::too_many_arguments)]
     async fn phase_commit(
         self: &Arc<Self>,
-        mut guard: AsyncMutexGuard<'_, State<C, S>>,
+        mut guard: AsyncMutexGuard<'_, State<C, L>>,
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,

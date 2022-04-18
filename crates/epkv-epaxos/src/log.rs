@@ -16,12 +16,12 @@ use epkv_utils::vecmap::VecMap;
 use anyhow::Result;
 use fnv::FnvHashMap;
 
-pub struct Log<C, S>
+pub struct Log<C, L>
 where
     C: CommandLike,
-    S: LogStore<C>,
+    L: LogStore<C>,
 {
-    store: S,
+    log_store: L,
 
     max_key_map: HashMap<C::Key, MaxKey>,
     max_lid_map: VecMap<ReplicaId, MaxLid>,
@@ -48,12 +48,12 @@ struct MaxSeq {
     any: Seq,
 }
 
-impl<C, S> Log<C, S>
+impl<C, L> Log<C, L>
 where
     C: CommandLike,
-    S: LogStore<C>,
+    L: LogStore<C>,
 {
-    pub fn new(store: S, attr_bounds: AttrBounds, status_bounds: StatusBounds) -> Self {
+    pub fn new(log_store: L, attr_bounds: AttrBounds, status_bounds: StatusBounds) -> Self {
         let max_key_map = HashMap::new();
 
         let max_lid_map = copied_map_collect(attr_bounds.max_lids.iter(), |(rid, lid)| {
@@ -67,7 +67,7 @@ where
         let pbal_cache = FnvHashMap::default();
 
         Self {
-            store,
+            log_store,
             max_key_map,
             max_lid_map,
             max_seq,
@@ -164,7 +164,7 @@ where
             true
         };
 
-        self.store.save(id, &ins, mode).await?;
+        self.log_store.save(id, &ins, mode).await?;
 
         if needs_update_attrs {
             self.update_attrs(id, ins.cmd.keys(), ins.seq);
@@ -179,12 +179,12 @@ where
 
     pub async fn load(&mut self, id: InstanceId) -> Result<()> {
         if self.ins_cache.contains_key(&id).not() {
-            if let Some(ins) = self.store.load(id).await? {
+            if let Some(ins) = self.log_store.load(id).await? {
                 self.status_bounds.set(id, ins.status);
                 let _ = self.ins_cache.insert(id, ins);
                 let _ = self.pbal_cache.remove(&id);
             } else if self.pbal_cache.contains_key(&id).not() {
-                if let Some(pbal) = self.store.load_pbal(id).await? {
+                if let Some(pbal) = self.log_store.load_pbal(id).await? {
                     let _ = self.pbal_cache.insert(id, pbal);
                 }
             }
@@ -193,7 +193,7 @@ where
     }
 
     pub async fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Result<()> {
-        self.store.save_pbal(id, pbal).await?;
+        self.log_store.save_pbal(id, pbal).await?;
 
         match self.ins_cache.get_mut(&id) {
             Some(ins) => {
