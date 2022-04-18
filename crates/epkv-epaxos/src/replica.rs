@@ -39,7 +39,7 @@ where
 
     epoch: AtomicEpoch,
     state: AsyncMutex<State<C, S>>,
-    cb_propose: DashMap<InstanceId, mpsc::Sender<Message<C>>>,
+    propose_tx: DashMap<InstanceId, mpsc::Sender<Message<C>>>,
 
     net: N,
 }
@@ -71,7 +71,7 @@ where
             config,
             state,
             epoch,
-            cb_propose,
+            propose_tx: cb_propose,
             net,
         }))
     }
@@ -85,17 +85,17 @@ where
             Message::PreAccept(msg) => {
                 self.handle_preaccept(msg).await //
             }
-            Message::PreAcceptOk(msg) => {
-                self.handle_preaccept_reply(PreAcceptReply::Ok(msg)).await //
+            Message::PreAcceptOk(PreAcceptOk { id, .. }) => {
+                self.resume_propose(id, msg).await //
             }
-            Message::PreAcceptDiff(msg) => {
-                self.handle_preaccept_reply(PreAcceptReply::Diff(msg)).await
+            Message::PreAcceptDiff(PreAcceptDiff { id, .. }) => {
+                self.resume_propose(id, msg).await //
             }
             Message::Accept(msg) => {
                 self.handle_accept(msg).await //
             }
-            Message::AcceptOk(msg) => {
-                self.handle_accept_reply(AcceptReply::Ok(msg)).await //
+            Message::AcceptOk(AcceptOk { id, .. }) => {
+                self.resume_propose(id, msg).await //
             }
             Message::Commit(msg) => {
                 self.handle_commit(msg).await //
@@ -103,14 +103,14 @@ where
             Message::Prepare(msg) => {
                 self.handle_prepare(msg).await //
             }
-            Message::PrepareOk(msg) => {
-                self.handle_prepare_reply(PrepareReply::Ok(msg)).await //
+            Message::PrepareOk(PrepareOk { id, .. }) => {
+                self.resume_propose(id, msg).await //
             }
-            Message::PrepareNack(msg) => {
-                self.handle_prepare_reply(PrepareReply::Nack(msg)).await //
+            Message::PrepareNack(PrepareNack { id, .. }) => {
+                self.resume_propose(id, msg).await //
             }
-            Message::PrepareUnchosen(msg) => {
-                self.handle_prepare_reply(PrepareReply::Unchosen(msg)).await
+            Message::PrepareUnchosen(PrepareUnchosen { id, .. }) => {
+                self.resume_propose(id, msg).await //
             }
             Message::Join(msg) => {
                 self.handle_join(msg).await //
@@ -190,7 +190,7 @@ where
 
         let rx = {
             let (tx, rx) = mpsc::channel(quorum);
-            self.cb_propose.insert(id, tx);
+            self.propose_tx.insert(id, tx);
             rx
         };
 
@@ -313,15 +313,15 @@ where
         todo!()
     }
 
-    async fn handle_preaccept_reply(self: &Arc<Self>, msg: PreAcceptReply) -> Result<()> {
-        todo!()
+    async fn resume_propose(self: &Arc<Self>, id: InstanceId, msg: Message<C>) -> Result<()> {
+        let tx = self.propose_tx.get(&id).as_deref().cloned();
+        if let Some(tx) = tx {
+            let _ = tx.send(msg).await;
+        }
+        Ok(())
     }
 
     async fn handle_accept(self: &Arc<Self>, msg: Accept<C>) -> Result<()> {
-        todo!()
-    }
-
-    async fn handle_accept_reply(self: &Arc<Self>, msg: AcceptReply) -> Result<()> {
         todo!()
     }
 
@@ -334,10 +334,6 @@ where
     }
 
     async fn handle_prepare(self: &Arc<Self>, msg: Prepare) -> Result<()> {
-        todo!()
-    }
-
-    async fn handle_prepare_reply(self: &Arc<Self>, msg: PrepareReply<C>) -> Result<()> {
         todo!()
     }
 
