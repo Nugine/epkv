@@ -2,6 +2,7 @@ use crate::bounds::PeerStatusBounds;
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
 use crate::deps::Deps;
+use crate::graph::Graph;
 use crate::id::*;
 use crate::ins::Instance;
 use crate::log::Log;
@@ -59,6 +60,7 @@ where
     join_tx: SyncMutex<Option<mpsc::Sender<JoinOk>>>,
     sync_tx: DashMap<SyncId, mpsc::Sender<SyncLogOk>>,
 
+    graph: Graph<C>,
     data_store: D,
 
     net: N,
@@ -144,20 +146,19 @@ where
 
         let epoch = AtomicEpoch::new(epoch);
 
+        let attr_bounds: _ = log_store.load_attr_bounds().await?;
+        let status_bounds: _ = Asc::new(SyncMutex::new(log_store.load_status_bounds().await?));
+
         let state = {
             let peers_set: VecSet<_> = map_collect(&peers, |&(p, _)| p);
-
             let peers = Peers::new(peers_set);
-
-            let attr_bounds: _ = log_store.load_attr_bounds().await?;
-            let status_bounds: _ = Asc::new(SyncMutex::new(log_store.load_status_bounds().await?));
 
             let lid_head =
                 Head::new(attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO));
 
             let sync_id_head = Head::new(SyncId::ZERO);
 
-            let log = Log::new(log_store, attr_bounds, status_bounds);
+            let log = Log::new(log_store, attr_bounds, status_bounds.asc_clone());
 
             let peer_status_bounds = PeerStatusBounds::new();
 
@@ -167,6 +168,8 @@ where
         let propose_tx = DashMap::new();
         let join_tx = SyncMutex::new(None);
         let sync_tx = DashMap::new();
+
+        let graph = Graph::new(status_bounds);
 
         for &(p, a) in &peers {
             net.register_peer(p, a)
@@ -181,6 +184,7 @@ where
             propose_tx,
             join_tx,
             sync_tx,
+            graph,
             data_store,
             net,
         }))
@@ -1537,6 +1541,8 @@ where
         seq: Seq,
         deps: Deps,
     ) -> Result<()> {
+        let root = self.graph.init_node(id, cmd, seq, deps);
+
         todo!()
     }
 }
