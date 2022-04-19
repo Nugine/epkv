@@ -1543,6 +1543,11 @@ where
     ) -> Result<()> {
         let root = self.graph.init_node(id, cmd, seq, deps);
 
+        let _executing = match self.graph.executing(id) {
+            Some(exec) => exec,
+            None => return Ok(()),
+        };
+
         todo!()
     }
 }

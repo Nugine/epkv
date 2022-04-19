@@ -45,16 +45,37 @@ impl<C> Graph<C> {
         // TODO
     }
 
-    #[inline]
     #[must_use]
     pub fn find_node(&self, id: InstanceId) -> Option<Asc<Node<C>>> {
         self.nodes.get(&id).as_deref().cloned()
         // TODO
     }
 
-    #[inline]
     pub fn retire_node(&self, id: InstanceId) {
         let _ = self.nodes.remove(&id);
         // TODO
+    }
+
+    #[must_use]
+    pub fn executing(&self, id: InstanceId) -> Option<Executing<'_>> {
+        Executing::new(&self.executing, id)
+    }
+}
+
+pub struct Executing<'a> {
+    id_set: &'a DashSet<InstanceId>,
+    id: InstanceId,
+}
+
+impl<'a> Executing<'a> {
+    fn new(id_set: &'a DashSet<InstanceId>, id: InstanceId) -> Option<Self> {
+        let is_new = id_set.insert(id);
+        is_new.then(|| Self { id_set, id })
+    }
+}
+
+impl Drop for Executing<'_> {
+    fn drop(&mut self) {
+        self.id_set.remove(&self.id);
     }
 }
