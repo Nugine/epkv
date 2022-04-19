@@ -1,14 +1,18 @@
 use crate::bounds::StatusBounds;
 use crate::deps::Deps;
 use crate::id::InstanceId;
+use crate::id::LocalInstanceId;
+use crate::id::ReplicaId;
 use crate::id::Seq;
 use crate::status::ExecStatus;
 
-use dashmap::mapref::entry::Entry;
-use dashmap::DashSet;
 use epkv_utils::asc::Asc;
+use epkv_utils::cmp::max_assign;
+use epkv_utils::vecmap::VecMap;
 
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
+use dashmap::DashSet;
 use parking_lot::Mutex as SyncMutex;
 
 pub struct Graph<C> {
@@ -77,5 +81,23 @@ impl<'a> Executing<'a> {
 impl Drop for Executing<'_> {
     fn drop(&mut self) {
         self.id_set.remove(&self.id);
+    }
+}
+
+pub struct DepsQueue(VecMap<ReplicaId, LocalInstanceId>);
+
+impl DepsQueue {
+    #[must_use]
+    pub fn from_single(InstanceId(rid, lid): InstanceId) -> Self {
+        Self(VecMap::from_single(rid, lid))
+    }
+
+    pub fn push(&mut self, InstanceId(rid, lid): InstanceId) {
+        self.0.update(rid, |v: _| max_assign(v, lid), || lid);
+    }
+
+    #[must_use]
+    pub fn pop(&mut self) -> Option<InstanceId> {
+        self.0.pop_max().map(|(rid, lid)| InstanceId(rid, lid))
     }
 }

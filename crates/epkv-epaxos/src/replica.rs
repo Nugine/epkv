@@ -2,7 +2,7 @@ use crate::bounds::PeerStatusBounds;
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
 use crate::deps::Deps;
-use crate::graph::Graph;
+use crate::graph::{DepsQueue, Graph};
 use crate::id::*;
 use crate::ins::Instance;
 use crate::log::Log;
@@ -1547,6 +1547,21 @@ where
             Some(exec) => exec,
             None => return Ok(()),
         };
+
+        {
+            let mut q = DepsQueue::from_single(id);
+
+            while let Some(u_id) = q.pop() {
+                // TODO
+
+                // for v_id in u_node.deps {
+                //      // TODO
+                //      if ... {
+                //         q.push(v_id);
+                //      }
+                // }
+            }
+        }
 
         todo!()
     }
