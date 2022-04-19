@@ -1591,8 +1591,12 @@ where
             }
         }
 
-        // TODO
+        {
+            let _global_guard = self.graph.lock_global().await;
 
-        todo!()
+            // TODO
+        }
+
+        Ok(())
     }
 }

@@ -18,6 +18,7 @@ use dashmap::DashSet;
 use fnv::FnvHashMap;
 use parking_lot::Mutex as SyncMutex;
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::MutexGuard as AsyncMutexGuard;
 use tokio::sync::Notify;
 use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
 
@@ -28,6 +29,7 @@ pub struct Graph<C> {
     row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
     watermarks: DashMap<ReplicaId, Asc<WaterMark>>,
     subscribers: DashMap<InstanceId, Arc<Notify>>,
+    global_lock: AsyncMutex<()>,
 }
 
 pub struct Node<C> {
@@ -38,6 +40,7 @@ pub struct Node<C> {
 }
 
 pub struct RowGuard(OwnedAsyncMutexGuard<()>);
+pub struct GlobalGuard<'a>(AsyncMutexGuard<'a, ()>);
 
 impl<C> Graph<C> {
     #[must_use]
@@ -47,6 +50,7 @@ impl<C> Graph<C> {
         let row_locks = DashMap::new();
         let watermarks = DashMap::new();
         let subscribers = DashMap::new();
+        let global_lock = AsyncMutex::new(());
         Self {
             nodes,
             status_bounds,
@@ -54,6 +58,7 @@ impl<C> Graph<C> {
             row_locks,
             watermarks,
             subscribers,
+            global_lock,
         }
     }
 
@@ -91,7 +96,6 @@ impl<C> Graph<C> {
     // #[must_use]
     // pub fn find_node(&self, id: InstanceId) -> Option<Asc<Node<C>>> {
     //     self.nodes.get(&id).as_deref().cloned()
-    //     // TODO
     // }
 
     // pub fn retire_node(&self, id: InstanceId) {
@@ -119,6 +123,10 @@ impl<C> Graph<C> {
 
         let gen = || Asc::new(WaterMark::new(bound.unwrap_or(0)));
         self.watermarks.entry(rid).or_insert_with(gen).clone()
+    }
+
+    pub async fn lock_global(&self) -> GlobalGuard<'_> {
+        GlobalGuard(self.global_lock.lock().await)
     }
 }
 
