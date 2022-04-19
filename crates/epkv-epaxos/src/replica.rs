@@ -863,6 +863,10 @@ where
 
             if let Some(ins) = s.log.get_cached_ins(id) {
                 if ins.status >= Status::Committed {
+                    let cmd = ins.cmd.clone();
+                    let seq = ins.seq;
+                    let deps = ins.deps.clone();
+                    let _ = self.graph.init_node(id, cmd, seq, deps);
                     return Ok(());
                 }
             }
@@ -1556,6 +1560,10 @@ where
             let mut q = DepsQueue::from_single(id);
 
             while let Some(u_id) = q.pop() {
+                if local_graph.contains_node(u_id) {
+                    continue;
+                }
+
                 let InstanceId(u_rid, u_lid) = u_id;
 
                 let wm = self.graph.watermark(u_rid);
@@ -1576,7 +1584,9 @@ where
 
                 wm.until(u_lid.raw_value()).wait().await;
 
-                // let is_new_node = local_graph.add_node(id, node);
+                let node = self.graph.wait_node(id).await;
+
+                local_graph.add_node(id, node);
 
                 // for v_id in u_node.deps {
                 //      // TODO

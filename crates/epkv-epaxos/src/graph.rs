@@ -11,7 +11,6 @@ use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::watermark::WaterMark;
 
-use std::collections::hash_map;
 use std::sync::Arc;
 
 use dashmap::DashMap;
@@ -19,6 +18,7 @@ use dashmap::DashSet;
 use fnv::FnvHashMap;
 use parking_lot::Mutex as SyncMutex;
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::Notify;
 use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
 
 pub struct Graph<C> {
@@ -27,6 +27,7 @@ pub struct Graph<C> {
     executing: DashSet<InstanceId>,
     row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
     watermarks: DashMap<ReplicaId, Asc<WaterMark>>,
+    subscribers: DashMap<InstanceId, Arc<Notify>>,
 }
 
 pub struct Node<C> {
@@ -45,7 +46,15 @@ impl<C> Graph<C> {
         let executing = DashSet::new();
         let row_locks = DashMap::new();
         let watermarks = DashMap::new();
-        Self { nodes, status_bounds, executing, row_locks, watermarks }
+        let subscribers = DashMap::new();
+        Self {
+            nodes,
+            status_bounds,
+            executing,
+            row_locks,
+            watermarks,
+            subscribers,
+        }
     }
 
     #[must_use]
@@ -54,21 +63,44 @@ impl<C> Graph<C> {
             let status: _ = SyncMutex::new(ExecStatus::Committed);
             Asc::new(Node { cmd, seq, deps, status })
         };
-        self.nodes.entry(id).or_insert_with(gen).clone()
+        let node = self.nodes.entry(id).or_insert_with(gen).asc_clone();
 
-        // TODO
+        let notify = self.subscribers.get(&id).as_deref().cloned();
+        if let Some(n) = notify {
+            n.notify_waiters()
+        }
+
+        node
     }
 
-    #[must_use]
-    pub fn find_node(&self, id: InstanceId) -> Option<Asc<Node<C>>> {
-        self.nodes.get(&id).as_deref().cloned()
-        // TODO
+    pub async fn wait_node(&self, id: InstanceId) -> Asc<Node<C>> {
+        if let Some(node) = self.nodes.get(&id).as_deref().cloned() {
+            let _ = self.subscribers.remove(&id);
+            return node;
+        }
+
+        let gen = || Arc::new(Notify::new());
+        let n = self.subscribers.entry(id).or_insert_with(gen).clone();
+
+        loop {
+            n.notified().await;
+            if let Some(node) = self.nodes.get(&id).as_deref().cloned() {
+                let _ = self.subscribers.remove(&id);
+                return node;
+            }
+        }
     }
 
-    pub fn retire_node(&self, id: InstanceId) {
-        let _ = self.nodes.remove(&id);
-        // TODO
-    }
+    // #[must_use]
+    // pub fn find_node(&self, id: InstanceId) -> Option<Asc<Node<C>>> {
+    //     self.nodes.get(&id).as_deref().cloned()
+    //     // TODO
+    // }
+
+    // pub fn retire_node(&self, id: InstanceId) {
+    //     let _ = self.nodes.remove(&id);
+    //     // TODO
+    // }
 
     #[must_use]
     pub fn executing(&self, id: InstanceId) -> Option<Executing<'_>> {
@@ -140,14 +172,12 @@ impl<C> LocalGraph<C> {
     }
 
     #[must_use]
-    pub fn add_node(&mut self, id: InstanceId, node: Asc<Node<C>>) -> bool {
-        match self.nodes.entry(id) {
-            hash_map::Entry::Occupied(_) => false,
-            hash_map::Entry::Vacant(e) => {
-                e.insert(node);
-                true
-            }
-        }
+    pub fn contains_node(&self, id: InstanceId) -> bool {
+        self.nodes.contains_key(&id)
+    }
+
+    pub fn add_node(&mut self, id: InstanceId, node: Asc<Node<C>>) {
+        self.nodes.entry(id).or_insert(node);
     }
 }
 
