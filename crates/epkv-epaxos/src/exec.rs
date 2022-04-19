@@ -82,7 +82,7 @@ mod tests {
         assert_eq!(n.state(), ExecNotify::INIT);
 
         {
-            let n = n.asc_clone();
+            let n = Asc::clone(&n);
             spawn(async move {
                 n.notify_issued();
                 sleep(Duration::from_millis(50)).await;

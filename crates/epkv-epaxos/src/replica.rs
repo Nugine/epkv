@@ -158,7 +158,7 @@ where
 
             let sync_id_head = Head::new(SyncId::ZERO);
 
-            let log = Log::new(log_store, attr_bounds, status_bounds.asc_clone());
+            let log = Log::new(log_store, attr_bounds, Asc::clone(&status_bounds));
 
             let peer_status_bounds = PeerStatusBounds::new();
 

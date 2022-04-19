@@ -63,7 +63,7 @@ impl<C> Graph<C> {
             let status: _ = SyncMutex::new(ExecStatus::Committed);
             Asc::new(Node { cmd, seq, deps, status })
         };
-        let node = self.nodes.entry(id).or_insert_with(gen).asc_clone();
+        let node: Asc<_> = self.nodes.entry(id).or_insert_with(gen).clone();
 
         let notify = self.subscribers.get(&id).as_deref().cloned();
         if let Some(n) = notify {

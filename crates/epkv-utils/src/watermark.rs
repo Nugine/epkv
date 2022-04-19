@@ -47,7 +47,7 @@ impl WaterMark {
         let mut guard = self.queue.lock();
         let q = &mut *guard;
         let (_, n) = q.init_with(lv, || Asc::new(Notify::new()));
-        let notify = n.asc_clone();
+        let notify = Asc::clone(n);
         drop(guard);
         WaterMarkUntil { watermark: self, until: lv, notify }
     }
