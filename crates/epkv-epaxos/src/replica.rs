@@ -9,7 +9,7 @@ use crate::log::Log;
 use crate::msg::*;
 use crate::net::{broadcast_accept, broadcast_commit, broadcast_preaccept, Network};
 use crate::peers::Peers;
-use crate::status::Status;
+use crate::status::{ExecStatus, Status};
 use crate::store::{DataStore, LogStore, UpdateMode};
 
 use epkv_utils::asc::Asc;
@@ -777,14 +777,7 @@ where
             );
         }
 
-        {
-            let this = Arc::clone(self);
-            spawn(async move {
-                if let Err(err) = this.run_execute(id, cmd, seq, deps).await {
-                    error!(?id, ?err)
-                }
-            });
-        }
+        {}
 
         Ok(())
     }
@@ -841,12 +834,7 @@ where
         drop(guard);
 
         if exec {
-            let this = Arc::clone(self);
-            spawn(async move {
-                if let Err(err) = this.run_execute(id, cmd, seq, deps).await {
-                    error!(?id, ?err)
-                }
-            });
+            self.spawn_execute(id, cmd, seq, deps);
         }
         Ok(())
     }
@@ -1491,12 +1479,7 @@ where
                         let (cmd, seq, deps) = (ins.cmd.clone(), ins.seq, ins.deps.clone());
                         s.log.save(id, ins, mode).await?;
 
-                        let this = Arc::clone(self);
-                        spawn(async move {
-                            if let Err(err) = this.run_execute(id, cmd, seq, deps).await {
-                                error!(?id, ?err);
-                            }
-                        });
+                        self.spawn_execute(id, cmd, seq, deps);
                     }
                 }
             }
@@ -1535,15 +1518,18 @@ where
         Ok(())
     }
 
-    async fn run_execute(
-        self: &Arc<Self>,
-        id: InstanceId,
-        cmd: C,
-        seq: Seq,
-        deps: Deps,
-    ) -> Result<()> {
-        let root = self.graph.init_node(id, cmd, seq, deps);
+    fn spawn_execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps) {
+        let _ = self.graph.init_node(id, cmd, seq, deps);
 
+        let this = Arc::clone(self);
+        spawn(async move {
+            if let Err(err) = this.run_execute(id).await {
+                error!(?id, ?err)
+            }
+        });
+    }
+
+    async fn run_execute(self: &Arc<Self>, id: InstanceId) -> Result<()> {
         let _executing = match self.graph.executing(id) {
             Some(exec) => exec,
             None => return Ok(()),
@@ -1556,43 +1542,56 @@ where
 
             let mut q = DepsQueue::from_single(id);
 
-            while let Some(u_id) = q.pop() {
-                if local_graph.contains_node(u_id) {
+            while let Some(id) = q.pop() {
+                if local_graph.contains_node(id) {
                     continue;
                 }
 
-                let InstanceId(u_rid, u_lid) = u_id;
-
-                let wm = self.graph.watermark(u_rid);
+                let node = self.graph.wait_node(id).await;
 
                 {
-                    let mut guard = self.state.lock().await;
-                    let s = &mut *guard;
-                    let avg_rtt = s.peers.get_avg_rtt();
-                    drop(guard);
-
-                    let start = LocalInstanceId::from(wm.level()).add_one();
-                    let end = u_lid;
-                    for lid in LocalInstanceId::range_inclusive(start, end) {
-                        let id = InstanceId(u_rid, lid);
-                        self.spawn_recover_timeout(id, avg_rtt)
+                    let guard = node.status.lock();
+                    let status = *guard;
+                    if status > ExecStatus::Committed {
+                        continue;
                     }
                 }
 
-                wm.until(u_lid.raw_value()).wait().await;
+                local_graph.add_node(id, Asc::clone(&node));
 
-                let node = self.graph.wait_node(id).await;
+                let InstanceId(rid, lid) = id;
 
-                local_graph.add_node(id, node);
+                let wm = self.graph.watermark(rid);
 
-                // for v_id in u_node.deps {
-                //      // TODO
-                //      if ... {
-                //         q.push(v_id);
-                //      }
-                // }
+                {
+                    let start = LocalInstanceId::from(wm.level()).add_one();
+                    let end = lid.sub_one();
+
+                    if start <= end {
+                        let mut guard = self.state.lock().await;
+                        let s = &mut *guard;
+                        let avg_rtt = s.peers.get_avg_rtt();
+                        drop(guard);
+
+                        for l in LocalInstanceId::range_inclusive(start, end) {
+                            let id = InstanceId(rid, l);
+                            self.spawn_recover_timeout(id, avg_rtt)
+                        }
+                    }
+                }
+
+                wm.until(lid.raw_value()).wait().await;
+
+                for d in node.deps.elements() {
+                    if local_graph.contains_node(d) {
+                        continue;
+                    }
+                    q.push(d);
+                }
             }
         }
+
+        // TODO
 
         todo!()
     }

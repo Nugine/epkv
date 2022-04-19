@@ -57,20 +57,17 @@ impl<C> Graph<C> {
         }
     }
 
-    #[must_use]
-    pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps) -> Asc<Node<C>> {
+    pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps) {
         let gen = || {
             let status: _ = SyncMutex::new(ExecStatus::Committed);
             Asc::new(Node { cmd, seq, deps, status })
         };
-        let node: Asc<_> = self.nodes.entry(id).or_insert_with(gen).clone();
+        self.nodes.entry(id).or_insert_with(gen);
 
         let notify = self.subscribers.get(&id).as_deref().cloned();
         if let Some(n) = notify {
             n.notify_waiters()
         }
-
-        node
     }
 
     pub async fn wait_node(&self, id: InstanceId) -> Asc<Node<C>> {

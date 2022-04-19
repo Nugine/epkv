@@ -79,3 +79,9 @@ impl Default for Deps {
         empty.clone()
     }
 }
+
+impl Deps {
+    pub fn elements(&self) -> impl Iterator<Item = InstanceId> + '_ {
+        self.as_inner().0.iter().copied().map(|(rid, lid)| InstanceId(rid, lid))
+    }
+}
