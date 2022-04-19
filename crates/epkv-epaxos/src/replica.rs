@@ -1535,7 +1535,7 @@ where
             None => return Ok(()),
         };
 
-        let mut local_graph = LocalGraph::<C>::new();
+        let mut local_graph = LocalGraph::new();
 
         {
             let _row_guard = self.graph.lock_row(id.0).await;
