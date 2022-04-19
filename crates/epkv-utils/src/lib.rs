@@ -28,3 +28,4 @@ pub mod radixmap;
 pub mod time;
 pub mod vecmap;
 pub mod vecset;
+pub mod watermark;
