@@ -2,7 +2,7 @@ use crate::bounds::PeerStatusBounds;
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
 use crate::deps::Deps;
-use crate::graph::{DepsQueue, Graph};
+use crate::graph::{DepsQueue, Graph, LocalGraph};
 use crate::id::*;
 use crate::ins::Instance;
 use crate::log::Log;
@@ -1548,13 +1548,35 @@ where
             None => return Ok(()),
         };
 
+        // let mut local_graph = LocalGraph::<C>::new();
+
         {
             let _row_guard = self.graph.lock_row(id.0).await;
 
             let mut q = DepsQueue::from_single(id);
 
             while let Some(u_id) = q.pop() {
-                // TODO
+                let InstanceId(u_rid, u_lid) = u_id;
+
+                let wm = self.graph.watermark(u_rid);
+
+                {
+                    let mut guard = self.state.lock().await;
+                    let s = &mut *guard;
+                    let avg_rtt = s.peers.get_avg_rtt();
+                    drop(guard);
+
+                    let start = LocalInstanceId::from(wm.level()).add_one();
+                    let end = u_lid;
+                    for lid in LocalInstanceId::range_inclusive(start, end) {
+                        let id = InstanceId(u_rid, lid);
+                        self.spawn_recover_timeout(id, avg_rtt)
+                    }
+                }
+
+                wm.until(u_lid.raw_value()).wait().await;
+
+                // let is_new_node = local_graph.add_node(id, node);
 
                 // for v_id in u_node.deps {
                 //      // TODO

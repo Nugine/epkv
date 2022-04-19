@@ -9,11 +9,14 @@ use crate::status::ExecStatus;
 use epkv_utils::asc::Asc;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
+use epkv_utils::watermark::WaterMark;
 
+use std::collections::hash_map;
 use std::sync::Arc;
 
 use dashmap::DashMap;
 use dashmap::DashSet;
+use fnv::FnvHashMap;
 use parking_lot::Mutex as SyncMutex;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
@@ -23,6 +26,7 @@ pub struct Graph<C> {
     status_bounds: Asc<SyncMutex<StatusBounds>>,
     executing: DashSet<InstanceId>,
     row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
+    watermarks: DashMap<ReplicaId, Asc<WaterMark>>,
 }
 
 pub struct Node<C> {
@@ -40,7 +44,8 @@ impl<C> Graph<C> {
         let nodes = DashMap::new();
         let executing = DashSet::new();
         let row_locks = DashMap::new();
-        Self { nodes, status_bounds, executing, row_locks }
+        let watermarks = DashMap::new();
+        Self { nodes, status_bounds, executing, row_locks, watermarks }
     }
 
     #[must_use]
@@ -74,6 +79,17 @@ impl<C> Graph<C> {
         let gen = || Arc::new(AsyncMutex::new(()));
         let mutex: Arc<_> = self.row_locks.entry(rid).or_insert_with(gen).clone();
         RowGuard(mutex.lock_owned().await)
+    }
+
+    #[must_use]
+    pub fn watermark(&self, rid: ReplicaId) -> Asc<WaterMark> {
+        let mut guard = self.status_bounds.lock();
+        let status_bounds = &mut *guard;
+        let bound = status_bounds.maps.get(&rid).map(|m| m.committed.bound());
+        drop(guard);
+
+        let gen = || Asc::new(WaterMark::new(bound.unwrap_or(0)));
+        self.watermarks.entry(rid).or_insert_with(gen).clone()
     }
 }
 
