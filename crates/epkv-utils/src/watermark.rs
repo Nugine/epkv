@@ -68,10 +68,11 @@ impl WaterMarkUntil<'_> {
 
     #[inline]
     pub async fn wait(&self) {
+        if self.level() >= self.until {
+            return;
+        }
+
         loop {
-            if self.level() >= self.until {
-                return;
-            }
             self.notify.notified().await;
             if self.level() >= self.until {
                 return;
