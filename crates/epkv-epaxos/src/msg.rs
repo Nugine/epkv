@@ -1,4 +1,4 @@
-use crate::deps::Deps;
+use crate::deps::MutableDeps;
 use crate::id::*;
 use crate::ins::Instance;
 use crate::status::Status;
@@ -19,7 +19,7 @@ pub struct PreAccept<C> {
     pub pbal: Ballot,
     pub cmd: Option<C>,
     pub seq: Seq,
-    pub deps: Deps,
+    pub deps: MutableDeps,
     pub acc: VecSet<ReplicaId>,
 }
 
@@ -38,7 +38,7 @@ pub struct PreAcceptDiff {
     pub id: InstanceId,
     pub pbal: Ballot,
     pub seq: Seq,
-    pub deps: Deps,
+    pub deps: MutableDeps,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,7 +49,7 @@ pub struct Accept<C> {
     pub pbal: Ballot,
     pub cmd: Option<C>,
     pub seq: Seq,
-    pub deps: Deps,
+    pub deps: MutableDeps,
     pub acc: VecSet<ReplicaId>,
 }
 
@@ -69,7 +69,7 @@ pub struct Commit<C> {
     pub pbal: Ballot,
     pub cmd: Option<C>,
     pub seq: Seq,
-    pub deps: Deps,
+    pub deps: MutableDeps,
     pub acc: VecSet<ReplicaId>,
 }
 
@@ -105,7 +105,7 @@ pub struct PrepareOk<C> {
     pub pbal: Ballot,
     pub cmd: Option<C>,
     pub seq: Seq,
-    pub deps: Deps,
+    pub deps: MutableDeps,
     pub abal: Ballot,
     pub status: Status,
     pub acc: VecSet<ReplicaId>,
@@ -258,7 +258,7 @@ mod tests {
             let pbal = Ballot(Round::ZERO, rid);
             let cmd = None;
             let seq = Seq::from(1);
-            let deps = Deps::with_capacity(3);
+            let deps = MutableDeps::with_capacity(3);
             let mut acc = VecSet::with_capacity(3);
             let _ = acc.insert(rid);
 

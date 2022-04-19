@@ -1,6 +1,6 @@
 use crate::bounds::{AttrBounds, StatusBounds};
 use crate::cmd::{CommandLike, Keys};
-use crate::deps::Deps;
+use crate::deps::MutableDeps;
 use crate::id::{Ballot, InstanceId, LocalInstanceId, ReplicaId, Seq};
 use crate::ins::Instance;
 use crate::status::Status;
@@ -83,8 +83,8 @@ where
         }
     }
 
-    pub fn calc_attributes(&self, id: InstanceId, keys: &Keys<C>) -> (Seq, Deps) {
-        let mut deps = Deps::with_capacity(self.max_lid_map.len());
+    pub fn calc_attributes(&self, id: InstanceId, keys: &Keys<C>) -> (Seq, MutableDeps) {
+        let mut deps = MutableDeps::with_capacity(self.max_lid_map.len());
         let mut seq = Seq::ZERO;
         let InstanceId(rid, lid) = id;
 

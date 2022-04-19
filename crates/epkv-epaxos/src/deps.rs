@@ -6,9 +6,9 @@ use epkv_utils::vecmap::VecMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Deps(VecMap<ReplicaId, LocalInstanceId>);
+pub struct MutableDeps(VecMap<ReplicaId, LocalInstanceId>);
 
-impl Deps {
+impl MutableDeps {
     #[must_use]
     pub fn with_capacity(cap: usize) -> Self {
         Self(VecMap::with_capacity(cap))

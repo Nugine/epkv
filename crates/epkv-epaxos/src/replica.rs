@@ -1,7 +1,7 @@
 use crate::bounds::PeerStatusBounds;
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
-use crate::deps::Deps;
+use crate::deps::MutableDeps;
 use crate::graph::{DepsQueue, Graph, LocalGraph};
 use crate::id::*;
 use crate::ins::Instance;
@@ -564,7 +564,7 @@ where
         pbal: Ballot,
         cmd: Option<C>,
         seq: Seq,
-        deps: Deps,
+        deps: MutableDeps,
         acc: VecSet<ReplicaId>,
     ) -> Result<()> {
         let (mut rx, mut acc) = {
@@ -738,7 +738,7 @@ where
         pbal: Ballot,
         cmd: Option<C>,
         seq: Seq,
-        deps: Deps,
+        deps: MutableDeps,
         acc: VecSet<ReplicaId>,
     ) -> Result<()> {
         let s = &mut *guard;
@@ -914,7 +914,8 @@ where
             let mut cmd: Option<C> = None;
 
             // (sender, seq, deps, status, acc)
-            let mut tuples: Vec<(ReplicaId, Seq, Deps, Status, VecSet<ReplicaId>)> = Vec::new();
+            let mut tuples: Vec<(ReplicaId, Seq, MutableDeps, Status, VecSet<ReplicaId>)> =
+                Vec::new();
 
             while let Some(msg) = rx.recv().await {
                 let msg = match PrepareReply::convert(msg) {
@@ -1031,7 +1032,7 @@ where
 
                 if enable_accept {
                     #[allow(clippy::mutable_key_type)]
-                    let mut buckets: HashMap<(Seq, &mut Deps), usize> = HashMap::new();
+                    let mut buckets: HashMap<(Seq, &mut MutableDeps), usize> = HashMap::new();
                     for &mut (_, seq, ref mut deps, _, _) in tuples.iter_mut() {
                         let cnt = buckets.entry((seq, deps)).or_default();
                         *cnt = cnt.wrapping_add(1);
@@ -1543,7 +1544,7 @@ where
         id: InstanceId,
         cmd: C,
         seq: Seq,
-        deps: Deps,
+        deps: MutableDeps,
     ) -> Result<()> {
         let root = self.graph.init_node(id, cmd, seq, deps);
 

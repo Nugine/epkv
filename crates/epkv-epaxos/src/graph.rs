@@ -1,5 +1,5 @@
 use crate::bounds::StatusBounds;
-use crate::deps::Deps;
+use crate::deps::MutableDeps;
 use crate::id::InstanceId;
 use crate::id::LocalInstanceId;
 use crate::id::ReplicaId;
@@ -33,7 +33,7 @@ pub struct Graph<C> {
 pub struct Node<C> {
     pub cmd: C,
     pub seq: Seq,
-    pub deps: Deps,
+    pub deps: MutableDeps,
     pub status: SyncMutex<ExecStatus>,
 }
 
@@ -58,7 +58,7 @@ impl<C> Graph<C> {
     }
 
     #[must_use]
-    pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps) -> Asc<Node<C>> {
+    pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: MutableDeps) -> Asc<Node<C>> {
         let gen = || {
             let status: _ = SyncMutex::new(ExecStatus::Committed);
             Asc::new(Node { cmd, seq, deps, status })
