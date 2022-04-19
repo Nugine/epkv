@@ -10,15 +10,19 @@ use epkv_utils::asc::Asc;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
 
-use dashmap::mapref::entry::Entry;
+use std::sync::Arc;
+
 use dashmap::DashMap;
 use dashmap::DashSet;
 use parking_lot::Mutex as SyncMutex;
+use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
 
 pub struct Graph<C> {
     nodes: DashMap<InstanceId, Asc<Node<C>>>,
     status_bounds: Asc<SyncMutex<StatusBounds>>,
     executing: DashSet<InstanceId>,
+    row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
 }
 
 pub struct Node<C> {
@@ -28,24 +32,25 @@ pub struct Node<C> {
     pub status: SyncMutex<ExecStatus>,
 }
 
+pub struct RowGuard(OwnedAsyncMutexGuard<()>);
+
 impl<C> Graph<C> {
     #[must_use]
     pub fn new(status_bounds: Asc<SyncMutex<StatusBounds>>) -> Self {
         let nodes = DashMap::new();
         let executing = DashSet::new();
-        Self { nodes, status_bounds, executing }
+        let row_locks = DashMap::new();
+        Self { nodes, status_bounds, executing, row_locks }
     }
 
     #[must_use]
     pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps) -> Asc<Node<C>> {
-        match self.nodes.entry(id) {
-            Entry::Occupied(e) => e.get().clone(),
-            Entry::Vacant(e) => {
-                let status: _ = SyncMutex::new(ExecStatus::Committed);
-                let node = Asc::new(Node { cmd, seq, deps, status });
-                e.insert(node).clone()
-            }
-        }
+        let gen = || {
+            let status: _ = SyncMutex::new(ExecStatus::Committed);
+            Asc::new(Node { cmd, seq, deps, status })
+        };
+        self.nodes.entry(id).or_insert_with(gen).clone()
+
         // TODO
     }
 
@@ -63,6 +68,12 @@ impl<C> Graph<C> {
     #[must_use]
     pub fn executing(&self, id: InstanceId) -> Option<Executing<'_>> {
         Executing::new(&self.executing, id)
+    }
+
+    pub async fn lock_row(&self, rid: ReplicaId) -> RowGuard {
+        let gen = || Arc::new(AsyncMutex::new(()));
+        let mutex: Arc<_> = self.row_locks.entry(rid).or_insert_with(gen).clone();
+        RowGuard(mutex.lock_owned().await)
     }
 }
 

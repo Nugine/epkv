@@ -1549,6 +1549,8 @@ where
         };
 
         {
+            let _row_guard = self.graph.lock_row(id.0).await;
+
             let mut q = DepsQueue::from_single(id);
 
             while let Some(u_id) = q.pop() {
