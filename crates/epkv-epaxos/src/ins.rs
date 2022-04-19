@@ -1,4 +1,4 @@
-use crate::deps::MutableDeps;
+use crate::deps::Deps;
 use crate::id::{Ballot, ReplicaId, Seq};
 use crate::status::Status;
 
@@ -11,7 +11,7 @@ pub struct Instance<C> {
     pub pbal: Ballot,
     pub cmd: C,
     pub seq: Seq,
-    pub deps: MutableDeps,
+    pub deps: Deps,
     pub abal: Ballot,
     pub status: Status,
     pub acc: VecSet<ReplicaId>,

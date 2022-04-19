@@ -1,4 +1,4 @@
-use crate::deps::MutableDeps;
+use crate::deps::Deps;
 use crate::id::*;
 use crate::ins::Instance;
 use crate::status::Status;
@@ -19,7 +19,7 @@ pub struct PreAccept<C> {
     pub pbal: Ballot,
     pub cmd: Option<C>,
     pub seq: Seq,
-    pub deps: MutableDeps,
+    pub deps: Deps,
     pub acc: VecSet<ReplicaId>,
 }
 
@@ -38,7 +38,7 @@ pub struct PreAcceptDiff {
     pub id: InstanceId,
     pub pbal: Ballot,
     pub seq: Seq,
-    pub deps: MutableDeps,
+    pub deps: Deps,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,7 +49,7 @@ pub struct Accept<C> {
     pub pbal: Ballot,
     pub cmd: Option<C>,
     pub seq: Seq,
-    pub deps: MutableDeps,
+    pub deps: Deps,
     pub acc: VecSet<ReplicaId>,
 }
 
@@ -69,7 +69,7 @@ pub struct Commit<C> {
     pub pbal: Ballot,
     pub cmd: Option<C>,
     pub seq: Seq,
-    pub deps: MutableDeps,
+    pub deps: Deps,
     pub acc: VecSet<ReplicaId>,
 }
 
@@ -105,7 +105,7 @@ pub struct PrepareOk<C> {
     pub pbal: Ballot,
     pub cmd: Option<C>,
     pub seq: Seq,
-    pub deps: MutableDeps,
+    pub deps: Deps,
     pub abal: Ballot,
     pub status: Status,
     pub acc: VecSet<ReplicaId>,
@@ -237,6 +237,7 @@ impl<C> PrepareReply<C> {
 mod tests {
     use super::*;
 
+    use crate::deps::MutableDeps;
     use crate::id::{Epoch, LocalInstanceId, Round};
 
     use epkv_utils::codec;
@@ -247,7 +248,7 @@ mod tests {
     fn message_size() {
         {
             let baseline_type_size = mem::size_of::<Message<()>>();
-            assert_eq!(baseline_type_size, 136); // track message type size
+            assert_eq!(baseline_type_size, 120); // track message type size
         }
 
         {
@@ -258,7 +259,7 @@ mod tests {
             let pbal = Ballot(Round::ZERO, rid);
             let cmd = None;
             let seq = Seq::from(1);
-            let deps = MutableDeps::with_capacity(3);
+            let deps = Deps::from_mutable(MutableDeps::with_capacity(3));
             let mut acc = VecSet::with_capacity(3);
             let _ = acc.insert(rid);
 

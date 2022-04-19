@@ -1,7 +1,7 @@
 use crate::bounds::PeerStatusBounds;
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
-use crate::deps::MutableDeps;
+use crate::deps::Deps;
 use crate::graph::{DepsQueue, Graph, LocalGraph};
 use crate::id::*;
 use crate::ins::Instance;
@@ -289,6 +289,7 @@ where
             };
 
             let (seq, deps) = s.log.calc_attributes(id, &cmd.keys());
+            let deps = Deps::from_mutable(deps);
 
             let abal = pbal;
             let status = Status::PreAccepted;
@@ -329,7 +330,7 @@ where
                 self.spawn_recover_timeout(id, avg_rtt);
             }
 
-            (rx, seq, deps, acc)
+            (rx, seq, Deps::into_mutable(deps), acc)
         };
 
         {
@@ -404,7 +405,7 @@ where
                             PreAcceptReply::Ok(_) => {}
                             PreAcceptReply::Diff(msg) => {
                                 let mut new_seq = msg.seq;
-                                let mut new_deps = msg.deps;
+                                let mut new_deps = msg.deps.into_mutable();
 
                                 max_assign(&mut new_seq, seq);
                                 new_deps.merge(&deps);
@@ -442,6 +443,8 @@ where
                         let cmd = None;
                         let _ = self.propose_tx.remove(&id);
 
+                        let deps = Deps::from_mutable(deps);
+
                         if is_fast_path {
                             return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
                         } else {
@@ -465,8 +468,10 @@ where
                 s.log.load(id).await?;
                 let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
 
-                let cmd = None;
                 let _ = self.propose_tx.remove(&id);
+
+                let cmd = None;
+                let deps = Deps::from_mutable(deps);
 
                 self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
             }
@@ -501,9 +506,12 @@ where
             }
         };
 
-        let (mut seq, mut deps) = s.log.calc_attributes(id, &cmd.keys());
-        max_assign(&mut seq, msg.seq);
-        deps.merge(&msg.deps);
+        let (seq, deps) = {
+            let (mut seq, mut deps) = s.log.calc_attributes(id, &cmd.keys());
+            max_assign(&mut seq, msg.seq);
+            deps.merge(msg.deps.as_ref());
+            (seq, Deps::from_mutable(deps))
+        };
 
         let is_changed = seq != msg.seq || deps != msg.deps;
 
@@ -545,17 +553,6 @@ where
         Ok(())
     }
 
-    // async fn end_phase_preaccept(
-    //     self: &Arc<Self>,
-    //     id: InstanceId,
-    //     mut rx: mpsc::Receiver<Message<C>>,
-    //     mut seq: Seq,
-    //     mut deps: Deps,
-    //     mut acc: VecSet<ReplicaId>,
-    // ) -> Result<()> {
-
-    // }
-
     #[allow(clippy::too_many_arguments)]
     async fn phase_accept(
         self: &Arc<Self>,
@@ -564,7 +561,7 @@ where
         pbal: Ballot,
         cmd: Option<C>,
         seq: Seq,
-        deps: MutableDeps,
+        deps: Deps,
         acc: VecSet<ReplicaId>,
     ) -> Result<()> {
         let (mut rx, mut acc) = {
@@ -738,7 +735,7 @@ where
         pbal: Ballot,
         cmd: Option<C>,
         seq: Seq,
-        deps: MutableDeps,
+        deps: Deps,
         acc: VecSet<ReplicaId>,
     ) -> Result<()> {
         let s = &mut *guard;
@@ -914,8 +911,7 @@ where
             let mut cmd: Option<C> = None;
 
             // (sender, seq, deps, status, acc)
-            let mut tuples: Vec<(ReplicaId, Seq, MutableDeps, Status, VecSet<ReplicaId>)> =
-                Vec::new();
+            let mut tuples: Vec<(ReplicaId, Seq, Deps, Status, VecSet<ReplicaId>)> = Vec::new();
 
             while let Some(msg) = rx.recv().await {
                 let msg = match PrepareReply::convert(msg) {
@@ -1032,7 +1028,7 @@ where
 
                 if enable_accept {
                     #[allow(clippy::mutable_key_type)]
-                    let mut buckets: HashMap<(Seq, &mut MutableDeps), usize> = HashMap::new();
+                    let mut buckets: HashMap<(Seq, &mut Deps), usize> = HashMap::new();
                     for &mut (_, seq, ref mut deps, _, _) in tuples.iter_mut() {
                         let cnt = buckets.entry((seq, deps)).or_default();
                         *cnt = cnt.wrapping_add(1);
@@ -1544,7 +1540,7 @@ where
         id: InstanceId,
         cmd: C,
         seq: Seq,
-        deps: MutableDeps,
+        deps: Deps,
     ) -> Result<()> {
         let root = self.graph.init_node(id, cmd, seq, deps);
 

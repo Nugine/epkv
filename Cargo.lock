@@ -163,6 +163,7 @@ dependencies = [
  "epkv-utils",
  "fnv",
  "futures-util",
+ "once_cell",
  "parking_lot",
  "rand",
  "scopeguard",
