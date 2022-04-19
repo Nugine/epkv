@@ -128,3 +128,31 @@ impl DepsQueue {
         self.0.pop_max().map(|(rid, lid)| InstanceId(rid, lid))
     }
 }
+
+pub struct LocalGraph<C> {
+    nodes: FnvHashMap<InstanceId, Asc<Node<C>>>,
+}
+
+impl<C> LocalGraph<C> {
+    #[must_use]
+    pub fn new() -> Self {
+        Self { nodes: FnvHashMap::default() }
+    }
+
+    #[must_use]
+    pub fn add_node(&mut self, id: InstanceId, node: Asc<Node<C>>) -> bool {
+        match self.nodes.entry(id) {
+            hash_map::Entry::Occupied(_) => false,
+            hash_map::Entry::Vacant(e) => {
+                e.insert(node);
+                true
+            }
+        }
+    }
+}
+
+impl<C> Default for LocalGraph<C> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
