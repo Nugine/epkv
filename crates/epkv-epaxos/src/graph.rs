@@ -1,9 +1,11 @@
+use crate::bounds::StatusBounds;
 use crate::deps::Deps;
 use crate::id::InstanceId;
 use crate::id::Seq;
 use crate::status::ExecStatus;
 
 use dashmap::mapref::entry::Entry;
+use dashmap::DashSet;
 use epkv_utils::asc::Asc;
 
 use dashmap::DashMap;
@@ -11,6 +13,8 @@ use parking_lot::Mutex as SyncMutex;
 
 pub struct Graph<C> {
     nodes: DashMap<InstanceId, Asc<Node<C>>>,
+    status_bounds: Asc<SyncMutex<StatusBounds>>,
+    executing: DashSet<InstanceId>,
 }
 
 pub struct Node<C> {
@@ -22,8 +26,10 @@ pub struct Node<C> {
 
 impl<C> Graph<C> {
     #[must_use]
-    pub fn new() -> Self {
-        Self { nodes: DashMap::new() }
+    pub fn new(status_bounds: Asc<SyncMutex<StatusBounds>>) -> Self {
+        let nodes = DashMap::new();
+        let executing = DashSet::new();
+        Self { nodes, status_bounds, executing }
     }
 
     #[must_use]
@@ -36,22 +42,19 @@ impl<C> Graph<C> {
                 e.insert(node).clone()
             }
         }
+        // TODO
     }
 
     #[inline]
     #[must_use]
     pub fn find_node(&self, id: InstanceId) -> Option<Asc<Node<C>>> {
         self.nodes.get(&id).as_deref().cloned()
+        // TODO
     }
 
     #[inline]
     pub fn retire_node(&self, id: InstanceId) {
         let _ = self.nodes.remove(&id);
-    }
-}
-
-impl<C> Default for Graph<C> {
-    fn default() -> Self {
-        Self::new()
+        // TODO
     }
 }
