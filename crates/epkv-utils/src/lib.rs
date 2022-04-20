@@ -19,6 +19,7 @@ macro_rules! clone {
 }
 
 pub mod asc;
+pub mod bytes_str;
 pub mod chan;
 pub mod cmp;
 pub mod codec;
