@@ -27,8 +27,31 @@ impl OneMap {
     }
 
     #[inline]
+    #[must_use]
+    pub fn is_set(&self, pos: u64) -> bool {
+        if pos > self.bound {
+            return self.map.contains(pos);
+        }
+        true
+    }
+
+    #[inline]
     #[allow(clippy::integer_arithmetic)]
     pub fn update_bound(&mut self) {
+        {
+            let high = self.bound.saturating_add(2);
+            let rank = self.bound + self.map.rank(high);
+            if rank < high {
+                let mid = self.bound.saturating_add(1);
+                let rank = self.bound + self.map.rank(mid);
+                if rank == mid {
+                    self.map.remove(mid);
+                    self.bound = mid;
+                    return;
+                }
+            }
+        }
+
         let mut low = self.bound.saturating_add(1);
         let mut high = self.bound.saturating_add(self.map.len()).saturating_add(1);
         while low < high {
@@ -40,7 +63,7 @@ impl OneMap {
                 high = mid;
             }
         }
-        self.map.remove_range(0..=low);
+        self.map.remove_range(self.bound.saturating_add(1)..low);
         self.bound = low - 1;
     }
 }
@@ -49,12 +72,28 @@ impl OneMap {
 mod tests {
     use super::*;
 
+    use std::ops::Not;
+
     #[test]
-    fn simple() {
+    fn step() {
+        let mut map = OneMap::new(0);
+
+        for i in 0..100 {
+            map.set(i);
+            map.update_bound();
+            assert_eq!(map.bound(), i);
+        }
+    }
+
+    #[test]
+    fn small() {
         let mut map = OneMap::new(9);
         map.set(10);
         map.set(11);
         map.set(13);
+
+        assert!(map.is_set(8));
+        assert!(map.is_set(12).not());
 
         map.update_bound();
         assert_eq!(map.bound(), 11);
@@ -62,5 +101,16 @@ mod tests {
         map.set(12);
         map.update_bound();
         assert_eq!(map.bound(), 13);
+    }
+
+    #[test]
+    fn large() {
+        let mut map = OneMap::new(1_000);
+
+        for i in 1001..=2000 {
+            map.set(i);
+        }
+        map.update_bound();
+        assert_eq!(map.bound(), 2000);
     }
 }
