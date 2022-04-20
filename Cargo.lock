@@ -182,6 +182,7 @@ dependencies = [
  "epkv-epaxos",
  "epkv-utils",
  "rocksdb",
+ "serde",
 ]
 
 [[package]]

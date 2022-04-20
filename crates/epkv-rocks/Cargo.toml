@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-utils = { path = "../epkv-utils" }
+serde = { version = "1.0.136", features = ["derive"] }
 
 [dependencies.rocksdb]
 git = "https://github.com/tikv/rust-rocksdb.git"
