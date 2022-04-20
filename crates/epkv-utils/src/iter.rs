@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 #[inline]
 pub fn copied_map_collect<'a, T, U, C>(
     iter: impl IntoIterator<Item = &'a T>,
@@ -16,4 +18,11 @@ where
     C: FromIterator<U>,
 {
     iter.into_iter().map(f).collect()
+}
+
+#[inline]
+pub fn iter_mut_deref<'a, T: DerefMut + 'a>(
+    iter: impl IntoIterator<Item = &'a mut T>,
+) -> impl Iterator<Item = &'a mut T::Target> {
+    iter.into_iter().map(|t| &mut **t)
 }
