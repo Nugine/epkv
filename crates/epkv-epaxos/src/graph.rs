@@ -73,12 +73,32 @@ impl<C> Graph<C> {
         if let Some(n) = notify {
             n.notify_waiters()
         }
+
+        {
+            let rid = id.0;
+            let committed_up_to = {
+                let mut guard = self.status_bounds.lock();
+                let status_bounds = &mut *guard;
+                status_bounds.maps.get_mut(&rid).map(|m| {
+                    m.committed.update_bound();
+                    m.committed.bound()
+                })
+            };
+
+            if let Some(lv) = committed_up_to {
+                let wm = self.watermark(rid);
+                wm.bump_level(lv)
+            }
+        }
     }
 
-    pub async fn wait_node(&self, id: InstanceId) -> Asc<InsNode<C>> {
+    pub async fn wait_node(&self, id: InstanceId) -> Option<Asc<InsNode<C>>> {
         if let Some(node) = self.nodes.get(&id).as_deref().cloned() {
             let _ = self.subscribers.remove(&id);
-            return node;
+            return Some(node);
+        }
+        if self.is_executed(id) {
+            return None;
         }
 
         let gen = || Arc::new(Notify::new());
@@ -88,20 +108,32 @@ impl<C> Graph<C> {
             n.notified().await;
             if let Some(node) = self.nodes.get(&id).as_deref().cloned() {
                 let _ = self.subscribers.remove(&id);
-                return node;
+                return Some(node);
+            }
+            if self.is_executed(id) {
+                return None;
             }
         }
     }
 
-    // #[must_use]
-    // pub fn find_node(&self, id: InstanceId) -> Option<Asc<Node<C>>> {
-    //     self.nodes.get(&id).as_deref().cloned()
-    // }
+    fn is_executed(&self, id: InstanceId) -> bool {
+        let guard = self.status_bounds.lock();
+        let status_bounds = &*guard;
+        let InstanceId(rid, lid) = id;
+        if let Some(m) = status_bounds.maps.get(&rid) {
+            if m.executed.is_set(lid.raw_value()) {
+                return true;
+            }
+        }
+        false
+    }
 
-    // pub fn retire_node(&self, id: InstanceId) {
-    //     let _ = self.nodes.remove(&id);
-    //     // TODO
-    // }
+    pub fn retire_node(&self, id: InstanceId) {
+        let _ = self.nodes.remove(&id);
+        if let Some((_, n)) = self.subscribers.remove(&id) {
+            n.notify_waiters()
+        }
+    }
 
     #[must_use]
     pub fn executing(&self, id: InstanceId) -> Option<Executing<'_>> {

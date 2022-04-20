@@ -1549,7 +1549,10 @@ where
                     continue;
                 }
 
-                let node = self.graph.wait_node(id).await;
+                let node = match self.graph.wait_node(id).await {
+                    Some(node) => node,
+                    None => continue, // executed node
+                };
 
                 {
                     let guard = node.status.lock();
@@ -1695,6 +1698,10 @@ where
                     *node.status.lock() = ExecStatus::Executed;
                 }
             }
+        }
+
+        for &(id, _) in &scc {
+            self.graph.retire_node(id);
         }
 
         Ok(())

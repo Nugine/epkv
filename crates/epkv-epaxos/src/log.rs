@@ -218,6 +218,7 @@ where
         if let Some(ins) = self.ins_cache.get_mut(&id) {
             ins.status = status;
         }
+        self.status_bounds.lock().set(id, status);
         Ok(())
     }
 
