@@ -1,3 +1,5 @@
+use crate::status::Status;
+
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering::*;
 use std::task::Context;
@@ -58,6 +60,17 @@ impl ExecNotify {
     }
     pub async fn wait_executed(&self) {
         poll_fn(|cx| self.poll_state(cx, Self::EXECUTED)).await;
+    }
+
+    pub fn status(&self) -> Status {
+        let state = self.state();
+        if state >= Self::EXECUTED {
+            Status::Executed
+        } else if state >= Self::ISSUED {
+            Status::Issued
+        } else {
+            Status::Committed
+        }
     }
 }
 

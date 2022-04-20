@@ -26,16 +26,15 @@ use tokio::sync::Notify;
 use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
 
 pub struct Graph<C> {
-    nodes: DashMap<InstanceId, Asc<Node<C>>>,
+    nodes: DashMap<InstanceId, Asc<InsNode<C>>>,
     status_bounds: Asc<SyncMutex<StatusBounds>>,
     executing: DashSet<InstanceId>,
     row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
     watermarks: DashMap<ReplicaId, Asc<WaterMark>>,
     subscribers: DashMap<InstanceId, Arc<Notify>>,
-    global_lock: AsyncMutex<()>,
 }
 
-pub struct Node<C> {
+pub struct InsNode<C> {
     pub cmd: C,
     pub seq: Seq,
     pub deps: Deps,
@@ -53,7 +52,6 @@ impl<C> Graph<C> {
         let row_locks = DashMap::new();
         let watermarks = DashMap::new();
         let subscribers = DashMap::new();
-        let global_lock = AsyncMutex::new(());
         Self {
             nodes,
             status_bounds,
@@ -61,14 +59,13 @@ impl<C> Graph<C> {
             row_locks,
             watermarks,
             subscribers,
-            global_lock,
         }
     }
 
     pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps) {
         let gen = || {
             let status: _ = SyncMutex::new(ExecStatus::Committed);
-            Asc::new(Node { cmd, seq, deps, status })
+            Asc::new(InsNode { cmd, seq, deps, status })
         };
         self.nodes.entry(id).or_insert_with(gen);
 
@@ -78,7 +75,7 @@ impl<C> Graph<C> {
         }
     }
 
-    pub async fn wait_node(&self, id: InstanceId) -> Asc<Node<C>> {
+    pub async fn wait_node(&self, id: InstanceId) -> Asc<InsNode<C>> {
         if let Some(node) = self.nodes.get(&id).as_deref().cloned() {
             let _ = self.subscribers.remove(&id);
             return node;
@@ -126,10 +123,6 @@ impl<C> Graph<C> {
 
         let gen = || Asc::new(WaterMark::new(bound.unwrap_or(0)));
         self.watermarks.entry(rid).or_insert_with(gen).clone()
-    }
-
-    pub async fn lock_global(&self) -> GlobalGuard<'_> {
-        GlobalGuard(self.global_lock.lock().await)
     }
 }
 
@@ -219,7 +212,7 @@ impl<I, N> Default for LocalGraph<I, N> {
 
 impl GraphId for InstanceId {}
 
-impl<C> GraphNode for Asc<Node<C>> {
+impl<C> GraphNode for Asc<InsNode<C>> {
     type Id = InstanceId;
     fn deps_for_each(&self, mut f: impl FnMut(Self::Id)) {
         for id in self.deps.elements() {

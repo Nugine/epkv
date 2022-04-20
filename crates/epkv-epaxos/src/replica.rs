@@ -2,7 +2,8 @@ use crate::bounds::PeerStatusBounds;
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
 use crate::deps::Deps;
-use crate::graph::{DepsQueue, Graph, LocalGraph};
+use crate::exec::ExecNotify;
+use crate::graph::{DepsQueue, Graph, InsNode, LocalGraph};
 use crate::id::*;
 use crate::ins::Instance;
 use crate::log::Log;
@@ -16,7 +17,8 @@ use epkv_utils::asc::Asc;
 use epkv_utils::chan::recv_timeout;
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
-use epkv_utils::iter::map_collect;
+use epkv_utils::flag_group::FlagGroup;
+use epkv_utils::iter::{iter_mut_deref, map_collect};
 use epkv_utils::time::LocalInstant;
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
@@ -1592,9 +1594,107 @@ where
         }
 
         {
-            let _global_guard = self.graph.lock_global().await;
+            let mut scc_list = local_graph.tarjan_scc(id);
+            for scc in &mut scc_list {
+                scc.sort_by_key(|&(InstanceId(rid, lid), ref node): _| (node.seq, lid, rid));
+            }
+            assert!(scc_list.is_empty().not());
 
-            // TODO
+            scc_list.retain(|scc| {
+                let mut needs_issue = true;
+
+                let mut stack = Vec::with_capacity(scc.len());
+
+                for (_, node) in scc {
+                    let guard = node.status.lock();
+                    stack.push(guard);
+                }
+
+                for status in iter_mut_deref(&mut stack) {
+                    needs_issue = *status == ExecStatus::Committed;
+                    *status = ExecStatus::Issuing;
+                }
+
+                while let Some(guard) = stack.pop() {
+                    drop(guard);
+                }
+
+                needs_issue
+            });
+
+            let flag_group = FlagGroup::new(scc_list.len());
+
+            for (idx, scc) in scc_list.into_iter().enumerate() {
+                clone!(flag_group);
+                let this = Arc::clone(self);
+                spawn(async move {
+                    if let Err(err) = this.run_execute_scc(scc, flag_group, idx).await {
+                        error!(?err);
+                    }
+                });
+            }
+        }
+        Ok(())
+    }
+
+    async fn run_execute_scc(
+        self: &Arc<Self>,
+        scc: Vec<(InstanceId, Asc<InsNode<C>>)>,
+        flag_group: FlagGroup,
+        idx: usize,
+    ) -> Result<()> {
+        if idx > 0 {
+            flag_group.wait(idx.wrapping_sub(1)).await;
+        }
+
+        let mut handles = Vec::with_capacity(scc.len());
+
+        for &(id, ref node) in &scc {
+            let notify = Asc::new(ExecNotify::new());
+            {
+                clone!(notify);
+                let cmd = node.cmd.clone();
+                self.data_store.issue(id, cmd, notify).await?;
+            }
+            handles.push(notify)
+        }
+
+        for n in &handles {
+            n.wait_issued().await;
+        }
+
+        flag_group.set(idx);
+
+        let mut prev_status = Vec::with_capacity(handles.len());
+
+        {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+            for (&(id, ref node), n) in scc.iter().zip(handles.iter()) {
+                let status = n.status();
+                s.log.update_status(id, status).await?;
+                match status {
+                    Status::Issued => *node.status.lock() = ExecStatus::Issued,
+                    Status::Executed => *node.status.lock() = ExecStatus::Executed,
+                    _ => {}
+                };
+                prev_status.push(status);
+            }
+        }
+
+        for n in &handles {
+            n.wait_executed().await;
+        }
+
+        {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+            for (&(id, ref node), &prev) in scc.iter().zip(prev_status.iter()) {
+                if Status::Executed > prev {
+                    s.log.update_status(id, Status::Executed).await?;
+                    *node.status.lock() = ExecStatus::Executed;
+                }
+            }
         }
 
         Ok(())

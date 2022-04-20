@@ -213,6 +213,14 @@ where
         Ok(())
     }
 
+    pub async fn update_status(&mut self, id: InstanceId, status: Status) -> Result<()> {
+        self.log_store.update_status(id, status).await?;
+        if let Some(ins) = self.ins_cache.get_mut(&id) {
+            ins.status = status;
+        }
+        Ok(())
+    }
+
     pub fn get_cached_pbal(&self, id: InstanceId) -> Option<Ballot> {
         if let Some(ins) = self.ins_cache.get(&id) {
             return Some(ins.pbal);
