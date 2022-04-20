@@ -3,7 +3,39 @@ use crate::value::Value;
 
 use epkv_utils::asc::Asc;
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone)]
+pub struct BatchedCommand(Arc<[Command]>);
+
+impl BatchedCommand {
+    #[must_use]
+    pub fn from_vec(v: Vec<Command>) -> Self {
+        Self(Arc::from(v))
+    }
+}
+
+impl<'de> Deserialize<'de> for BatchedCommand {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: ::serde::de::Deserializer<'de>,
+    {
+        <Vec<Command>>::deserialize(deserializer).map(Self::from_vec)
+    }
+}
+
+impl Serialize for BatchedCommand {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ::serde::ser::Serializer,
+    {
+        <[Command]>::serialize(&*self.0, serializer)
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Command(Asc<MutableCommand>);
