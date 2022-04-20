@@ -185,6 +185,7 @@ version = "0.1.0-dev"
 dependencies = [
  "bincode",
  "bytes",
+ "futures-util",
  "minstant",
  "once_cell",
  "parking_lot",

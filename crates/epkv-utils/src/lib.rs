@@ -22,6 +22,7 @@ pub mod asc;
 pub mod chan;
 pub mod cmp;
 pub mod codec;
+pub mod flag_group;
 pub mod iter;
 pub mod onemap;
 pub mod radixmap;
