@@ -176,6 +176,8 @@ dependencies = [
 name = "epkv-rocks"
 version = "0.1.0-dev"
 dependencies = [
+ "epkv-epaxos",
+ "epkv-utils",
  "rocksdb",
 ]
 

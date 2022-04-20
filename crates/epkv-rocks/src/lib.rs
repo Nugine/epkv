@@ -7,3 +7,5 @@
     clippy::must_use_candidate
 )]
 #![warn(clippy::todo)]
+
+pub mod cmd;
