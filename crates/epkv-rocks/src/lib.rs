@@ -22,5 +22,10 @@ pub mod cmd {
     pub use self::notify::*;
 }
 
-pub mod key;
-pub mod value;
+pub mod kv {
+    mod key;
+    pub use self::key::*;
+
+    mod value;
+    pub use self::value::*;
+}

@@ -1,6 +1,6 @@
 use super::single::{Command, MutableCommand};
 
-use crate::key::Key;
+use crate::kv::Key;
 
 use epkv_epaxos::cmd::{CommandLike, Keys};
 use epkv_utils::vecset::VecSet;

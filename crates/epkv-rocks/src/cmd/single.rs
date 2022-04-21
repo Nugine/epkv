@@ -1,7 +1,7 @@
 use super::kinds::*;
 use super::notify::CommandNotify;
 
-use crate::key::Key;
+use crate::kv::Key;
 
 use epkv_utils::asc::Asc;
 
@@ -87,7 +87,7 @@ impl MutableCommand {
 mod tests {
     use super::*;
 
-    use crate::value::Value;
+    use crate::kv::Value;
 
     use epkv_utils::bytes_str::BytesStr;
     use epkv_utils::codec;

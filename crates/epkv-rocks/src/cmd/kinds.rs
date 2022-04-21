@@ -1,5 +1,4 @@
-use crate::key::Key;
-use crate::value::Value;
+use crate::kv::{Key, Value};
 
 use serde::{Deserialize, Serialize};
 
