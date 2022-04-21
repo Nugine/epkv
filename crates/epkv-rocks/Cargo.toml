@@ -10,6 +10,8 @@ camino = { version = "1.0.7", features = ["serde"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-utils = { path = "../epkv-utils" }
 serde = { version = "1.0.136", features = ["derive"] }
+tokio = { version = "1.17.0", features = ["full"] }
+bytes = { version = "1.1.0", features = ["serde"] }
 
 [dependencies.rocksdb]
 git = "https://github.com/tikv/rust-rocksdb.git"

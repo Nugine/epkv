@@ -190,11 +190,13 @@ version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bytes",
  "camino",
  "epkv-epaxos",
  "epkv-utils",
  "rocksdb",
  "serde",
+ "tokio",
 ]
 
 [[package]]

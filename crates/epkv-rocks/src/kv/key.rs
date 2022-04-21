@@ -16,3 +16,15 @@ impl From<String> for Key {
         Self(BytesStr::from(s))
     }
 }
+
+impl Key {
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl AsRef<[u8]> for Key {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}

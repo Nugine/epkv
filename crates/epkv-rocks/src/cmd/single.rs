@@ -106,7 +106,7 @@ mod tests {
         }
         {
             let cmd = Command::from_mutable(MutableCommand {
-                kind: CommandKind::Get(Get {
+                kind: CommandKind::Set(Set {
                     key: Key::from("hello".to_owned()),
                     value: Value::Str(BytesStr::from("world".to_owned())),
                 }),
