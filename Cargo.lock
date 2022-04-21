@@ -92,6 +92,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "camino"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f3132262930b0522068049f5870a856ab8affc80c70d08b6ecb785771a6fc23"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.73"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -179,6 +188,9 @@ dependencies = [
 name = "epkv-rocks"
 version = "0.1.0-dev"
 dependencies = [
+ "anyhow",
+ "async-trait",
+ "camino",
  "epkv-epaxos",
  "epkv-utils",
  "rocksdb",

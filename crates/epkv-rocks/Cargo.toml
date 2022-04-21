@@ -4,6 +4,9 @@ version = "0.1.0-dev"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.56"
+async-trait = "0.1.53"
+camino = { version = "1.0.7", features = ["serde"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-utils = { path = "../epkv-utils" }
 serde = { version = "1.0.136", features = ["derive"] }

@@ -30,4 +30,6 @@ pub mod kv {
     pub use self::value::*;
 }
 
+pub mod error;
+
 pub mod data_db;
