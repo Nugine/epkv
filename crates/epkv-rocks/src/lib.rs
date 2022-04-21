@@ -8,6 +8,19 @@
 )]
 #![warn(clippy::todo)]
 
-pub mod cmd;
+pub mod cmd {
+    mod kinds;
+    pub use self::kinds::*;
+
+    mod single;
+    pub use self::single::*;
+
+    mod batched;
+    pub use self::batched::*;
+
+    mod notify;
+    pub use self::notify::*;
+}
+
 pub mod key;
 pub mod value;

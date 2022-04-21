@@ -10,3 +10,9 @@ impl From<BytesStr> for Key {
         Self(s)
     }
 }
+
+impl From<String> for Key {
+    fn from(s: String) -> Self {
+        Self(BytesStr::from(s))
+    }
+}
