@@ -1706,4 +1706,12 @@ where
 
         Ok(())
     }
+
+    pub async fn run_clear_key_map(self: &Arc<Self>) {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+        let garbage = s.log.clear_key_map();
+        drop(guard);
+        drop(garbage);
+    }
 }

@@ -7,6 +7,7 @@ use crate::status::Status;
 use crate::store::{LogStore, UpdateMode};
 
 use std::collections::{hash_map, HashMap};
+use std::mem;
 use std::ops::Not;
 
 use epkv_utils::asc::Asc;
@@ -161,6 +162,18 @@ where
                 max_assign(&mut self.max_seq.any, seq);
             }
         }
+    }
+
+    pub fn clear_key_map(&mut self) -> impl Send + Sync + 'static {
+        let garbage = mem::take(&mut self.max_key_map);
+        for (_, m) in &mut self.max_lid_map {
+            m.checkpoint = m.any;
+        }
+        {
+            let m = &mut self.max_seq;
+            m.checkpoint = m.any;
+        }
+        garbage
     }
 
     pub async fn save(&mut self, id: InstanceId, ins: Instance<C>, mode: UpdateMode) -> Result<()> {
