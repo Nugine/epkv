@@ -2,10 +2,9 @@
 
 use crate::cmd::{CommandKind, Del, Get, Set};
 use crate::error::RocksDbErrorExt;
+use crate::kv::BytesValue;
 
 use std::sync::Arc;
-
-use epkv_utils::codec;
 
 use anyhow::Result;
 use camino::Utf8Path;
@@ -32,16 +31,21 @@ impl DataDb {
     }
 
     pub fn execute_get(self: &Arc<Self>, cmd: Get) -> Result<()> {
-        todo!()
+        let ans = self.db.get(cmd.key.as_ref()).cvt()?;
+        let ans = ans.map(|v| BytesValue::from_bytes(&*v));
+        if let Some(tx) = cmd.tx {
+            let _ = tx.blocking_send(ans);
+        }
+        Ok(())
     }
 
     pub fn execute_set(self: &Arc<Self>, cmd: Set) -> Result<()> {
-        let value = codec::serialize(&cmd.value)?;
-        self.db.put(cmd.key.as_ref(), value.as_ref()).cvt()?;
+        self.db.put(cmd.key.as_ref(), cmd.value.as_ref()).cvt()?;
         Ok(())
     }
 
     pub fn execute_del(self: &Arc<Self>, cmd: Del) -> Result<()> {
-        todo!()
+        self.db.delete(cmd.key.as_ref()).cvt()?;
+        Ok(())
     }
 }

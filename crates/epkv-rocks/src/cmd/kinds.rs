@@ -1,4 +1,4 @@
-use crate::kv::{Key, Value};
+use crate::kv::{BytesKey, BytesValue};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -14,20 +14,20 @@ pub enum CommandKind {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Get {
-    pub key: Key,
+    pub key: BytesKey,
     #[serde(skip)]
-    pub tx: Option<mpsc::Sender<Value>>,
+    pub tx: Option<mpsc::Sender<Option<BytesValue>>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Set {
-    pub key: Key,
-    pub value: Value,
+    pub key: BytesKey,
+    pub value: BytesValue,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Del {
-    pub key: Key,
+    pub key: BytesKey,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -1,6 +1,6 @@
 use super::single::{Command, MutableCommand};
 
-use crate::kv::Key;
+use crate::kv::BytesKey;
 
 use epkv_epaxos::cmd::{CommandLike, Keys};
 use epkv_utils::vecset::VecSet;
@@ -46,7 +46,7 @@ impl Serialize for BatchedCommand {
 }
 
 impl CommandLike for BatchedCommand {
-    type Key = Key;
+    type Key = BytesKey;
 
     fn keys(&self) -> Keys<Self> {
         let this = self.as_slice();
