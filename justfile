@@ -44,3 +44,7 @@ udeps:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
     cargo +nightly udeps
+
+doc:
+    cargo doc -p rocksdb --no-deps
+    cargo doc --workspace --no-deps --open
