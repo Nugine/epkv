@@ -206,6 +206,12 @@ impl<T: Ord> VecSet<T> {
     pub fn iter(&self) -> Iter<'_, T> {
         Iter(self.0.as_slice().iter())
     }
+
+    #[inline]
+    #[must_use]
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
+        IterMut(self.0.as_mut_slice().iter_mut())
+    }
 }
 
 impl<T: Ord> From<Vec<T>> for VecSet<T> {
@@ -234,6 +240,22 @@ pub struct Iter<'a, T>(slice::Iter<'a, T>);
 
 impl<'a, T> Iterator for Iter<'a, T> {
     type Item = &'a T;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+pub struct IterMut<'a, T>(slice::IterMut<'a, T>);
+
+impl<'a, T> Iterator for IterMut<'a, T> {
+    type Item = &'a mut T;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -281,6 +303,17 @@ impl<'a, T: Ord> IntoIterator for &'a VecSet<T> {
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+impl<'a, T: Ord> IntoIterator for &'a mut VecSet<T> {
+    type Item = &'a mut T;
+
+    type IntoIter = IterMut<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }
 
