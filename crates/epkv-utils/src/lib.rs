@@ -27,6 +27,7 @@ pub mod flag_group;
 pub mod iter;
 pub mod onemap;
 pub mod radixmap;
+pub mod stepper;
 pub mod time;
 pub mod vecmap;
 pub mod vecset;
