@@ -28,6 +28,18 @@ pub struct LogDb {
     db: DB,
 }
 
+fn put_small_value<T: Serialize>(db: &impl Writable, key: &[u8], value: &T) -> Result<()> {
+    let mut buf = [0u8; 64];
+    let pos: usize = {
+        let mut value_buf = io::Cursor::new(buf.as_mut_slice());
+        codec::serialize_into(&mut value_buf, &value)?;
+        value_buf.position().try_into().unwrap()
+    };
+    let value = &buf[..pos];
+    db.put(key, value).cvt()?;
+    Ok(())
+}
+
 impl LogDb {
     pub fn new(path: &Utf8Path) -> Result<Arc<Self>> {
         let db = DB::open_default(path.as_ref()).cvt()?;
@@ -130,7 +142,8 @@ impl LogDb {
     }
 
     pub fn save_pbal(self: &Arc<Self>, id: InstanceId, pbal: Ballot) -> Result<()> {
-        self.put_small_value(id, InstanceFieldKey::FIELD_PBAL, pbal)
+        let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_PBAL);
+        put_small_value(&self.db, bytes_of(&log_key), &pbal)
     }
 
     pub fn load_pbal(self: &Arc<Self>, id: InstanceId) -> Result<Option<Ballot>> {
@@ -144,28 +157,8 @@ impl LogDb {
     }
 
     pub fn update_status(self: &Arc<Self>, id: InstanceId, status: Status) -> Result<()> {
-        self.put_small_value(id, InstanceFieldKey::FIELD_STATUS, status)
-    }
-
-    fn put_small_value<T: Copy + Serialize>(
-        &self,
-        id: InstanceId,
-        field: u8,
-        value: T,
-    ) -> Result<()> {
-        let log_key = InstanceFieldKey::new(id, field);
-
-        let mut buf = [0u8; 64];
-        let pos: usize = {
-            let mut value_buf = io::Cursor::new(buf.as_mut_slice());
-            codec::serialize_into(&mut value_buf, &value)?;
-            value_buf.position().try_into().unwrap()
-        };
-        let value = &buf[..pos];
-
-        self.db.put(bytes_of(&log_key), value).cvt()?;
-
-        Ok(())
+        let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_STATUS);
+        put_small_value(&self.db, bytes_of(&log_key), &status)
     }
 }
 
