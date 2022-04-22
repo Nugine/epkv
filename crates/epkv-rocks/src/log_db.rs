@@ -21,6 +21,7 @@ use anyhow::{ensure, Result};
 use bytemuck::{bytes_of, try_from_bytes};
 use camino::Utf8Path;
 use rocksdb::{SeekKey, Writable, WriteBatch, DB};
+use serde::Serialize;
 use tracing::debug;
 
 pub struct LogDb {
@@ -133,19 +134,7 @@ impl LogDb {
     }
 
     pub fn save_pbal(self: &Arc<Self>, id: InstanceId, pbal: Ballot) -> Result<()> {
-        let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_PBAL);
-
-        let mut buf = [0u8; 64];
-        let pos: usize = {
-            let mut value_buf = io::Cursor::new(buf.as_mut_slice());
-            codec::serialize_into(&mut value_buf, &pbal)?;
-            value_buf.position().try_into().unwrap()
-        };
-        let value = &buf[..pos];
-
-        self.db.put(bytes_of(&log_key), value).cvt()?;
-
-        Ok(())
+        self.put_small_value(id, InstanceFieldKey::FIELD_PBAL, pbal)
     }
 
     pub fn load_pbal(self: &Arc<Self>, id: InstanceId) -> Result<Option<Ballot>> {
@@ -156,6 +145,31 @@ impl LogDb {
         };
         let pbal: Ballot = codec::deserialize_owned(&*ans)?;
         Ok(Some(pbal))
+    }
+
+    pub fn update_status(self: &Arc<Self>, id: InstanceId, status: Status) -> Result<()> {
+        self.put_small_value(id, InstanceFieldKey::FIELD_STATUS, status)
+    }
+
+    fn put_small_value<T: Copy + Serialize>(
+        &self,
+        id: InstanceId,
+        field: u8,
+        value: T,
+    ) -> Result<()> {
+        let log_key = InstanceFieldKey::new(id, field);
+
+        let mut buf = [0u8; 64];
+        let pos: usize = {
+            let mut value_buf = io::Cursor::new(buf.as_mut_slice());
+            codec::serialize_into(&mut value_buf, &value)?;
+            value_buf.position().try_into().unwrap()
+        };
+        let value = &buf[..pos];
+
+        self.db.put(bytes_of(&log_key), value).cvt()?;
+
+        Ok(())
     }
 }
 
