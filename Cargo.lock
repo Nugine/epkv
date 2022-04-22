@@ -212,6 +212,7 @@ dependencies = [
  "rocksdb",
  "serde",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

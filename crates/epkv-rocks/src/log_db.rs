@@ -4,17 +4,23 @@ use crate::cmd::BatchedCommand;
 use crate::error::RocksDbErrorExt;
 use crate::log_key::InstanceFieldKey;
 
-use epkv_epaxos::id::InstanceId;
+use epkv_epaxos::deps::Deps;
+use epkv_epaxos::id::{Ballot, InstanceId, ReplicaId, Seq};
 use epkv_epaxos::ins::Instance;
+use epkv_epaxos::status::Status;
 use epkv_epaxos::store::UpdateMode;
-use epkv_utils::codec;
 
+use epkv_utils::codec;
+use epkv_utils::vecset::VecSet;
+
+use std::ops::Not;
 use std::sync::Arc;
 
-use anyhow::Result;
-use bytemuck::bytes_of;
+use anyhow::{ensure, Result};
+use bytemuck::{bytes_of, try_from_bytes};
 use camino::Utf8Path;
-use rocksdb::{Writable, WriteBatch, DB};
+use rocksdb::{SeekKey, Writable, WriteBatch, DB};
+use tracing::debug;
 
 pub struct LogDb {
     db: DB,
@@ -71,7 +77,58 @@ impl LogDb {
     }
 
     pub fn load(self: &Arc<Self>, id: InstanceId) -> Result<Option<Instance<BatchedCommand>>> {
-        todo!()
+        let mut iter = self.db.iter();
+
+        {
+            let log_key = InstanceFieldKey::new(id, 0);
+            let is_valid = iter.seek(SeekKey::Key(bytes_of(&log_key))).cvt()?;
+            if is_valid.not() {
+                debug!(?id, "not found");
+                return Ok(None);
+            }
+        }
+
+        let cmd: BatchedCommand = {
+            let is_valid = iter.next().cvt()?;
+            if is_valid.not() {
+                debug!(?id, "not found");
+                return Ok(None);
+            }
+            let log_key: &InstanceFieldKey = match try_from_bytes(iter.key()) {
+                Ok(k) => k,
+                Err(_) => {
+                    debug!(?id, iter_key = ?iter.key());
+                    return Ok(None);
+                }
+            };
+            if log_key.id() != id {
+                return Ok(None);
+            }
+            if log_key.field() != InstanceFieldKey::FIELD_CMD {
+                return Ok(None);
+            }
+            codec::deserialize_owned(iter.value())?
+        };
+
+        macro_rules! next_field {
+            ($field:tt) => {{
+                ensure!(iter.next().cvt()?);
+                let log_key: &InstanceFieldKey =
+                    try_from_bytes(iter.key()).expect("invalid log key");
+                assert_eq!(log_key.id(), id);
+                assert_eq!(log_key.field(), InstanceFieldKey::$field);
+                codec::deserialize_owned(iter.value())?
+            }};
+        }
+
+        let pbal: Ballot = next_field!(FIELD_PBAL);
+        let status: Status = next_field!(FIELD_STATUS);
+        let others: (Seq, Deps, Ballot, VecSet<ReplicaId>) = next_field!(FIELD_OTHERS);
+        let (seq, deps, abal, acc) = others;
+
+        let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+
+        Ok(Some(ins))
     }
 }
 
