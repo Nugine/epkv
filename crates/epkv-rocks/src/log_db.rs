@@ -79,23 +79,19 @@ impl LogDb {
     }
 
     pub fn load(self: &Arc<Self>, id: InstanceId) -> Result<Option<Instance<BatchedCommand>>> {
+        // <https://github.com/facebook/rocksdb/wiki/Basic-Operations#iteration>
+        // <https://github.com/facebook/rocksdb/wiki/Iterator>
+
         let mut iter = self.db.iter();
 
-        {
-            let log_key = InstanceFieldKey::new(id, 0);
+        let cmd: BatchedCommand = {
+            let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_CMD);
             let is_valid = iter.seek(SeekKey::Key(bytes_of(&log_key))).cvt()?;
             if is_valid.not() {
                 debug!(?id, "not found");
                 return Ok(None);
             }
-        }
 
-        let cmd: BatchedCommand = {
-            let is_valid = iter.next().cvt()?;
-            if is_valid.not() {
-                debug!(?id, "not found");
-                return Ok(None);
-            }
             let log_key: &InstanceFieldKey = match try_from_bytes(iter.key()) {
                 Ok(k) => k,
                 Err(_) => {
