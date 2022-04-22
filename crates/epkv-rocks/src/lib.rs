@@ -34,3 +34,4 @@ pub mod error;
 
 pub mod data_db;
 pub mod log_db;
+pub mod log_key;
