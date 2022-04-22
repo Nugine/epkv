@@ -31,12 +31,21 @@ pub struct LogDb {
 fn put_small_value<T: Serialize>(db: &impl Writable, key: &[u8], value: &T) -> Result<()> {
     let mut buf = [0u8; 64];
     let pos: usize = {
-        let mut value_buf = io::Cursor::new(buf.as_mut_slice());
-        codec::serialize_into(&mut value_buf, &value)?;
-        value_buf.position().try_into().unwrap()
+        let mut cursor = io::Cursor::new(buf.as_mut_slice());
+        codec::serialize_into(&mut cursor, &value)?;
+        cursor.position().try_into().unwrap()
     };
-    let value = &buf[..pos];
-    db.put(key, value).cvt()?;
+    db.put(key, &buf[..pos]).cvt()?;
+    Ok(())
+}
+
+fn put_value<T>(db: &impl Writable, key: &[u8], buf: &mut Vec<u8>, value: &T) -> Result<()>
+where
+    T: Serialize,
+{
+    buf.clear();
+    codec::serialize_into(&mut *buf, value)?;
+    db.put(key, buf.as_slice()).cvt()?;
     Ok(())
 }
 
@@ -60,30 +69,31 @@ impl LogDb {
         let wb = WriteBatch::new();
 
         let mut log_key = InstanceFieldKey::new(id, 0);
-        let mut value_buf = Vec::new();
-
-        macro_rules! put_field {
-            ($field: tt, $value: expr) => {{
-                log_key.set_field(InstanceFieldKey::$field);
-                value_buf.clear();
-                codec::serialize_into(&mut value_buf, $value)?;
-                wb.put(bytes_of(&log_key), &value_buf).cvt()?;
-            }};
-        }
+        let mut buf = Vec::new();
 
         if needs_save_cmd {
-            // cmd
-            put_field!(FIELD_CMD, &ins.cmd);
+            log_key.set_field(InstanceFieldKey::FIELD_CMD);
+            put_value(&wb, bytes_of(&log_key), &mut buf, &ins.cmd)?;
         }
 
         // pbal
-        put_field!(FIELD_PBAL, &ins.pbal);
+        {
+            log_key.set_field(InstanceFieldKey::FIELD_PBAL);
+            put_value(&wb, bytes_of(&log_key), &mut buf, &ins.pbal)?;
+        }
 
         // status
-        put_field!(FIELD_STATUS, &ins.status);
+        {
+            log_key.set_field(InstanceFieldKey::FIELD_STATUS);
+            put_value(&wb, bytes_of(&log_key), &mut buf, &ins.status)?;
+        }
 
         // (seq, deps, abal, acc)
-        put_field!(FIELD_OTHERS, &(ins.seq, &ins.deps, ins.abal, &ins.acc));
+        {
+            log_key.set_field(InstanceFieldKey::FIELD_OTHERS);
+            let value: _ = (ins.seq, &ins.deps, ins.abal, &ins.acc);
+            put_value(&wb, bytes_of(&log_key), &mut buf, &value)?;
+        }
 
         self.db.write(&wb).cvt()?;
 
