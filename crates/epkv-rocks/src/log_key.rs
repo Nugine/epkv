@@ -1,8 +1,8 @@
 use epkv_epaxos::id::InstanceId;
 
-use bytemuck::NoUninit;
+use bytemuck::{AnyBitPattern, NoUninit};
 
-#[derive(Clone, Copy, NoUninit)]
+#[derive(Clone, Copy, NoUninit, AnyBitPattern)]
 #[repr(transparent)]
 struct Be64([u8; 8]);
 
@@ -10,9 +10,13 @@ impl Be64 {
     fn new(val: u64) -> Self {
         Self(val.to_be_bytes())
     }
+
+    fn to_u64(self) -> u64 {
+        u64::from_be_bytes(self.0)
+    }
 }
 
-#[derive(Clone, Copy, NoUninit)]
+#[derive(Clone, Copy, NoUninit, AnyBitPattern)]
 #[repr(C)]
 pub struct InstanceFieldKey {
     prefix: u8,
@@ -21,7 +25,7 @@ pub struct InstanceFieldKey {
     field: u8,
 }
 
-#[derive(Clone, Copy, NoUninit)]
+#[derive(Clone, Copy, NoUninit, AnyBitPattern)]
 #[repr(C)]
 pub struct GlobalFieldKey {
     prefix: u8,
@@ -48,6 +52,18 @@ impl InstanceFieldKey {
 
     pub fn set_field(&mut self, field: u8) {
         self.field = field;
+    }
+
+    #[must_use]
+    pub fn field(&self) -> u8 {
+        self.field
+    }
+
+    #[must_use]
+    pub fn id(&self) -> InstanceId {
+        let rid = self.rid.to_u64().into();
+        let lid = self.lid.to_u64().into();
+        InstanceId(rid, lid)
     }
 }
 
