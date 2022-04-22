@@ -79,7 +79,7 @@ impl<C> Graph<C> {
             let committed_up_to = {
                 let mut guard = self.status_bounds.lock();
                 let status_bounds = &mut *guard;
-                status_bounds.maps.get_mut(&rid).map(|m| {
+                status_bounds.as_mut().get_mut(&rid).map(|m| {
                     m.committed.update_bound();
                     m.committed.bound()
                 })
@@ -120,7 +120,7 @@ impl<C> Graph<C> {
         let guard = self.status_bounds.lock();
         let status_bounds = &*guard;
         let InstanceId(rid, lid) = id;
-        if let Some(m) = status_bounds.maps.get(&rid) {
+        if let Some(m) = status_bounds.as_ref().get(&rid) {
             if m.executed.is_set(lid.raw_value()) {
                 return true;
             }
@@ -150,7 +150,7 @@ impl<C> Graph<C> {
     pub fn watermark(&self, rid: ReplicaId) -> Asc<WaterMark> {
         let mut guard = self.status_bounds.lock();
         let status_bounds = &mut *guard;
-        let bound = status_bounds.maps.get(&rid).map(|m| m.committed.bound());
+        let bound = status_bounds.as_ref().get(&rid).map(|m| m.committed.bound());
         drop(guard);
 
         let gen = || Asc::new(WaterMark::new(bound.unwrap_or(0)));
