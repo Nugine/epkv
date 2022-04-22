@@ -21,6 +21,7 @@ use anyhow::{ensure, Result};
 use bytemuck::{bytes_of, try_from_bytes};
 use camino::Utf8Path;
 use rocksdb::{SeekKey, Writable, WriteBatch, DB};
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tracing::debug;
 
@@ -49,6 +50,13 @@ where
     Ok(())
 }
 
+fn get_value<T: DeserializeOwned>(db: &DB, key: &[u8]) -> Result<Option<T>> {
+    match db.get(key).cvt()? {
+        None => Ok(None),
+        Some(v) => Ok(Some(codec::deserialize_owned(&*v)?)),
+    }
+}
+
 impl LogDb {
     pub fn new(path: &Utf8Path) -> Result<Arc<Self>> {
         let db = DB::open_default(path.as_ref()).cvt()?;
@@ -58,7 +66,7 @@ impl LogDb {
     pub fn save(
         self: &Arc<Self>,
         id: InstanceId,
-        ins: &Instance<BatchedCommand>,
+        ins: Instance<BatchedCommand>,
         mode: UpdateMode,
     ) -> Result<()> {
         let needs_save_cmd = match mode {
@@ -158,12 +166,7 @@ impl LogDb {
 
     pub fn load_pbal(self: &Arc<Self>, id: InstanceId) -> Result<Option<Ballot>> {
         let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_PBAL);
-        let ans = match self.db.get(bytes_of(&log_key)).cvt()? {
-            None => return Ok(None),
-            Some(v) => v,
-        };
-        let pbal: Ballot = codec::deserialize_owned(&*ans)?;
-        Ok(Some(pbal))
+        get_value(&self.db, bytes_of(&log_key))
     }
 
     pub fn update_status(self: &Arc<Self>, id: InstanceId, status: Status) -> Result<()> {
