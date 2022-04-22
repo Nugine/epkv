@@ -13,6 +13,7 @@ use epkv_epaxos::store::UpdateMode;
 use epkv_utils::codec;
 use epkv_utils::vecset::VecSet;
 
+use std::io;
 use std::ops::Not;
 use std::sync::Arc;
 
@@ -130,15 +131,44 @@ impl LogDb {
 
         Ok(Some(ins))
     }
+
+    pub fn save_pbal(self: &Arc<Self>, id: InstanceId, pbal: Ballot) -> Result<()> {
+        let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_PBAL);
+
+        let mut buf = [0u8; 64];
+        let pos: usize = {
+            let mut value_buf = io::Cursor::new(buf.as_mut_slice());
+            codec::serialize_into(&mut value_buf, &pbal)?;
+            value_buf.position().try_into().unwrap()
+        };
+        let value = &buf[..pos];
+
+        self.db.put(bytes_of(&log_key), value).cvt()?;
+
+        Ok(())
+    }
+
+    pub fn load_pbal(self: &Arc<Self>, id: InstanceId) -> Result<Option<Ballot>> {
+        let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_PBAL);
+        let ans = match self.db.get(bytes_of(&log_key)).cvt()? {
+            None => return Ok(None),
+            Some(v) => v,
+        };
+        let pbal: Ballot = codec::deserialize_owned(&*ans)?;
+        Ok(Some(pbal))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use epkv_epaxos::deps::{Deps, MutableDeps};
-    use epkv_epaxos::id::{InstanceId, ReplicaId, Seq};
+    use epkv_epaxos::id::{Ballot, InstanceId, ReplicaId, Round, Seq};
     use epkv_epaxos::status::Status;
+
     use epkv_utils::codec;
     use epkv_utils::vecset::VecSet;
+
+    use std::io;
 
     #[test]
     fn tuple_ref_serde() {
@@ -164,5 +194,22 @@ mod tests {
         assert_eq!(*input_tuple.1, output_tuple.1);
         assert_eq!(input_tuple.2, output_tuple.2);
         assert_eq!(*input_tuple.3, output_tuple.3);
+    }
+
+    #[test]
+    fn cursor_serde() {
+        let input_pbal = Ballot(Round::ONE, ReplicaId::ONE);
+
+        let mut buf = [0u8; 64];
+        let pos: usize = {
+            let mut value_buf = io::Cursor::new(buf.as_mut_slice());
+            codec::serialize_into(&mut value_buf, &input_pbal).unwrap();
+            value_buf.position().try_into().unwrap()
+        };
+        let value = &buf[..pos];
+
+        let output_pbal: Ballot = codec::deserialize_owned(value).unwrap();
+
+        assert_eq!(input_pbal, output_pbal);
     }
 }
