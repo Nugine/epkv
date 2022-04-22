@@ -218,6 +218,7 @@ dependencies = [
 name = "epkv-utils"
 version = "0.1.0-dev"
 dependencies = [
+ "anyhow",
  "bincode",
  "bytes",
  "futures-util",

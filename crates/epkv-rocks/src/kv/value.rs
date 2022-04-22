@@ -21,7 +21,7 @@ impl BytesValue {
     }
 
     pub fn to_value(&self) -> Result<Value> {
-        Ok(codec::deserialize_owned(&self.0)?)
+        codec::deserialize_owned(&self.0)
     }
 
     #[must_use]
