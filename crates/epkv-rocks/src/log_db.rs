@@ -2,15 +2,17 @@
 
 use crate::cmd::BatchedCommand;
 use crate::error::RocksDbErrorExt;
-use crate::log_key::InstanceFieldKey;
+use crate::log_key::{GlobalFieldKey, InstanceFieldKey};
 
+use epkv_epaxos::bounds::{AttrBounds, StatusBounds};
 use epkv_epaxos::deps::Deps;
-use epkv_epaxos::id::{Ballot, InstanceId, ReplicaId, Seq};
+use epkv_epaxos::id::{Ballot, InstanceId, LocalInstanceId, ReplicaId, Seq};
 use epkv_epaxos::ins::Instance;
 use epkv_epaxos::status::Status;
 use epkv_epaxos::store::UpdateMode;
 
 use epkv_utils::codec;
+use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
 use std::io;
@@ -22,7 +24,7 @@ use bytemuck::{bytes_of, try_from_bytes};
 use camino::Utf8Path;
 use rocksdb::{SeekKey, Writable, WriteBatch, DB};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 pub struct LogDb {
@@ -55,6 +57,13 @@ fn get_value<T: DeserializeOwned>(db: &DB, key: &[u8]) -> Result<Option<T>> {
         None => Ok(None),
         Some(v) => Ok(Some(codec::deserialize_owned(&*v)?)),
     }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct SavedStatusBounds {
+    pub known_up_to: VecMap<ReplicaId, LocalInstanceId>,
+    pub committed_up_to: VecMap<ReplicaId, LocalInstanceId>,
+    pub executed_up_to: VecMap<ReplicaId, LocalInstanceId>,
 }
 
 impl LogDb {
@@ -172,6 +181,29 @@ impl LogDb {
     pub fn update_status(self: &Arc<Self>, id: InstanceId, status: Status) -> Result<()> {
         let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_STATUS);
         put_small_value(&self.db, bytes_of(&log_key), &status)
+    }
+
+    pub fn save_bounds(
+        self: &Arc<Self>,
+        attr: AttrBounds,
+        status: SavedStatusBounds,
+    ) -> Result<()> {
+        let mut buf = Vec::new();
+        let wb = WriteBatch::new();
+        {
+            let log_key = GlobalFieldKey::new(GlobalFieldKey::FIELD_ATTR_BOUNDS);
+            put_value(&wb, bytes_of(&log_key), &mut buf, &attr)?;
+        }
+        {
+            let log_key = GlobalFieldKey::new(GlobalFieldKey::FIELD_STATUS_BOUNDS);
+            put_value(&wb, bytes_of(&log_key), &mut buf, &status)?;
+        }
+        self.db.write(&wb).cvt()?;
+        Ok(())
+    }
+
+    pub fn load_bounds(self: &Arc<Self>) -> Result<(AttrBounds, StatusBounds)> {
+        todo!()
     }
 }
 
