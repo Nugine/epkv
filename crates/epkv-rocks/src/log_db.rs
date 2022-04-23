@@ -20,7 +20,8 @@ use std::ops::Not;
 use std::sync::Arc;
 
 use anyhow::{ensure, Result};
-use bytemuck::{bytes_of, try_from_bytes};
+use bytemuck::bytes_of;
+use bytemuck::checked::{from_bytes, try_from_bytes};
 use camino::Utf8Path;
 use rocksdb::{SeekKey, Writable, WriteBatch, DB};
 use serde::de::DeserializeOwned;
@@ -150,8 +151,7 @@ impl LogDb {
         macro_rules! next_field {
             ($field:tt) => {{
                 ensure!(iter.next().cvt()?);
-                let log_key: &InstanceFieldKey =
-                    try_from_bytes(iter.key()).expect("invalid log key");
+                let log_key: &InstanceFieldKey = from_bytes(iter.key());
                 assert_eq!(log_key.id(), id);
                 assert_eq!(log_key.field(), InstanceFieldKey::$field);
                 codec::deserialize_owned(iter.value())?

@@ -1,6 +1,9 @@
 use epkv_epaxos::id::InstanceId;
+use epkv_utils::bits::{OneU8, TwoU8};
 
-use bytemuck::{AnyBitPattern, NoUninit};
+use std::fmt;
+
+use bytemuck::{AnyBitPattern, CheckedBitPattern, NoUninit};
 
 #[derive(Clone, Copy, NoUninit, AnyBitPattern)]
 #[repr(transparent)]
@@ -16,25 +19,29 @@ impl Be64 {
     }
 }
 
-#[derive(Clone, Copy, NoUninit, AnyBitPattern)]
+impl fmt::Debug for Be64 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Be64").field(&self.to_u64()).finish()
+    }
+}
+
+#[derive(Clone, Copy, NoUninit, CheckedBitPattern)]
 #[repr(C)]
 pub struct InstanceFieldKey {
-    prefix: u8,
+    prefix: OneU8,
     rid: Be64,
     lid: Be64,
     field: u8,
 }
 
-#[derive(Clone, Copy, NoUninit, AnyBitPattern)]
+#[derive(Clone, Copy, NoUninit, CheckedBitPattern)]
 #[repr(C)]
 pub struct GlobalFieldKey {
-    prefix: u8,
+    prefix: TwoU8,
     field: u8,
 }
 
 impl InstanceFieldKey {
-    const PREFIX: u8 = 1;
-
     pub const FIELD_CMD: u8 = 1;
     pub const FIELD_PBAL: u8 = 2;
     pub const FIELD_STATUS: u8 = 3;
@@ -43,7 +50,7 @@ impl InstanceFieldKey {
     #[must_use]
     pub fn new(id: InstanceId, field: u8) -> Self {
         Self {
-            prefix: Self::PREFIX,
+            prefix: OneU8::VALUE,
             rid: Be64::new(id.0.raw_value()),
             lid: Be64::new(id.1.raw_value()),
             field,
@@ -68,14 +75,12 @@ impl InstanceFieldKey {
 }
 
 impl GlobalFieldKey {
-    const PREFIX: u8 = 2;
-
     pub const FIELD_ATTR_BOUNDS: u8 = 1;
     pub const FIELD_STATUS_BOUNDS: u8 = 2;
 
     #[must_use]
     pub fn new(field: u8) -> Self {
-        Self { prefix: Self::PREFIX, field }
+        Self { prefix: TwoU8::VALUE, field }
     }
 
     pub fn set_field(&mut self, field: u8) {
@@ -95,12 +100,6 @@ mod tests {
                 assert!(arr[i] < arr[j]);
             }
         }
-    }
-
-    #[test]
-    fn prefix() {
-        let prefixes = [InstanceFieldKey::PREFIX, GlobalFieldKey::PREFIX];
-        assert_nonzero_unique_sorted(&prefixes);
     }
 
     #[test]
