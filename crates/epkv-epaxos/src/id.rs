@@ -81,7 +81,7 @@ macro_rules! impl_add_one {
     };
 }
 
-impl_add_one!(LocalInstanceId, Seq, Round, SyncId,);
+impl_add_one!(ReplicaId, LocalInstanceId, Seq, Round, SyncId,);
 
 macro_rules! impl_sub_one {
     ($($ty: ident,)+) => {
