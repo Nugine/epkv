@@ -263,16 +263,8 @@ mod tests {
             let mut acc = VecSet::with_capacity(3);
             let _ = acc.insert(rid);
 
-            let preaccept = Message::<()>::PreAccept(PreAccept {
-                sender: rid,
-                epoch,
-                id,
-                pbal,
-                cmd,
-                seq,
-                deps,
-                acc,
-            });
+            let preaccept =
+                Message::<()>::PreAccept(PreAccept { sender: rid, epoch, id, pbal, cmd, seq, deps, acc });
             let msg_size = codec::serialized_size(&preaccept).unwrap();
             assert_eq!(msg_size, 14); // track message size
         }

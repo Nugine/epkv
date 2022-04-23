@@ -56,11 +56,7 @@ where
     C: CommandLike,
     L: LogStore<C>,
 {
-    pub fn new(
-        log_store: L,
-        attr_bounds: AttrBounds,
-        status_bounds: Asc<SyncMutex<StatusBounds>>,
-    ) -> Self {
+    pub fn new(log_store: L, attr_bounds: AttrBounds, status_bounds: Asc<SyncMutex<StatusBounds>>) -> Self {
         let max_key_map = HashMap::new();
 
         let max_lid_map = copied_map_collect(attr_bounds.max_lids.iter(), |(rid, lid)| {

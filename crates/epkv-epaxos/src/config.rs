@@ -17,11 +17,7 @@ pub struct PreAcceptTimeout {
 }
 
 impl PreAcceptTimeout {
-    pub fn with(
-        &self,
-        avg_rtt: Option<Duration>,
-        f: impl FnOnce(Duration) -> Duration,
-    ) -> Duration {
+    pub fn with(&self, avg_rtt: Option<Duration>, f: impl FnOnce(Duration) -> Duration) -> Duration {
         if self.enable_adaptive {
             match avg_rtt {
                 Some(d) => f(d),
@@ -40,11 +36,7 @@ pub struct RecoverTimeout {
 }
 
 impl RecoverTimeout {
-    pub fn with(
-        &self,
-        avg_rtt: Option<Duration>,
-        f: impl FnOnce(Duration) -> Duration,
-    ) -> Duration {
+    pub fn with(&self, avg_rtt: Option<Duration>, f: impl FnOnce(Duration) -> Duration) -> Duration {
         if self.enable_adaptive {
             match avg_rtt {
                 Some(d) => f(d),

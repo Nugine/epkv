@@ -70,12 +70,7 @@ impl DataDb {
 
 #[async_trait]
 impl DataStore<BatchedCommand> for Arc<DataDb> {
-    async fn issue(
-        &self,
-        _: InstanceId,
-        cmd: BatchedCommand,
-        notify: Asc<ExecNotify>,
-    ) -> Result<()> {
+    async fn issue(&self, _: InstanceId, cmd: BatchedCommand, notify: Asc<ExecNotify>) -> Result<()> {
         let this = Arc::clone(self);
         let task = move || {
             let result = this.batched_execute(cmd);

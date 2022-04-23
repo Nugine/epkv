@@ -355,8 +355,7 @@ mod tests {
 
     #[test]
     fn from_vec() {
-        let m: VecMap<u8, u8> =
-            VecMap::from_vec(vec![(4, 1), (2, 3), (5, 7), (2, 9), (4, 6), (7, 8)]);
+        let m: VecMap<u8, u8> = VecMap::from_vec(vec![(4, 1), (2, 3), (5, 7), (2, 9), (4, 6), (7, 8)]);
         assert!([1, 6].contains(m.get(&4).unwrap()));
         assert!([3, 9].contains(m.get(&2).unwrap()));
         assert_eq!(*m.get(&5).unwrap(), 7);

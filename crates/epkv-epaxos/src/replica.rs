@@ -426,9 +426,7 @@ where
                         }
 
                         let which_path = if all_same {
-                            if pbal.0 == Round::ZERO
-                                && received.len() >= cluster_size.wrapping_sub(2)
-                            {
+                            if pbal.0 == Round::ZERO && received.len() >= cluster_size.wrapping_sub(2) {
                                 Some(true)
                             } else {
                                 None
@@ -721,10 +719,7 @@ where
             let target = msg.sender;
             let sender = self.rid;
             let epoch = self.epoch.load();
-            self.net.send_one(
-                target,
-                Message::AcceptOk(AcceptOk { sender, epoch, id, pbal }),
-            );
+            self.net.send_one(target, Message::AcceptOk(AcceptOk { sender, epoch, id, pbal }));
         }
         Ok(())
     }
@@ -1157,18 +1152,7 @@ where
         let sender = self.rid;
         self.net.send_one(
             target,
-            Message::PrepareOk(PrepareOk {
-                sender,
-                epoch,
-                id,
-                pbal,
-                cmd,
-                seq,
-                deps,
-                abal,
-                status,
-                acc,
-            }),
+            Message::PrepareOk(PrepareOk { sender, epoch, id, pbal, cmd, seq, deps, abal, status, acc }),
         );
         Ok(())
     }
@@ -1321,12 +1305,8 @@ where
         let target = msg.sender;
         let sender = self.rid;
         let sync_id = SyncId::ZERO;
-        let send_log = |instances| {
-            self.net.send_one(
-                target,
-                Message::SyncLog(SyncLog { sender, sync_id, instances }),
-            )
-        };
+        let send_log =
+            |instances| self.net.send_one(target, Message::SyncLog(SyncLog { sender, sync_id, instances }));
 
         let conf = &self.config.sync_limits;
         let limit: usize = conf.max_instance_num.try_into().expect("usize overflow");
@@ -1383,10 +1363,7 @@ where
                 rxs.push((sync_id, rx));
 
                 clone!(targets);
-                self.net.broadcast(
-                    targets,
-                    Message::SyncLog(SyncLog { sender, sync_id, instances }),
-                )
+                self.net.broadcast(targets, Message::SyncLog(SyncLog { sender, sync_id, instances }))
             };
 
             for &(rid, higher) in local_bounds.iter() {

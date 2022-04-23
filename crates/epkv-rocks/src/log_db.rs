@@ -183,11 +183,7 @@ impl LogDb {
         put_small_value(&self.db, bytes_of(&log_key), &status)
     }
 
-    pub fn save_bounds(
-        self: &Arc<Self>,
-        attr: AttrBounds,
-        status: SavedStatusBounds,
-    ) -> Result<()> {
+    pub fn save_bounds(self: &Arc<Self>, attr: AttrBounds, status: SavedStatusBounds) -> Result<()> {
         let mut buf = Vec::new();
         let wb = WriteBatch::new();
         {
@@ -235,8 +231,7 @@ mod tests {
 
         let bytes = codec::serialize(input_tuple).unwrap();
 
-        let output_tuple: (Seq, Deps, Status, VecSet<ReplicaId>) =
-            codec::deserialize_owned(&*bytes).unwrap();
+        let output_tuple: (Seq, Deps, Status, VecSet<ReplicaId>) = codec::deserialize_owned(&*bytes).unwrap();
 
         assert_eq!(input_tuple.0, output_tuple.0);
         assert_eq!(*input_tuple.1, output_tuple.1);
