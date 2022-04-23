@@ -171,6 +171,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "epkv-client"
+version = "0.1.0-dev"
+
+[[package]]
 name = "epkv-epaxos"
 version = "0.1.0-dev"
 dependencies = [
@@ -190,6 +194,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "epkv-monitor"
+version = "0.1.0-dev"
+
+[[package]]
+name = "epkv-protocol"
+version = "0.1.0-dev"
+
+[[package]]
 name = "epkv-rocks"
 version = "0.1.0-dev"
 dependencies = [
@@ -205,6 +217,10 @@ dependencies = [
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "epkv-server"
+version = "0.1.0-dev"
 
 [[package]]
 name = "epkv-utils"
