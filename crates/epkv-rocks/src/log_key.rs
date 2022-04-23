@@ -43,9 +43,10 @@ pub struct GlobalFieldKey {
 
 impl InstanceFieldKey {
     pub const FIELD_STATUS: u8 = 1;
-    pub const FIELD_PBAL: u8 = 2;
-    pub const FIELD_CMD: u8 = 3;
-    pub const FIELD_OTHERS: u8 = 4;
+    pub const FIELD_SEQ: u8 = 2;
+    pub const FIELD_PBAL: u8 = 3;
+    pub const FIELD_CMD: u8 = 4;
+    pub const FIELD_OTHERS: u8 = 5;
 
     #[must_use]
     pub fn new(id: InstanceId, field: u8) -> Self {
@@ -112,6 +113,7 @@ mod tests {
         {
             let fields = [
                 InstanceFieldKey::FIELD_STATUS,
+                InstanceFieldKey::FIELD_SEQ,
                 InstanceFieldKey::FIELD_PBAL,
                 InstanceFieldKey::FIELD_CMD,
                 InstanceFieldKey::FIELD_OTHERS,

@@ -11,6 +11,7 @@ use epkv_epaxos::ins::Instance;
 use epkv_epaxos::status::Status;
 use epkv_epaxos::store::UpdateMode;
 
+use epkv_utils::cmp::max_assign;
 use epkv_utils::codec;
 use epkv_utils::onemap::OneMap;
 use epkv_utils::vecmap::VecMap;
@@ -66,6 +67,12 @@ impl LogDb {
             put_value(&mut wb, bytes_of(&log_key), &mut buf, &ins.status)?;
         }
 
+        // seq
+        {
+            log_key.set_field(InstanceFieldKey::FIELD_SEQ);
+            put_value(&mut wb, bytes_of(&log_key), &mut buf, &ins.seq)?;
+        }
+
         // pbal
         {
             log_key.set_field(InstanceFieldKey::FIELD_PBAL);
@@ -77,10 +84,10 @@ impl LogDb {
             put_value(&mut wb, bytes_of(&log_key), &mut buf, &ins.cmd)?;
         }
 
-        // (seq, deps, abal, acc)
+        // (deps, abal, acc)
         {
             log_key.set_field(InstanceFieldKey::FIELD_OTHERS);
-            let value: _ = (ins.seq, &ins.deps, ins.abal, &ins.acc);
+            let value: _ = (&ins.deps, ins.abal, &ins.acc);
             put_value(&mut wb, bytes_of(&log_key), &mut buf, &value)?;
         }
 
@@ -136,10 +143,11 @@ impl LogDb {
             }};
         }
 
+        let seq: Seq = next_field!(FIELD_SEQ);
         let pbal: Ballot = next_field!(FIELD_PBAL);
         let cmd: BatchedCommand = next_field!(FIELD_CMD);
-        let others: (Seq, Deps, Ballot, VecSet<ReplicaId>) = next_field!(FIELD_OTHERS);
-        let (seq, deps, abal, acc) = others;
+        let others: (Deps, Ballot, VecSet<ReplicaId>) = next_field!(FIELD_OTHERS);
+        let (deps, abal, acc) = others;
 
         let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
 
@@ -207,13 +215,14 @@ impl LogDb {
     pub fn load_bounds(self: &Arc<Self>) -> Result<(AttrBounds, StatusBounds)> {
         let mut iter = self.db.raw_iterator();
 
-        let (attr_bounds, saved_status_bounds) = self.load_bounds_optional(&mut iter)?.unwrap_or_else(|| {
-            let attr_bounds = AttrBounds { max_seq: Seq::ZERO, max_lids: VecMap::new() };
-            let saved_status_bounds = SavedStatusBounds::default();
-            (attr_bounds, saved_status_bounds)
-        });
+        let (mut attr_bounds, saved_status_bounds) =
+            self.load_bounds_optional(&mut iter)?.unwrap_or_else(|| {
+                let attr_bounds = AttrBounds { max_seq: Seq::ZERO, max_lids: VecMap::new() };
+                let saved_status_bounds = SavedStatusBounds::default();
+                (attr_bounds, saved_status_bounds)
+            });
 
-        let status_bounds = {
+        let mut status_bounds = {
             let mut maps: VecMap<ReplicaId, StatusMap> = VecMap::new();
 
             let create_default = || StatusMap {
@@ -239,51 +248,73 @@ impl LogDb {
 
         {
             let field_status = InstanceFieldKey::FIELD_STATUS;
-            let zero_id = InstanceId(ReplicaId::ONE, LocalInstanceId::ZERO);
-            let mut log_key = InstanceFieldKey::new(zero_id, field_status);
 
-            // loop {
-            //     iter.seek(bytes_of(&log_key));
-            //     if iter.valid().not() {
-            //         break;
-            //     }
+            let mut rid = ReplicaId::ONE;
+            let mut lid = match saved_status_bounds.executed_up_to.get(&rid) {
+                Some(jump_to) => jump_to.add_one(),
+                None => LocalInstanceId::ONE,
+            };
 
-            //     log_key = match try_from_bytes(iter.key().unwrap()) {
-            //         Ok(k) => *k,
-            //         Err(_) => break,
-            //     };
+            loop {
+                let log_key = InstanceFieldKey::new(InstanceId(rid, lid), field_status);
 
-            //     let id = log_key.id();
-            //     assert!(id.0 > ReplicaId::ZERO);
-            //     assert!(id.1 > LocalInstanceId::ZERO);
+                iter.seek(bytes_of(&log_key));
+                if iter.valid().not() {
+                    break;
+                }
 
-            //     assert_eq!(log_key.field(), InstanceFieldKey::FIELD_CMD);
+                let log_key: &InstanceFieldKey = match try_from_bytes(iter.key().unwrap()) {
+                    Ok(k) => k,
+                    Err(_) => break,
+                };
 
-            //     log_key.set_field(field_status);
+                let id = log_key.id();
+                let is_rid_changed = rid != id.0;
+                InstanceId(rid, lid) = id;
 
-            //     iter.seek(bytes_of(&log_key));
-            //     if iter.valid().not() {
-            //         break;
-            //     }
+                if is_rid_changed {
+                    if let Some(&jump_to) = saved_status_bounds.executed_up_to.get(&id.0) {
+                        if lid < jump_to {
+                            lid = jump_to.add_one();
+                            continue;
+                        }
+                    }
+                }
 
-            //     log_key = *from_bytes(iter.key().unwrap());
-            //     assert_eq!(log_key.id(), id);
-            //     assert_eq!(log_key.field(), field_status);
+                if log_key.field() != field_status {
+                    lid = lid.add_one();
+                    continue;
+                }
 
-            //     // TODO
-            // }
+                let status: Status = codec::deserialize_owned(iter.value().unwrap())?;
 
-            // iter.status()?;
+                iter.next();
+                if iter.valid().not() {
+                    break;
+                }
+
+                let seq: Seq = codec::deserialize_owned(iter.value().unwrap())?;
+
+                max_assign(&mut attr_bounds.max_seq, seq);
+                attr_bounds.max_lids.update(rid, |l| max_assign(l, lid), || lid);
+                status_bounds.set(InstanceId(rid, lid), status);
+
+                lid = lid.add_one();
+            }
+
+            iter.status()?;
         }
 
-        todo!()
+        status_bounds.update_bounds();
+
+        Ok((attr_bounds, status_bounds))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use epkv_epaxos::deps::{Deps, MutableDeps};
-    use epkv_epaxos::id::{Ballot, InstanceId, ReplicaId, Round, Seq};
+    use epkv_epaxos::id::{Ballot, InstanceId, ReplicaId, Round};
     use epkv_epaxos::status::Status;
 
     use epkv_utils::codec;
@@ -293,8 +324,6 @@ mod tests {
 
     #[test]
     fn tuple_ref_serde() {
-        let seq = Seq::from(1);
-
         let deps = {
             let mut deps = MutableDeps::with_capacity(1);
             deps.insert(InstanceId(2022.into(), 422.into()));
@@ -304,16 +333,15 @@ mod tests {
         let status = Status::Committed;
         let acc = VecSet::from_single(ReplicaId::from(2022));
 
-        let input_tuple = &(seq, &deps, status, &acc);
+        let input_tuple = &(&deps, status, &acc);
 
         let bytes = codec::serialize(input_tuple).unwrap();
 
-        let output_tuple: (Seq, Deps, Status, VecSet<ReplicaId>) = codec::deserialize_owned(&*bytes).unwrap();
+        let output_tuple: (Deps, Status, VecSet<ReplicaId>) = codec::deserialize_owned(&*bytes).unwrap();
 
-        assert_eq!(input_tuple.0, output_tuple.0);
-        assert_eq!(*input_tuple.1, output_tuple.1);
-        assert_eq!(input_tuple.2, output_tuple.2);
-        assert_eq!(*input_tuple.3, output_tuple.3);
+        assert_eq!(input_tuple.0, &output_tuple.0);
+        assert_eq!(input_tuple.1, output_tuple.1);
+        assert_eq!(input_tuple.2, &output_tuple.2);
     }
 
     #[test]
