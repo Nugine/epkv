@@ -30,8 +30,9 @@ pub mod kv {
     pub use self::value::*;
 }
 
-pub mod error;
+pub mod db_utils;
 
 pub mod data_db;
-pub mod log_db;
+
 pub mod log_key;
+// pub mod log_db;

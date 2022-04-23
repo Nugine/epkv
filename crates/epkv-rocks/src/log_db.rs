@@ -23,7 +23,7 @@ use anyhow::{ensure, Result};
 use bytemuck::bytes_of;
 use bytemuck::checked::{from_bytes, try_from_bytes};
 use camino::Utf8Path;
-use rocksdb::{SeekKey, Writable, WriteBatch, DB};
+use rocksdb::{WriteBatch, DB};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tracing::debug;

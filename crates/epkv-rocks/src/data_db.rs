@@ -1,7 +1,4 @@
-//! <https://github.com/tikv/rust-rocksdb>
-
 use crate::cmd::{BatchedCommand, CommandKind, Del, Get, Set};
-use crate::error::RocksDbErrorExt;
 use crate::kv::BytesValue;
 
 use epkv_epaxos::exec::ExecNotify;
@@ -14,7 +11,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use camino::Utf8Path;
-use rocksdb::{Writable, DB};
+use rocksdb::DB;
 
 pub struct DataDb {
     db: DB,
@@ -22,7 +19,7 @@ pub struct DataDb {
 
 impl DataDb {
     pub fn new(path: &Utf8Path) -> Result<Arc<Self>> {
-        let db = DB::open_default(path.as_ref()).cvt()?;
+        let db = DB::open_default(path)?;
         Ok(Arc::new(Self { db }))
     }
 
@@ -37,7 +34,7 @@ impl DataDb {
     }
 
     pub fn execute_get(self: &Arc<Self>, cmd: Get) -> Result<()> {
-        let ans = self.db.get(cmd.key.as_ref()).cvt()?;
+        let ans = self.db.get(cmd.key.as_ref())?;
         let ans = ans.map(|v| BytesValue::from_bytes(&*v));
         if let Some(tx) = cmd.tx {
             let _ = tx.blocking_send(ans);
@@ -46,12 +43,12 @@ impl DataDb {
     }
 
     pub fn execute_set(self: &Arc<Self>, cmd: Set) -> Result<()> {
-        self.db.put(cmd.key.as_ref(), cmd.value.as_ref()).cvt()?;
+        self.db.put(cmd.key.as_ref(), cmd.value.as_ref())?;
         Ok(())
     }
 
     pub fn execute_del(self: &Arc<Self>, cmd: Del) -> Result<()> {
-        self.db.delete(cmd.key.as_ref()).cvt()?;
+        self.db.delete(cmd.key.as_ref())?;
         Ok(())
     }
 
