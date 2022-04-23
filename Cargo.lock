@@ -221,6 +221,7 @@ version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "bincode",
+ "bytemuck",
  "bytes",
  "futures-util",
  "minstant",
