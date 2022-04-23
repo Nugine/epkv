@@ -4,7 +4,7 @@ use crate::cmd::BatchedCommand;
 use crate::db_utils::{get_value, put_small_value, put_value};
 use crate::log_key::{GlobalFieldKey, InstanceFieldKey};
 
-use epkv_epaxos::bounds::{AttrBounds, StatusBounds, StatusMap};
+use epkv_epaxos::bounds::{AttrBounds, SavedStatusBounds, StatusBounds, StatusMap};
 use epkv_epaxos::deps::Deps;
 use epkv_epaxos::id::{Ballot, InstanceId, LocalInstanceId, ReplicaId, Seq};
 use epkv_epaxos::ins::Instance;
@@ -25,18 +25,10 @@ use bytemuck::bytes_of;
 use bytemuck::checked::{from_bytes, try_from_bytes};
 use camino::Utf8Path;
 use rocksdb::{DBRawIterator, WriteBatch, DB};
-use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 pub struct LogDb {
     db: DB,
-}
-
-#[derive(Default, Deserialize, Serialize)]
-pub struct SavedStatusBounds {
-    pub known_up_to: VecMap<ReplicaId, LocalInstanceId>,
-    pub committed_up_to: VecMap<ReplicaId, LocalInstanceId>,
-    pub executed_up_to: VecMap<ReplicaId, LocalInstanceId>,
 }
 
 impl LogDb {

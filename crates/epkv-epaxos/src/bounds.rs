@@ -12,6 +12,13 @@ pub struct AttrBounds {
     pub max_lids: VecMap<ReplicaId, LocalInstanceId>,
 }
 
+#[derive(Default, Deserialize, Serialize)]
+pub struct SavedStatusBounds {
+    pub known_up_to: VecMap<ReplicaId, LocalInstanceId>,
+    pub committed_up_to: VecMap<ReplicaId, LocalInstanceId>,
+    pub executed_up_to: VecMap<ReplicaId, LocalInstanceId>,
+}
+
 pub struct StatusBounds(VecMap<ReplicaId, StatusMap>);
 
 #[derive(Default)]

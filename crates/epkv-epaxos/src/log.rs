@@ -1,4 +1,4 @@
-use crate::bounds::{AttrBounds, StatusBounds};
+use crate::bounds::{AttrBounds, SavedStatusBounds, StatusBounds};
 use crate::cmd::{CommandLike, Keys};
 use crate::deps::MutableDeps;
 use crate::id::{Ballot, InstanceId, LocalInstanceId, ReplicaId, Seq};
@@ -12,7 +12,7 @@ use std::ops::Not;
 
 use epkv_utils::asc::Asc;
 use epkv_utils::cmp::max_assign;
-use epkv_utils::iter::copied_map_collect;
+use epkv_utils::iter::{copied_map_collect, map_collect};
 use epkv_utils::vecmap::VecMap;
 
 use anyhow::Result;
@@ -179,7 +179,7 @@ where
             true
         };
 
-        self.log_store.save(id, &ins, mode).await?;
+        self.log_store.save(id, ins.clone(), mode).await?;
 
         if needs_update_attrs {
             self.update_attrs(id, ins.cmd.keys(), ins.seq);
@@ -274,5 +274,24 @@ where
 
     pub fn committed_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
         self.status_bounds.lock().committed_up_to()
+    }
+
+    pub async fn save_bounds(&mut self) -> Result<()> {
+        let saved_status_bounds = {
+            let mut guard = self.status_bounds.lock();
+            let status_bounds = &mut *guard;
+            status_bounds.update_bounds();
+            SavedStatusBounds {
+                known_up_to: status_bounds.known_up_to(),
+                committed_up_to: status_bounds.committed_up_to(),
+                executed_up_to: status_bounds.executed_up_to(),
+            }
+        };
+        let attr_bounds = AttrBounds {
+            max_seq: self.max_seq.any,
+            max_lids: map_collect(&self.max_lid_map, |&(rid, ref m)| (rid, m.any)),
+        };
+        self.log_store.save_bounds(attr_bounds, saved_status_bounds).await?;
+        Ok(())
     }
 }

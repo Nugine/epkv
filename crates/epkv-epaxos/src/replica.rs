@@ -148,8 +148,8 @@ where
 
         let epoch = AtomicEpoch::new(epoch);
 
-        let attr_bounds: _ = log_store.load_attr_bounds().await?;
-        let status_bounds: _ = Asc::new(SyncMutex::new(log_store.load_status_bounds().await?));
+        let (attr_bounds, status_bounds) = log_store.load_bounds().await?;
+        let status_bounds: _ = Asc::new(SyncMutex::new(status_bounds));
 
         let state = {
             let peers_set: VecSet<_> = map_collect(&peers, |&(p, _)| p);
@@ -1690,5 +1690,11 @@ where
         let garbage = s.log.clear_key_map();
         drop(guard);
         drop(garbage);
+    }
+
+    pub async fn run_save_bounds(self: &Arc<Self>) -> Result<()> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+        s.log.save_bounds().await
     }
 }
