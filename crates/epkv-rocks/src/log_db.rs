@@ -60,9 +60,10 @@ impl LogDb {
         let mut log_key = InstanceFieldKey::new(id, 0);
         let mut buf = Vec::new();
 
-        if needs_save_cmd {
-            log_key.set_field(InstanceFieldKey::FIELD_CMD);
-            put_value(&mut wb, bytes_of(&log_key), &mut buf, &ins.cmd)?;
+        // status
+        {
+            log_key.set_field(InstanceFieldKey::FIELD_STATUS);
+            put_value(&mut wb, bytes_of(&log_key), &mut buf, &ins.status)?;
         }
 
         // pbal
@@ -71,10 +72,9 @@ impl LogDb {
             put_value(&mut wb, bytes_of(&log_key), &mut buf, &ins.pbal)?;
         }
 
-        // status
-        {
-            log_key.set_field(InstanceFieldKey::FIELD_STATUS);
-            put_value(&mut wb, bytes_of(&log_key), &mut buf, &ins.status)?;
+        if needs_save_cmd {
+            log_key.set_field(InstanceFieldKey::FIELD_CMD);
+            put_value(&mut wb, bytes_of(&log_key), &mut buf, &ins.cmd)?;
         }
 
         // (seq, deps, abal, acc)
@@ -95,8 +95,8 @@ impl LogDb {
 
         let mut iter = self.db.raw_iterator();
 
-        let cmd: BatchedCommand = {
-            let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_CMD);
+        let status: Status = {
+            let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_STATUS);
 
             iter.seek(bytes_of(&log_key));
 
@@ -117,7 +117,7 @@ impl LogDb {
             if log_key.id() != id {
                 return Ok(None);
             }
-            if log_key.field() != InstanceFieldKey::FIELD_CMD {
+            if log_key.field() != InstanceFieldKey::FIELD_STATUS {
                 return Ok(None);
             }
 
@@ -137,7 +137,7 @@ impl LogDb {
         }
 
         let pbal: Ballot = next_field!(FIELD_PBAL);
-        let status: Status = next_field!(FIELD_STATUS);
+        let cmd: BatchedCommand = next_field!(FIELD_CMD);
         let others: (Seq, Deps, Ballot, VecSet<ReplicaId>) = next_field!(FIELD_OTHERS);
         let (seq, deps, abal, acc) = others;
 
@@ -238,7 +238,6 @@ impl LogDb {
         };
 
         {
-            
             let field_status = InstanceFieldKey::FIELD_STATUS;
             let zero_id = InstanceId(ReplicaId::ONE, LocalInstanceId::ZERO);
             let mut log_key = InstanceFieldKey::new(zero_id, field_status);

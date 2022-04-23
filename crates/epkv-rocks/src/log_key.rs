@@ -42,9 +42,9 @@ pub struct GlobalFieldKey {
 }
 
 impl InstanceFieldKey {
-    pub const FIELD_CMD: u8 = 1;
+    pub const FIELD_STATUS: u8 = 1;
     pub const FIELD_PBAL: u8 = 2;
-    pub const FIELD_STATUS: u8 = 3;
+    pub const FIELD_CMD: u8 = 3;
     pub const FIELD_OTHERS: u8 = 4;
 
     #[must_use]
@@ -71,6 +71,11 @@ impl InstanceFieldKey {
         let rid = self.rid.to_u64().into();
         let lid = self.lid.to_u64().into();
         InstanceId(rid, lid)
+    }
+
+    pub fn set_id(&mut self, id: InstanceId) {
+        self.rid = Be64::new(id.0.raw_value());
+        self.lid = Be64::new(id.1.raw_value());
     }
 }
 
@@ -106,9 +111,9 @@ mod tests {
     fn fields() {
         {
             let fields = [
-                InstanceFieldKey::FIELD_CMD,
-                InstanceFieldKey::FIELD_PBAL,
                 InstanceFieldKey::FIELD_STATUS,
+                InstanceFieldKey::FIELD_PBAL,
+                InstanceFieldKey::FIELD_CMD,
                 InstanceFieldKey::FIELD_OTHERS,
             ];
             assert_nonzero_unique_sorted(&fields);
