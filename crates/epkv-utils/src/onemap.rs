@@ -66,6 +66,15 @@ impl OneMap {
         self.map.remove_range(self.bound.saturating_add(1)..low);
         self.bound = low - 1;
     }
+
+    #[inline]
+    pub fn set_bound(&mut self, bound: u64) {
+        let (old, new) = (self.bound, bound);
+        if old < new {
+            self.map.remove_range(old.wrapping_add(1)..=new);
+            self.bound = new;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -88,7 +97,11 @@ mod tests {
     #[test]
     fn small() {
         let mut map = OneMap::new(9);
+
         map.set(10);
+
+        map.set_bound(10);
+
         map.set(11);
         map.set(13);
 
