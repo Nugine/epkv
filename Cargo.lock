@@ -200,6 +200,9 @@ version = "0.1.0-dev"
 [[package]]
 name = "epkv-protocol"
 version = "0.1.0-dev"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "epkv-rocks"
