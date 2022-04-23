@@ -87,13 +87,12 @@ impl GlobalFieldKey {
 mod tests {
     use super::*;
 
-    use std::fmt;
-
     #[allow(clippy::integer_arithmetic)]
-    fn assert_unique<T: Eq + fmt::Debug>(arr: &[T]) {
+    fn assert_nonzero_unique_sorted(arr: &[u8]) {
+        assert!(arr.iter().copied().all(|p| p != 0));
         for i in 0..arr.len() {
             for j in (i + 1)..arr.len() {
-                assert_ne!(arr[i], arr[j]);
+                assert!(arr[i] < arr[j]);
             }
         }
     }
@@ -101,9 +100,7 @@ mod tests {
     #[test]
     fn prefix() {
         let prefixes = [InstanceFieldKey::PREFIX, GlobalFieldKey::PREFIX];
-
-        assert!(prefixes.iter().copied().all(|p| p != 0));
-        assert_unique(&prefixes);
+        assert_nonzero_unique_sorted(&prefixes);
     }
 
     #[test]
@@ -115,16 +112,14 @@ mod tests {
                 InstanceFieldKey::FIELD_STATUS,
                 InstanceFieldKey::FIELD_OTHERS,
             ];
-            assert!(fields.iter().copied().all(|p| p != 0));
-            assert_unique(&fields);
+            assert_nonzero_unique_sorted(&fields);
         }
         {
             let fields = [
                 GlobalFieldKey::FIELD_ATTR_BOUNDS,
                 GlobalFieldKey::FIELD_STATUS_BOUNDS,
             ];
-            assert!(fields.iter().copied().all(|p| p != 0));
-            assert_unique(&fields);
+            assert_nonzero_unique_sorted(&fields);
         }
     }
 }
