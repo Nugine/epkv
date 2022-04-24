@@ -4,3 +4,6 @@ version = "0.1.0-dev"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.57"
+camino = "1.0.7"
+clap = { version = "3.1.12", features = ["derive"] }

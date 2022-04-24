@@ -8,6 +8,16 @@
 )]
 #![warn(clippy::todo)]
 
+use camino::Utf8PathBuf;
+use clap::StructOpt;
+
+#[derive(Debug, clap::Parser)]
+struct Opt {
+    #[clap(long)]
+    config: Utf8PathBuf,
+}
+
 fn main() {
-    println!("Hello, world!");
+    let opt = Opt::parse();
+    println!("{:?}", opt);
 }
