@@ -8,6 +8,9 @@
 )]
 #![warn(clippy::todo)]
 
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 use camino::Utf8PathBuf;
 use clap::StructOpt;
 
