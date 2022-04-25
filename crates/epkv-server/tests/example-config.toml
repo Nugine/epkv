@@ -1,0 +1,15 @@
+[server]
+listen_peer_addr = "127.0.0.1:8010"
+listen_client_addr = "127.0.0.1:8011"
+monitor_addr = "127.0.0.1:9000"
+
+[replica.preaccept_timeout]
+default_us = 1000
+enable_adaptive = true
+
+[replica.recover_timeout]
+default_us = 1000
+enable_adaptive = true
+
+[replica.sync_limits]
+max_instance_num = 512

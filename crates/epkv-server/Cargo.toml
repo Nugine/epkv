@@ -7,3 +7,8 @@ edition = "2021"
 anyhow = "1.0.57"
 camino = "1.0.7"
 clap = { version = "3.1.12", features = ["derive"] }
+epkv-epaxos = { path = "../epkv-epaxos" }
+epkv-rocks = { path = "../epkv-rocks" }
+epkv-utils = { path = "../epkv-utils" }
+serde = { version = "1.0.136", features = ["derive", "rc"] }
+toml = "0.5.9"
