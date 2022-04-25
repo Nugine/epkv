@@ -12,7 +12,6 @@ sync-version:
 
 fmt:
     #!/bin/bash -ex
-    cd {{justfile_directory()}}
     cargo fmt
     cargo sort -w > /dev/null
 
