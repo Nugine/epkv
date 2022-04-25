@@ -31,6 +31,7 @@ pub mod onemap;
 pub mod radixmap;
 pub mod stepper;
 pub mod time;
+pub mod tracing;
 pub mod vecmap;
 pub mod vecset;
 pub mod watermark;

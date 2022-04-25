@@ -10,12 +10,14 @@
 
 use epkv_server::config::Config;
 use epkv_server::Server;
+use epkv_utils::tracing::setup_tracing;
 
 use std::fs;
 
 use anyhow::Result;
 use camino::Utf8PathBuf;
 use clap::StructOpt;
+use tracing::debug;
 
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
@@ -26,12 +28,22 @@ struct Opt {
     config: Utf8PathBuf,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let opt = Opt::parse();
+
+    setup_tracing();
+
     let config: Config = {
         let content = fs::read_to_string(&opt.config)?;
         toml::from_str(&content)?
     };
+
+    debug!(?config);
+
+    run(config)
+}
+
+#[tokio::main]
+async fn run(config: Config) -> Result<()> {
     Server::run(config).await
 }
