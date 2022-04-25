@@ -293,4 +293,10 @@ where
         self.log_store.save_bounds(attr_bounds, saved_status_bounds).await?;
         Ok(())
     }
+
+    pub fn retire_instance(&mut self, id: InstanceId) {
+        if self.ins_cache.remove(&id).is_none() {
+            self.pbal_cache.remove(&id);
+        }
+    }
 }

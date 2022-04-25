@@ -1687,6 +1687,14 @@ where
             self.graph.retire_node(id);
         }
 
+        {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+            for &(id, _) in &scc {
+                s.log.retire_instance(id);
+            }
+        }
+
         Ok(())
     }
 
