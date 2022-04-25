@@ -8,6 +8,8 @@ use std::slice;
 
 use serde::{Deserialize, Serialize};
 
+use crate::vecset::VecSet;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(from = "Vec<(K, V)>")]
 pub struct VecMap<K: Ord, V>(Vec<(K, V)>);
@@ -271,6 +273,34 @@ impl<K: Ord, V> VecMap<K, V> {
     pub fn pop_max(&mut self) -> Option<(K, V)> {
         self.0.pop()
     }
+
+    #[inline]
+    pub fn apply(&self, keys: &VecSet<K>, mut f: impl FnMut(&V)) {
+        unsafe {
+            let mut p1 = self.0.as_ptr();
+            let e1 = p1.add(self.len());
+            let mut p2 = keys.as_slice().as_ptr();
+            let e2 = p2.add(keys.len());
+
+            while p1 < e1 && p2 < e2 {
+                let (k1, v) = &*p1;
+                let k2 = &*p2;
+                match Ord::cmp(k1, k2) {
+                    Ordering::Less => {
+                        p1 = p1.add(1);
+                    }
+                    Ordering::Greater => {
+                        p2 = p2.add(1);
+                    }
+                    Ordering::Equal => {
+                        f(v);
+                        p1 = p1.add(1);
+                        p2 = p2.add(1);
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl<K: Ord, V> From<Vec<(K, V)>> for VecMap<K, V> {
@@ -389,5 +419,29 @@ mod tests {
         assert!(m.get(&4).is_none());
         assert!(m.get(&5).is_some());
         assert!(m.get(&7).is_some());
+    }
+
+    #[test]
+    fn apply() {
+        let map = VecMap::from_iter([(1, 2), (3, 4), (5, 6)]);
+
+        {
+            let keys = VecSet::new();
+            let mut ans = Vec::new();
+            map.apply(&keys, |&v| ans.push(v));
+            assert!(ans.is_empty());
+        }
+        {
+            let keys = VecSet::from_single(3);
+            let mut ans = Vec::new();
+            map.apply(&keys, |&v| ans.push(v));
+            assert_eq!(ans, [4]);
+        }
+        {
+            let keys = VecSet::from_iter([0, 1, 2, 3, 4, 5, 6]);
+            let mut ans = Vec::new();
+            map.apply(&keys, |&v| ans.push(v));
+            assert_eq!(ans, [2, 4, 6]);
+        }
     }
 }
