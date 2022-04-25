@@ -8,8 +8,14 @@ default_us = 1000
 enable_adaptive = true
 
 [replica.recover_timeout]
-default_us = 1000
+default_us = 1000      # 1 ms
 enable_adaptive = true
 
 [replica.sync_limits]
 max_instance_num = 512
+
+[network]
+inbound_chan_size = 4096
+outbound_chan_size = 256
+reconnect_interval_us = 10000 # 10 ms
+max_frame_length = 16777216   # 16 MiB
