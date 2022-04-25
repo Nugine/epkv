@@ -3,14 +3,14 @@ pub mod net;
 
 // -----------------------------------------------------------------------------
 
-use std::sync::Arc;
+use self::config::Config;
 
 use anyhow::Result;
 
 pub struct Server {}
 
 impl Server {
-    pub async fn new() -> Result<Arc<Self>> {
+    pub async fn run(config: Config) -> Result<()> {
         todo!()
     }
 }

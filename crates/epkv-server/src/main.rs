@@ -8,11 +8,17 @@
 )]
 #![warn(clippy::todo)]
 
-#[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+use epkv_server::config::Config;
+use epkv_server::Server;
 
+use std::fs;
+
+use anyhow::Result;
 use camino::Utf8PathBuf;
 use clap::StructOpt;
+
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[derive(Debug, clap::Parser)]
 struct Opt {
@@ -20,7 +26,12 @@ struct Opt {
     config: Utf8PathBuf,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     let opt = Opt::parse();
-    println!("{:?}", opt);
+    let config: Config = {
+        let content = fs::read_to_string(&opt.config)?;
+        toml::from_str(&content)?
+    };
+    Server::run(config).await
 }
