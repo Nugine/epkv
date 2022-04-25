@@ -877,11 +877,17 @@ where
             {
                 let sender = self.rid;
                 let epoch = self.epoch.load();
-
                 self.net.broadcast(
                     targets,
                     Message::Prepare(Prepare { sender, epoch, id, pbal, known }),
-                )
+                );
+
+                let this = Arc::clone(self);
+                spawn(async move {
+                    if let Err(err) = this.handle_prepare(Prepare { sender, epoch, id, pbal, known }).await {
+                        error!(?id, ?err)
+                    }
+                });
             }
 
             self.spawn_recover_timeout(id, avg_rtt);
