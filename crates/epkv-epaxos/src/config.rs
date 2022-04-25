@@ -12,38 +12,36 @@ pub struct ReplicaConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PreAcceptTimeout {
-    pub default: Duration,
+    /// default timeout, in microseconds
+    pub default_us: u64,
     pub enable_adaptive: bool,
 }
 
 impl PreAcceptTimeout {
     pub fn with(&self, avg_rtt: Option<Duration>, f: impl FnOnce(Duration) -> Duration) -> Duration {
+        let default = Duration::from_micros(self.default_us);
         if self.enable_adaptive {
-            match avg_rtt {
-                Some(d) => f(d),
-                None => self.default,
-            }
+            avg_rtt.map_or(default, f)
         } else {
-            self.default
+            default
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RecoverTimeout {
-    pub default: Duration,
+    /// default timeout, in microseconds
+    pub default_us: u64,
     pub enable_adaptive: bool,
 }
 
 impl RecoverTimeout {
     pub fn with(&self, avg_rtt: Option<Duration>, f: impl FnOnce(Duration) -> Duration) -> Duration {
+        let default = Duration::from_micros(self.default_us);
         if self.enable_adaptive {
-            match avg_rtt {
-                Some(d) => f(d),
-                None => self.default,
-            }
+            avg_rtt.map_or(default, f)
         } else {
-            self.default
+            default
         }
     }
 }

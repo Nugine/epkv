@@ -1060,7 +1060,7 @@ where
         let duration = conf.with(avg_rtt, |d| {
             let rate: f64 = rand::thread_rng().gen_range(4.0..6.0);
             let delta = Duration::from_secs_f64(d.as_secs_f64() * rate);
-            conf.default + delta
+            Duration::from_micros(conf.default_us) + delta
         });
         let this = Arc::clone(self);
         spawn(async move {
