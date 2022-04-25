@@ -63,7 +63,7 @@ impl<K: Ord, V> VecMap<K, V> {
 
     #[inline]
     #[must_use]
-    pub fn contains<Q>(&self, key: &Q) -> bool
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
