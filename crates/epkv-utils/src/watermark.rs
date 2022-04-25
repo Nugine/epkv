@@ -1,4 +1,5 @@
 use crate::asc::Asc;
+use crate::lock::with_mutex;
 use crate::radixmap::RadixMap;
 
 use std::sync::atomic::{AtomicU64, Ordering::*};
@@ -30,9 +31,9 @@ impl WaterMark {
     }
 
     fn flush_queue(&self, lv: u64) {
-        let mut guard = self.queue.lock();
-        let q = &mut *guard;
-        q.drain_less_equal(lv, |_, n| n.notify_waiters())
+        with_mutex(&self.queue, |q: _| {
+            q.drain_less_equal(lv, |_, n| n.notify_waiters())
+        })
     }
 
     #[inline]
@@ -44,11 +45,10 @@ impl WaterMark {
     #[inline]
     #[must_use]
     pub fn until(&self, lv: u64) -> WaterMarkUntil<'_> {
-        let mut guard = self.queue.lock();
-        let q = &mut *guard;
-        let (_, n) = q.init_with(lv, || Asc::new(Notify::new()));
-        let notify = Asc::clone(n);
-        drop(guard);
+        let notify = with_mutex(&self.queue, |q| {
+            let (_, n) = q.init_with(lv, || Asc::new(Notify::new()));
+            Asc::clone(n)
+        });
         WaterMarkUntil { watermark: self, until: lv, notify }
     }
 }

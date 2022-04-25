@@ -9,6 +9,7 @@ use crate::status::ExecStatus;
 use epkv_utils::asc::Asc;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::cmp::min_assign;
+use epkv_utils::lock::with_mutex;
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::watermark::WaterMark;
 
@@ -76,14 +77,11 @@ impl<C> Graph<C> {
 
         {
             let rid = id.0;
-            let committed_up_to = {
-                let mut guard = self.status_bounds.lock();
-                let status_bounds = &mut *guard;
-                status_bounds.as_mut().get_mut(&rid).map(|m| {
-                    m.committed.update_bound();
-                    m.committed.bound()
-                })
-            };
+            let committed_up_to = with_mutex(&self.status_bounds, |status_bounds: _| {
+                let m = status_bounds.as_mut().get_mut(&rid)?;
+                m.committed.update_bound();
+                Some(m.committed.bound())
+            });
 
             if let Some(lv) = committed_up_to {
                 let wm = self.watermark(rid);
@@ -148,11 +146,9 @@ impl<C> Graph<C> {
 
     #[must_use]
     pub fn watermark(&self, rid: ReplicaId) -> Asc<WaterMark> {
-        let mut guard = self.status_bounds.lock();
-        let status_bounds = &mut *guard;
-        let bound = status_bounds.as_ref().get(&rid).map(|m| m.committed.bound());
-        drop(guard);
-
+        let bound = with_mutex(&self.status_bounds, |status_bounds: _| {
+            status_bounds.as_ref().get(&rid).map(|m: _| m.committed.bound())
+        });
         let gen = || Asc::new(WaterMark::new(bound.unwrap_or(0)));
         self.watermarks.entry(rid).or_insert_with(gen).clone()
     }

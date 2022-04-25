@@ -26,6 +26,7 @@ pub mod cmp;
 pub mod codec;
 pub mod flag_group;
 pub mod iter;
+pub mod lock;
 pub mod onemap;
 pub mod radixmap;
 pub mod stepper;

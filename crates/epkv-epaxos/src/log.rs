@@ -13,6 +13,7 @@ use std::ops::Not;
 use epkv_utils::asc::Asc;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::iter::{copied_map_collect, map_collect};
+use epkv_utils::lock::with_mutex;
 use epkv_utils::vecmap::VecMap;
 
 use anyhow::Result;
@@ -277,16 +278,14 @@ where
     }
 
     pub async fn save_bounds(&mut self) -> Result<()> {
-        let saved_status_bounds = {
-            let mut guard = self.status_bounds.lock();
-            let status_bounds = &mut *guard;
+        let saved_status_bounds = with_mutex(&self.status_bounds, |status_bounds: _| {
             status_bounds.update_bounds();
             SavedStatusBounds {
                 known_up_to: status_bounds.known_up_to(),
                 committed_up_to: status_bounds.committed_up_to(),
                 executed_up_to: status_bounds.executed_up_to(),
             }
-        };
+        });
         let attr_bounds = AttrBounds {
             max_seq: self.max_seq.any,
             max_lids: map_collect(&self.max_lid_map, |&(rid, ref m)| (rid, m.any)),
