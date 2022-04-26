@@ -131,6 +131,7 @@ where
 }
 
 impl TcpNetwork {
+    #[must_use]
     pub fn spawn_connector(addr: SocketAddr, config: &NetworkConfig) -> Connection {
         let chan_size = config.outbound_chan_size;
         let reconnect_interval = Duration::from_micros(config.reconnect_interval_us);
