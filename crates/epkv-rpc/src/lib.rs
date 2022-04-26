@@ -1,7 +1,13 @@
+#![feature(generic_associated_types)]
+#![feature(result_option_inspect)]
+
+use epkv_utils::clone;
 use epkv_utils::codec::{self, bytes_sink, bytes_stream};
 
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
@@ -11,14 +17,15 @@ use futures_util::pin_mut;
 use futures_util::sink::SinkExt;
 use futures_util::stream::StreamExt;
 
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::spawn;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::{self, error::Elapsed};
 
 use anyhow::{anyhow, Context as _, Result};
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
+use wgp::Working;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcRequest<A> {
@@ -256,4 +263,99 @@ where
             }
         }
     }
+}
+
+pub trait Service<A: Send + 'static>: Send + Sync + 'static {
+    type Output: Send + 'static;
+    type Future<'a>: Future<Output = Self::Output> + Send + 'a;
+    fn call(&self, args: A) -> Self::Future<'_>;
+
+    fn is_waiting_shutdown(&self) -> bool;
+}
+
+pub async fn serve<S, A>(
+    service: Arc<S>,
+    listener: TcpListener,
+    max_frame_length: usize,
+    working: Working,
+) -> Result<()>
+where
+    S: Service<A>,
+    A: DeserializeOwned + Send + 'static,
+    <S as Service<A>>::Output: Serialize + Send + 'static,
+{
+    loop {
+        if service.is_waiting_shutdown() {
+            break;
+        }
+
+        let (tcp, _) = listener.accept().await.inspect_err(|err| error!(?err, "tcp accept error"))?;
+
+        if service.is_waiting_shutdown() {
+            break;
+        }
+
+        let (reader, writer) = tcp.into_split();
+        let mut remote_stream: _ = bytes_stream(reader, max_frame_length);
+        let mut remote_sink: _ = bytes_sink(writer, max_frame_length);
+        let (res_tx, mut res_rx): _ = mpsc::unbounded_channel();
+
+        {
+            clone!(service, working);
+            spawn(async move {
+                if service.is_waiting_shutdown() {
+                    return Ok(());
+                }
+                while let Some(result) = remote_stream.next().await {
+                    if service.is_waiting_shutdown() {
+                        debug!("drop rpc request because of waiting shutdown");
+                        break; // ASK: is it ok?
+                    }
+
+                    let bytes = result.inspect_err(|err| error!(?err, "remote rx error"))?;
+
+                    clone!(service, working, res_tx);
+                    spawn(async move {
+                        match codec::deserialize_owned::<RpcRequest<A>>(&*bytes) {
+                            Ok(req) => {
+                                let output = service.call(req.args).await;
+                                let rpc_id = req.rpc_id;
+                                let res = RpcResponse { rpc_id, output };
+                                let _ = res_tx.send(res);
+                            }
+                            Err(err) => {
+                                error!(?err, "codec deserialize error");
+                            }
+                        }
+                        drop(working);
+                    });
+                }
+
+                anyhow::Result::<()>::Ok(())
+            })
+        };
+
+        clone!(working);
+        spawn(async move {
+            while let Some(res) = res_rx.recv().await {
+                let bytes = match codec::serialize(&res) {
+                    Ok(x) => x,
+                    Err(err) => {
+                        error!(?err, "codec serialize error");
+                        continue;
+                    }
+                };
+                match remote_sink.send(bytes).await {
+                    Ok(()) => {}
+                    Err(err) => {
+                        error!(?err, "remote tx error");
+                        break;
+                    }
+                }
+            }
+            drop(working);
+        });
+    }
+
+    Ok(())
 }
