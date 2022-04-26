@@ -1,3 +1,4 @@
+use camino::Utf8PathBuf;
 use epkv_epaxos::config::ReplicaConfig;
 
 use std::net::SocketAddr;
@@ -10,6 +11,8 @@ pub struct Config {
     pub server: ServerConfig,
     pub replica: ReplicaConfig,
     pub network: NetworkConfig,
+    pub log_db: LogDbConfig,
+    pub data_db: DataDbConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,4 +29,14 @@ pub struct NetworkConfig {
     pub outbound_chan_size: usize,
     pub reconnect_interval_us: u64,
     pub max_frame_length: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LogDbConfig {
+    pub path: Utf8PathBuf,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DataDbConfig {
+    pub path: Utf8PathBuf,
 }

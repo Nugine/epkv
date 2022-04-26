@@ -47,3 +47,9 @@ udeps:
 doc:
     cargo doc -p rocksdb --no-deps
     cargo doc --workspace --no-deps --open
+
+run-example-server: build
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+    export RUST_LOG=epkv_server=debug,epkv_rocks=debug,epkv_epaxos=debug
+    ./target/release/epkv-server --config crates/epkv-server/tests/example-config.toml
