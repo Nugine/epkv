@@ -5,7 +5,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.56"
+anyhow = "1.0.57"
 async-trait = "0.1.53"
 dashmap = "5.2.0"
 epkv-utils = { path = "../epkv-utils" }
