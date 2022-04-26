@@ -13,10 +13,12 @@ use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use anyhow::Result;
 use bytes::Bytes;
 use futures_util::future::join_all;
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::RwLock;
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::spawn;
@@ -39,8 +41,9 @@ impl Drop for Connection {
 }
 
 impl Listener {
-    pub async fn recv(&mut self) -> Option<Bytes> {
-        self.rx.recv().await
+    pub async fn recv<C: DeserializeOwned>(&mut self) -> Option<Result<Message<C>>> {
+        let bytes = self.rx.recv().await?;
+        Some(codec::deserialize_owned(&*bytes))
     }
 }
 
