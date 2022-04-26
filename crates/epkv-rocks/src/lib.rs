@@ -7,6 +7,9 @@
     clippy::must_use_candidate
 )]
 #![warn(clippy::todo)]
+//
+#![feature(generic_associated_types)]
+#![feature(type_alias_impl_trait)]
 
 pub mod cmd {
     mod kinds;

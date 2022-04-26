@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.57"
-async-trait = "0.1.53"
 bytemuck = { version = "1.9.1", features = ["derive"] }
 bytes = { version = "1.1.0", features = ["serde"] }
 camino = { version = "1.0.7", features = ["serde"] }

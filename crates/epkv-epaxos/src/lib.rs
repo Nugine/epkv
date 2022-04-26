@@ -7,6 +7,8 @@
     clippy::must_use_candidate
 )]
 #![warn(clippy::todo)]
+//
+#![feature(generic_associated_types)]
 
 pub mod bounds;
 pub mod cmd;

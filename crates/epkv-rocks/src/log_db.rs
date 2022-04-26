@@ -4,7 +4,6 @@ use crate::cmd::BatchedCommand;
 use crate::db_utils::{get_value, put_small_value, put_value};
 use crate::log_key::{GlobalFieldKey, InstanceFieldKey};
 
-use async_trait::async_trait;
 use epkv_epaxos::bounds::{AttrBounds, SavedStatusBounds, StatusBounds, StatusMap};
 use epkv_epaxos::deps::Deps;
 use epkv_epaxos::id::{Ballot, InstanceId, LocalInstanceId, ReplicaId, Seq};
@@ -18,6 +17,7 @@ use epkv_utils::onemap::OneMap;
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
+use std::future::Future;
 use std::ops::Not;
 use std::sync::Arc;
 
@@ -304,48 +304,71 @@ impl LogDb {
     }
 }
 
-#[async_trait]
+type SaveFuture = impl Future<Output = Result<()>> + Send + 'static;
+type LoadFuture = impl Future<Output = Result<Option<Instance<BatchedCommand>>>> + Send + 'static;
+type SavePbalFuture = impl Future<Output = Result<()>> + Send + 'static;
+type LoadPbalFuture = impl Future<Output = Result<Option<Ballot>>> + Send + 'static;
+type SaveBoundsFuture = impl Future<Output = Result<()>> + Send + 'static;
+type LoadBoundsFuture = impl Future<Output = Result<(AttrBounds, StatusBounds)>> + Send + 'static;
+type UpdateStatusFuture = impl Future<Output = Result<()>> + Send + 'static;
+
 impl LogStore<BatchedCommand> for Arc<LogDb> {
-    async fn save(&mut self, id: InstanceId, ins: Instance<BatchedCommand>, mode: UpdateMode) -> Result<()> {
+    type SaveFuture<'a> = SaveFuture;
+    fn save(
+        &mut self,
+        id: InstanceId,
+        ins: Instance<BatchedCommand>,
+        mode: UpdateMode,
+    ) -> Self::SaveFuture<'_> {
         let this = Arc::clone(self);
         let task = move || LogDb::save(&this, id, ins, mode);
-        tokio::task::spawn_blocking(task).await.unwrap()
+        async move { tokio::task::spawn_blocking(task).await.unwrap() }
     }
 
-    async fn load(&mut self, id: InstanceId) -> Result<Option<Instance<BatchedCommand>>> {
+    type LoadFuture<'a> = LoadFuture;
+    fn load(&mut self, id: InstanceId) -> Self::LoadFuture<'_> {
         let this = Arc::clone(self);
         let task = move || LogDb::load(&this, id);
-        tokio::task::spawn_blocking(task).await.unwrap()
+        async move { tokio::task::spawn_blocking(task).await.unwrap() }
     }
 
-    async fn load_pbal(&mut self, id: InstanceId) -> Result<Option<Ballot>> {
-        let this = Arc::clone(self);
-        let task = move || LogDb::load_pbal(&this, id);
-        tokio::task::spawn_blocking(task).await.unwrap()
-    }
-
-    async fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Result<()> {
+    type SavePbalFuture<'a> = SavePbalFuture;
+    fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Self::SavePbalFuture<'_> {
         let this = Arc::clone(self);
         let task = move || LogDb::save_pbal(&this, id, pbal);
-        tokio::task::spawn_blocking(task).await.unwrap()
+        async move { tokio::task::spawn_blocking(task).await.unwrap() }
     }
 
-    async fn load_bounds(&mut self) -> Result<(AttrBounds, StatusBounds)> {
+    type LoadPbalFuture<'a> = LoadPbalFuture;
+    fn load_pbal(&mut self, id: InstanceId) -> Self::LoadPbalFuture<'_> {
         let this = Arc::clone(self);
-        let task = move || LogDb::load_bounds(&this);
-        tokio::task::spawn_blocking(task).await.unwrap()
+        let task = move || LogDb::load_pbal(&this, id);
+        async move { tokio::task::spawn_blocking(task).await.unwrap() }
     }
 
-    async fn save_bounds(&mut self, attr_bounds: AttrBounds, status_bounds: SavedStatusBounds) -> Result<()> {
+    type SaveBoundsFuture<'a> = SaveBoundsFuture;
+    fn save_bounds(
+        &mut self,
+        attr_bounds: AttrBounds,
+        status_bounds: SavedStatusBounds,
+    ) -> Self::SaveBoundsFuture<'_> {
         let this = Arc::clone(self);
         let task = move || LogDb::save_bounds(&this, attr_bounds, status_bounds);
-        tokio::task::spawn_blocking(task).await.unwrap()
+        async move { tokio::task::spawn_blocking(task).await.unwrap() }
     }
 
-    async fn update_status(&mut self, id: InstanceId, status: Status) -> Result<()> {
+    type LoadBoundsFuture<'a> = LoadBoundsFuture;
+    fn load_bounds(&mut self) -> Self::LoadBoundsFuture<'_> {
+        let this = Arc::clone(self);
+        let task = move || LogDb::load_bounds(&this);
+        async move { tokio::task::spawn_blocking(task).await.unwrap() }
+    }
+
+    type UpdateStatusFuture<'a> = UpdateStatusFuture;
+    fn update_status(&mut self, id: InstanceId, status: Status) -> Self::UpdateStatusFuture<'_> {
         let this = Arc::clone(self);
         let task = move || LogDb::update_status(&this, id, status);
-        tokio::task::spawn_blocking(task).await.unwrap()
+        async move { tokio::task::spawn_blocking(task).await.unwrap() }
     }
 }
 

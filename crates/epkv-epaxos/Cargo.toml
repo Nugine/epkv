@@ -6,7 +6,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.57"
-async-trait = "0.1.53"
 dashmap = "5.2.0"
 epkv-utils = { path = "../epkv-utils" }
 fnv = "1.0.7"

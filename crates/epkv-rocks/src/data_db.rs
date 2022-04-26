@@ -6,10 +6,10 @@ use epkv_epaxos::id::InstanceId;
 use epkv_epaxos::store::DataStore;
 use epkv_utils::asc::Asc;
 
+use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::Result;
-use async_trait::async_trait;
 use camino::Utf8Path;
 use rocksdb::DB;
 
@@ -65,15 +65,17 @@ impl DataDb {
     }
 }
 
-#[async_trait]
+type IssueFuture = impl Future<Output = Result<()>> + Send + 'static;
+
 impl DataStore<BatchedCommand> for Arc<DataDb> {
-    async fn issue(&self, _: InstanceId, cmd: BatchedCommand, notify: Asc<ExecNotify>) -> Result<()> {
+    type Future<'a> = IssueFuture;
+    fn issue(&self, _: InstanceId, cmd: BatchedCommand, notify: Asc<ExecNotify>) -> Self::Future<'_> {
         let this = Arc::clone(self);
         let task = move || {
             let result = this.batched_execute(cmd);
             notify.notify_executed();
             result
         };
-        tokio::task::spawn_blocking(task).await.unwrap()
+        async move { tokio::task::spawn_blocking(task).await.unwrap() }
     }
 }
