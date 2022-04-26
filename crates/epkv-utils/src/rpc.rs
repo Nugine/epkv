@@ -271,7 +271,7 @@ pub trait Service<A: Send + 'static>: Send + Sync + 'static {
     type Future<'a>: Future<Output = Self::Output> + Send + 'a;
     fn call(&self, args: A) -> Self::Future<'_>;
 
-    fn is_waiting_shutdown(&self) -> bool;
+    fn needs_stop(&self) -> bool;
 }
 
 #[inline]
@@ -287,13 +287,13 @@ where
     <S as Service<A>>::Output: Serialize + Send + 'static,
 {
     loop {
-        if service.is_waiting_shutdown() {
+        if service.needs_stop() {
             break;
         }
 
         let (tcp, _) = listener.accept().await.inspect_err(|err| error!(?err, "tcp accept error"))?;
 
-        if service.is_waiting_shutdown() {
+        if service.needs_stop() {
             break;
         }
 
@@ -305,11 +305,11 @@ where
         {
             clone!(service, working);
             spawn(async move {
-                if service.is_waiting_shutdown() {
+                if service.needs_stop() {
                     return Ok(());
                 }
                 while let Some(result) = remote_stream.next().await {
-                    if service.is_waiting_shutdown() {
+                    if service.needs_stop() {
                         debug!("drop rpc request because of waiting shutdown");
                         break; // ASK: is it ok?
                     }
