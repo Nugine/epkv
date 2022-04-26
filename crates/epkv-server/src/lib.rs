@@ -60,14 +60,14 @@ impl Server {
 
         let server = Arc::new(Server { log_db, data_db, waiting_shutdown, waitgroup });
 
-        {
+        let serve_peer_task = {
             clone!(server);
             spawn(server.serve_peer())
         };
 
-        {
+        let serve_client_task = {
             clone!(server);
-            spawn(server.serve_client());
+            spawn(server.serve_client())
         };
 
         {
@@ -78,6 +78,8 @@ impl Server {
 
         {
             server.set_waiting_shutdown();
+            serve_peer_task.abort();
+            serve_client_task.abort();
 
             let task_count = server.waitgroup.count();
             debug!(?task_count, "waiting running tasks");
