@@ -284,9 +284,14 @@ dependencies = [
 name = "epkv-rpc"
 version = "0.1.0-dev"
 dependencies = [
+ "anyhow",
+ "epkv-utils",
+ "fnv",
+ "futures-util",
+ "scopeguard",
  "serde",
  "tokio",
- "tokio-util",
+ "tracing",
 ]
 
 [[package]]
