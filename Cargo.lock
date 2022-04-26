@@ -281,6 +281,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "epkv-rpc"
+version = "0.1.0-dev"
+dependencies = [
+ "serde",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "epkv-server"
 version = "0.1.0-dev"
 dependencies = [
