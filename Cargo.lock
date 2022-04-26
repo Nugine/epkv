@@ -305,7 +305,6 @@ dependencies = [
  "serde",
  "tikv-jemallocator",
  "tokio",
- "tokio-util",
  "toml",
  "tracing",
 ]
@@ -325,6 +324,7 @@ dependencies = [
  "roaring",
  "serde",
  "tokio",
+ "tokio-util",
  "tracing-subscriber",
  "triomphe",
 ]

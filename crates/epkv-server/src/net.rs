@@ -4,7 +4,7 @@ use epkv_epaxos::id::ReplicaId;
 use epkv_epaxos::msg::Message;
 use epkv_epaxos::net::Network;
 
-use epkv_utils::codec;
+use epkv_utils::codec::{self, bytes_sink, bytes_stream};
 use epkv_utils::lock::{with_read_lock, with_write_lock};
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::future::join_all;
-use futures_util::{Sink, SinkExt, Stream, StreamExt, TryStreamExt};
+use futures_util::{SinkExt, StreamExt};
 use parking_lot::RwLock;
 use serde::Serialize;
 use tokio::net::{TcpListener, TcpStream};
@@ -23,7 +23,6 @@ use tokio::spawn;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tokio_util::codec::LengthDelimitedCodec;
 use tracing::{debug, error};
 
 pub struct Connection {
@@ -105,29 +104,6 @@ where
             let _ = conns.init_with(rid, || Self::spawn_connector(address, &self.config));
         })
     }
-}
-
-fn bytes_stream<R>(
-    reader: R,
-    max_frame_length: usize,
-) -> impl Stream<Item = io::Result<Bytes>> + Send + Unpin + 'static
-where
-    R: tokio::io::AsyncRead + Send + Unpin + 'static,
-{
-    LengthDelimitedCodec::builder()
-        .max_frame_length(max_frame_length)
-        .new_read(reader)
-        .map_ok(|bytes| bytes.freeze())
-}
-
-fn bytes_sink<W>(
-    writer: W,
-    max_frame_length: usize,
-) -> impl Sink<Bytes, Error = io::Error> + Send + Unpin + 'static
-where
-    W: tokio::io::AsyncWrite + Send + Unpin + 'static,
-{
-    LengthDelimitedCodec::builder().max_frame_length(max_frame_length).new_write(writer)
 }
 
 impl TcpNetwork {

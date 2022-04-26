@@ -3,8 +3,10 @@ use std::io;
 use anyhow::Result;
 use bincode::Options;
 use bytes::Bytes;
+use futures_util::{Sink, Stream, TryStreamExt};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use tokio_util::codec::LengthDelimitedCodec;
 
 #[inline]
 pub fn serialize_into<W, T>(writer: W, value: &T) -> Result<()>
@@ -37,4 +39,29 @@ where
     T: Serialize,
 {
     bincode::DefaultOptions::new().serialized_size(value).map_err(From::from)
+}
+
+#[inline]
+pub fn bytes_stream<R>(
+    reader: R,
+    max_frame_length: usize,
+) -> impl Stream<Item = io::Result<Bytes>> + Send + Unpin + 'static
+where
+    R: tokio::io::AsyncRead + Send + Unpin + 'static,
+{
+    LengthDelimitedCodec::builder()
+        .max_frame_length(max_frame_length)
+        .new_read(reader)
+        .map_ok(|bytes| bytes.freeze())
+}
+
+#[inline]
+pub fn bytes_sink<W>(
+    writer: W,
+    max_frame_length: usize,
+) -> impl Sink<Bytes, Error = io::Error> + Send + Unpin + 'static
+where
+    W: tokio::io::AsyncWrite + Send + Unpin + 'static,
+{
+    LengthDelimitedCodec::builder().max_frame_length(max_frame_length).new_write(writer)
 }
