@@ -1,8 +1,5 @@
-#![feature(generic_associated_types)]
-#![feature(result_option_inspect)]
-
-use epkv_utils::clone;
-use epkv_utils::codec::{self, bytes_sink, bytes_stream};
+use crate::clone;
+use crate::codec::{self, bytes_sink, bytes_stream};
 
 use std::future::Future;
 use std::net::SocketAddr;
@@ -57,6 +54,7 @@ enum Operation<A, O> {
 }
 
 impl<A, O> Drop for RpcConnection<A, O> {
+    #[inline]
     fn drop(&mut self) {
         self.task.abort();
     }
@@ -67,6 +65,7 @@ where
     A: Serialize + Send + Unpin + 'static,
     O: DeserializeOwned + Send + Unpin + 'static,
 {
+    #[inline]
     pub async fn connect(
         remote_addr: SocketAddr,
         max_frame_length: usize,
@@ -80,6 +79,7 @@ where
         Ok(Self { next_rpc_id, op_tx, task })
     }
 
+    #[inline]
     pub async fn call(&self, args: A) -> Result<O> {
         let (callback, handle) = oneshot::channel();
         let rpc_id = self.next_rpc_id.fetch_add(1, Ordering::Relaxed);
@@ -106,6 +106,7 @@ where
         result
     }
 
+    #[inline]
     pub async fn call_timeout(self, args: A, timeout: Duration) -> Result<Result<O>, Elapsed> {
         time::timeout(timeout, self.call(args)).await
     }
@@ -273,6 +274,7 @@ pub trait Service<A: Send + 'static>: Send + Sync + 'static {
     fn is_waiting_shutdown(&self) -> bool;
 }
 
+#[inline]
 pub async fn serve<S, A>(
     service: Arc<S>,
     listener: TcpListener,

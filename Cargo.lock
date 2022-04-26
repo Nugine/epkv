@@ -268,21 +268,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "epkv-rpc"
-version = "0.1.0-dev"
-dependencies = [
- "anyhow",
- "epkv-utils",
- "fnv",
- "futures-util",
- "scopeguard",
- "serde",
- "tokio",
- "tracing",
- "wgp",
-]
-
-[[package]]
 name = "epkv-server"
 version = "0.1.0-dev"
 dependencies = [
@@ -310,16 +295,20 @@ dependencies = [
  "bincode",
  "bytemuck",
  "bytes",
+ "fnv",
  "futures-util",
  "minstant",
  "once_cell",
  "parking_lot",
  "roaring",
+ "scopeguard",
  "serde",
  "tokio",
  "tokio-util",
+ "tracing",
  "tracing-subscriber",
  "triomphe",
+ "wgp",
 ]
 
 [[package]]
