@@ -123,6 +123,8 @@ impl TcpNetwork {
 
             'drive: loop {
                 let mut sink = loop {
+                    // FIXME: check rx.is_closed()
+                    // https://github.com/tokio-rs/tokio/issues/4638
                     match TcpStream::connect(addr).await {
                         Ok(tcp) => {
                             break bytes_sink(tcp, max_frame_length);
