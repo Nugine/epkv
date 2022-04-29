@@ -23,7 +23,7 @@ pub struct ServerConfig {
     pub monitor_addr: SocketAddr,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkConfig {
     pub inbound_chan_size: usize,
     pub outbound_chan_size: usize,
