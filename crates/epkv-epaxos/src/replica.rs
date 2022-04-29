@@ -25,7 +25,6 @@ use epkv_utils::vecset::VecSet;
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::mem;
 use std::net::SocketAddr;
 use std::ops::Not;
@@ -84,28 +83,12 @@ where
     sync_id_head: Head<SyncId>,
 }
 
-pub struct ReplicaBuilder<C, L, D, N> {
-    pub rid: Option<ReplicaId>,
-    pub public_peer_addr: Option<SocketAddr>,
-    pub epoch: Option<Epoch>,
-    pub peers: Option<VecMap<ReplicaId, SocketAddr>>,
-    pub config: Option<ReplicaConfig>,
-    pub log_store: Option<L>,
-    pub data_store: Option<D>,
-    pub net: Option<N>,
-    _marker: PhantomData<C>,
-}
-
-impl<C, L, D, N> ReplicaBuilder<C, L, D, N>
-where
-    C: CommandLike,
-    L: LogStore<C>,
-    D: DataStore<C>,
-    N: Network<C>,
-{
-    pub async fn build(self) -> Result<Arc<Replica<C, L, D, N>>> {
-        Replica::new(self).await
-    }
+pub struct ReplicaMeta {
+    pub rid: ReplicaId,
+    pub epoch: Epoch,
+    pub peers: VecMap<ReplicaId, SocketAddr>,
+    pub public_peer_addr: SocketAddr,
+    pub config: ReplicaConfig,
 }
 
 impl<C, L, D, N> Replica<C, L, D, N>
@@ -115,30 +98,12 @@ where
     D: DataStore<C>,
     N: Network<C>,
 {
-    #[must_use]
-    pub fn builder() -> ReplicaBuilder<C, L, D, N> {
-        ReplicaBuilder {
-            rid: None,
-            public_peer_addr: None,
-            epoch: None,
-            peers: None,
-            config: None,
-            log_store: None,
-            data_store: None,
-            net: None,
-            _marker: PhantomData,
-        }
-    }
-
-    async fn new(builder: ReplicaBuilder<C, L, D, N>) -> Result<Arc<Self>> {
-        let rid = builder.rid.unwrap();
-        let public_peer_addr = builder.public_peer_addr.unwrap();
-        let epoch = builder.epoch.unwrap();
-        let peers = builder.peers.unwrap();
-        let config = builder.config.unwrap();
-        let mut log_store = builder.log_store.unwrap();
-        let data_store = builder.data_store.unwrap();
-        let net = builder.net.unwrap();
+    pub async fn new(meta: ReplicaMeta, mut log_store: L, data_store: D, net: N) -> Result<Arc<Self>> {
+        let rid = meta.rid;
+        let public_peer_addr = meta.public_peer_addr;
+        let epoch = meta.epoch;
+        let peers = meta.peers;
+        let config = meta.config;
 
         let cluster_size = peers.len().wrapping_add(1);
         let addr_set: VecSet<_> = map_collect(&peers, |&(_, a)| a);
