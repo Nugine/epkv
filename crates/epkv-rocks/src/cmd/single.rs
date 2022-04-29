@@ -1,10 +1,9 @@
 use super::kinds::*;
 use super::notify::CommandNotify;
 
-use crate::kv::BytesKey;
-
 use epkv_utils::asc::Asc;
 
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -60,7 +59,7 @@ impl MutableCommand {
         Self { kind: CommandKind::Fence(Fence {}), notify: None }
     }
 
-    pub fn fill_keys(&self, keys: &mut Vec<BytesKey>) {
+    pub fn fill_keys(&self, keys: &mut Vec<Bytes>) {
         match self.kind {
             CommandKind::Get(ref c) => keys.push(c.key.clone()),
             CommandKind::Set(ref c) => keys.push(c.key.clone()),
@@ -85,9 +84,9 @@ impl MutableCommand {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::value::Value;
 
-    use crate::kv::{BytesValue, Value};
+    use super::*;
 
     use epkv_utils::bytes_str::BytesStr;
     use epkv_utils::codec;
@@ -106,15 +105,16 @@ mod tests {
         }
         {
             let value = Value::Str(BytesStr::from("world".to_owned()));
-            let value = BytesValue::from_value(&value).unwrap();
-            let key = BytesKey::from("hello".to_owned());
+
+            let key = Bytes::from("key".to_owned());
+            let value = codec::serialize(&value).unwrap();
 
             let cmd = Command::from_mutable(MutableCommand {
                 kind: CommandKind::Set(Set { key, value }),
                 notify: None,
             });
             let cmd_codec_size = codec::serialized_size(&cmd).unwrap();
-            assert_eq!(cmd_codec_size, 15);
+            assert_eq!(cmd_codec_size, 13);
         }
     }
 }

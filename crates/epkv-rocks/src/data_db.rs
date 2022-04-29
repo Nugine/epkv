@@ -1,5 +1,4 @@
 use crate::cmd::{BatchedCommand, CommandKind, Del, Get, Set};
-use crate::kv::BytesValue;
 
 use epkv_epaxos::exec::ExecNotify;
 use epkv_epaxos::id::InstanceId;
@@ -10,6 +9,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::Result;
+use bytes::Bytes;
 use camino::Utf8Path;
 use rocksdb::DB;
 
@@ -34,8 +34,7 @@ impl DataDb {
     }
 
     pub fn execute_get(self: &Arc<Self>, cmd: Get) -> Result<()> {
-        let ans = self.db.get(cmd.key.as_ref())?;
-        let ans = ans.map(|v| BytesValue::from_bytes(&*v));
+        let ans = self.db.get(cmd.key.as_ref())?.map(Bytes::from);
         if let Some(tx) = cmd.tx {
             let _ = tx.blocking_send(ans);
         }

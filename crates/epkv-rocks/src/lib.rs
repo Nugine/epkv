@@ -11,6 +11,8 @@
 #![feature(generic_associated_types)]
 #![feature(type_alias_impl_trait)]
 
+pub mod value;
+
 pub mod cmd {
     mod kinds;
     pub use self::kinds::*;
@@ -23,14 +25,6 @@ pub mod cmd {
 
     mod notify;
     pub use self::notify::*;
-}
-
-pub mod kv {
-    mod key;
-    pub use self::key::*;
-
-    mod value;
-    pub use self::value::*;
 }
 
 pub mod db_utils;
