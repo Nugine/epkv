@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ReplicaConfig {
     pub preaccept_timeout: PreAcceptTimeout,
@@ -11,7 +11,7 @@ pub struct ReplicaConfig {
     pub join_timeout: JoinTimeout,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreAcceptTimeout {
     /// default timeout, in microseconds
     pub default_us: u64,
@@ -29,7 +29,7 @@ impl PreAcceptTimeout {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecoverTimeout {
     /// default timeout, in microseconds
     pub default_us: u64,
@@ -47,12 +47,12 @@ impl RecoverTimeout {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncLimits {
     pub max_instance_num: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JoinTimeout {
     pub default_us: u64,
 }
