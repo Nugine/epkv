@@ -9,4 +9,4 @@
 #![warn(clippy::todo)]
 
 pub mod cs;
-pub mod ms;
+pub mod sm;

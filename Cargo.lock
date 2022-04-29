@@ -248,6 +248,8 @@ version = "0.1.0-dev"
 name = "epkv-protocol"
 version = "0.1.0-dev"
 dependencies = [
+ "epkv-epaxos",
+ "epkv-utils",
  "serde",
 ]
 
