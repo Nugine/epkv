@@ -249,7 +249,9 @@ name = "epkv-protocol"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
+ "bytes",
  "epkv-epaxos",
+ "epkv-rocks",
  "epkv-utils",
  "fnv",
  "futures-util",

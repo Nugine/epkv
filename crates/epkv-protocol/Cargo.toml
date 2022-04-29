@@ -5,7 +5,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.57"
+bytes = { version = "1.1.0", features = ["serde"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
+epkv-rocks = { path = "../epkv-rocks" }
 epkv-utils = { path = "../epkv-utils" }
 fnv = "1.0.7"
 futures-util = { version = "0.3.21", features = ["sink"] }
