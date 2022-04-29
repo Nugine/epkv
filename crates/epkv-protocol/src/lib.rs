@@ -7,6 +7,11 @@
     clippy::must_use_candidate
 )]
 #![warn(clippy::todo)]
+//
+#![feature(result_option_inspect)]
+#![feature(generic_associated_types)]
+
+pub mod rpc;
 
 pub mod cs;
 pub mod sm;

@@ -9,8 +9,6 @@
     clippy::missing_const_for_fn
 )]
 //
-#![feature(generic_associated_types)]
-#![feature(result_option_inspect)]
 
 #[macro_export]
 macro_rules! clone {
@@ -32,7 +30,6 @@ pub mod iter;
 pub mod lock;
 pub mod onemap;
 pub mod radixmap;
-pub mod rpc;
 pub mod stepper;
 pub mod time;
 pub mod tracing;

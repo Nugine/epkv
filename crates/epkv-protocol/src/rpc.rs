@@ -1,5 +1,5 @@
-use crate::clone;
-use crate::codec::{self, bytes_sink, bytes_stream};
+use epkv_utils::clone;
+use epkv_utils::codec;
 
 use std::future::Future;
 use std::net::SocketAddr;
@@ -143,8 +143,8 @@ where
             .with_context(|| format!("failed to connect to remote address {remote_addr}"))?;
 
         let (reader, writer) = stream.into_split();
-        let remote_rx: _ = bytes_stream(reader, max_frame_length);
-        let remote_tx: _ = bytes_sink(writer, max_frame_length);
+        let remote_rx: _ = codec::bytes_stream(reader, max_frame_length);
+        let remote_tx: _ = codec::bytes_sink(writer, max_frame_length);
 
         let (read_tx, read_rx): _ = mpsc::channel::<RpcResponse<O>>(forward_chan_size);
         let (write_tx, write_rx): _ = mpsc::channel::<RpcRequest<A>>(forward_chan_size);
@@ -298,8 +298,8 @@ where
         }
 
         let (reader, writer) = tcp.into_split();
-        let mut remote_stream: _ = bytes_stream(reader, max_frame_length);
-        let mut remote_sink: _ = bytes_sink(writer, max_frame_length);
+        let mut remote_stream: _ = codec::bytes_stream(reader, max_frame_length);
+        let mut remote_sink: _ = codec::bytes_sink(writer, max_frame_length);
         let (res_tx, mut res_rx): _ = mpsc::unbounded_channel();
 
         {
