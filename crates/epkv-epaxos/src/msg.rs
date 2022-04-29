@@ -143,6 +143,7 @@ pub struct ProbeRttOk {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AskLog {
     pub sender: ReplicaId,
+    pub addr: SocketAddr,
     pub known_up_to: VecMap<ReplicaId, LocalInstanceId>,
 }
 

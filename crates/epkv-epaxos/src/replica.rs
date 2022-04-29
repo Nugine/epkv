@@ -1279,14 +1279,16 @@ where
 
         {
             let sender = self.rid;
-            let targets = VecSet::from_single(target);
-            self.net.broadcast(targets, Message::AskLog(AskLog { sender, known_up_to }));
+            let addr = self.public_peer_addr;
+            self.net.send_one(target, Message::AskLog(AskLog { sender, addr, known_up_to }));
         }
 
         Ok(())
     }
 
     async fn handle_ask_log(self: &Arc<Self>, msg: AskLog) -> Result<()> {
+        self.net.register_peer(msg.sender, msg.addr);
+
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
