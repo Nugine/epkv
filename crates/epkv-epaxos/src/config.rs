@@ -8,6 +8,7 @@ pub struct ReplicaConfig {
     pub preaccept_timeout: PreAcceptTimeout,
     pub recover_timeout: RecoverTimeout,
     pub sync_limits: SyncLimits,
+    pub join_timeout: JoinTimeout,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -49,4 +50,9 @@ impl RecoverTimeout {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SyncLimits {
     pub max_instance_num: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JoinTimeout {
+    pub default_us: u64,
 }

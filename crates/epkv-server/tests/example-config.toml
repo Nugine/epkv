@@ -14,6 +14,9 @@ enable_adaptive = true
 [replica.sync_limits]
 max_instance_num = 512
 
+[replica.join_timeout]
+default_us = 1000000 # 1s
+
 [network]
 inbound_chan_size = 4096
 outbound_chan_size = 256

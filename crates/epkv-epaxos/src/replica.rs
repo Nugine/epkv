@@ -1202,8 +1202,10 @@ where
         };
 
         {
+            let join_timeout = Duration::from_millis(self.config.join_timeout.default_us);
+
             let mut received = VecSet::new();
-            while let Some(msg) = rx.recv().await {
+            while let Ok(Some(msg)) = recv_timeout(&mut rx, join_timeout).await {
                 let _ = received.insert(msg.sender);
 
                 let mut guard = self.state.lock().await;
