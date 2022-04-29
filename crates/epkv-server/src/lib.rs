@@ -145,6 +145,9 @@ impl Server {
         }
 
         while let Some(result) = listener.recv().await {
+            if self.is_waiting_shutdown() {
+                break;
+            }
             match result {
                 Ok(msg) => {
                     let this = Arc::clone(&self);
