@@ -3,7 +3,7 @@ use std::fmt;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BytesStr(Bytes);
 
 impl BytesStr {
@@ -48,13 +48,49 @@ impl AsRef<str> for BytesStr {
     }
 }
 
+impl Serialize for BytesStr {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        <str as Serialize>::serialize(self.as_str(), serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BytesStr {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        <String as Deserialize<'de>>::deserialize(deserializer).map(Self::from)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::codec;
 
     #[test]
     fn simple() {
         let s = BytesStr::copy_from_str("hello");
         assert_eq!(s.as_str(), "hello");
+    }
+
+    #[test]
+    fn serde() {
+        {
+            let s1 = BytesStr::copy_from_str("hello");
+            let bytes = codec::serialize(&s1).unwrap();
+            let s2 = codec::deserialize_owned(&bytes).unwrap();
+            assert_eq!(s1, s2);
+        }
+        {
+            let bytes: &[u8] = &[0x05, 0xff, 0xff, 0xff, 0xff, 0xff];
+            assert!(codec::deserialize_owned::<BytesStr>(bytes).is_err());
+        }
     }
 }
