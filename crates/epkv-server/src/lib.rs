@@ -14,7 +14,7 @@ pub mod net;
 // -----------------------------------------------------------------------------
 
 use self::config::Config;
-use self::net::TcpNetwork;
+use self::net::{Listener, TcpNetwork};
 
 use epkv_epaxos::replica::{Replica, ReplicaMeta};
 use epkv_protocol::sm;
@@ -30,12 +30,16 @@ use anyhow::Result;
 use futures_util::pin_mut;
 use tokio::spawn;
 use tracing::debug;
+use tracing::error;
 use wgp::WaitGroup;
 
-type EpkvReplica = Replica<BatchedCommand, Arc<LogDb>, Arc<DataDb>, TcpNetwork>;
+type EpkvReplica = Replica<BatchedCommand, Arc<LogDb>, Arc<DataDb>, TcpNetwork<BatchedCommand>>;
 
 pub struct Server {
     replica: Arc<EpkvReplica>,
+
+    config: Config,
+
     waiting_shutdown: AtomicBool,
     waitgroup: WaitGroup,
 }
@@ -82,13 +86,17 @@ impl Server {
         let server = {
             let waiting_shutdown = AtomicBool::new(false);
             let waitgroup = WaitGroup::new();
-
-            Arc::new(Server { replica, waiting_shutdown, waitgroup })
+            Arc::new(Server { replica, config, waiting_shutdown, waitgroup })
         };
 
         let serve_peer_task = {
+            let this = Arc::clone(&server);
+            let addr = this.config.server.listen_peer_addr;
+            let config = &this.config.network;
+            let listener = TcpNetwork::spawn_listener(addr, config).await?;
+
             clone!(server);
-            spawn(server.serve_peer())
+            spawn(server.serve_peer(listener))
         };
 
         let serve_client_task = {
@@ -117,8 +125,41 @@ impl Server {
         Ok(())
     }
 
-    async fn serve_peer(self: Arc<Self>) {
-        todo!()
+    async fn serve_peer(self: Arc<Self>, mut listener: Listener<BatchedCommand>) {
+        {
+            let this = Arc::clone(&self);
+            spawn(async move {
+                if let Err(err) = this.replica.run_sync_known().await {
+                    error!(?err, "run_sync_known");
+                }
+            });
+        }
+
+        {
+            let this = Arc::clone(&self);
+            spawn(async move {
+                if let Err(err) = this.replica.run_join().await {
+                    error!(?err, "run_join")
+                }
+            });
+        }
+
+        while let Some(result) = listener.recv().await {
+            match result {
+                Ok(msg) => {
+                    let this = Arc::clone(&self);
+                    spawn(async move {
+                        if let Err(err) = this.replica.handle_message(msg).await {
+                            error!(?err, "handle_message");
+                        }
+                    });
+                }
+                Err(err) => {
+                    error!(?err, "listener recv");
+                    continue;
+                }
+            }
+        }
     }
 
     async fn serve_client(self: Arc<Self>) {

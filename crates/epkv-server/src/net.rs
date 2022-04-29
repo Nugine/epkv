@@ -10,6 +10,7 @@ use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
 use std::io;
+use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -40,19 +41,23 @@ impl Drop for Connection {
     }
 }
 
-impl Listener {
-    pub async fn recv<C: DeserializeOwned>(&mut self) -> Option<Result<Message<C>>> {
+impl<C> Listener<C>
+where
+    C: DeserializeOwned,
+{
+    pub async fn recv(&mut self) -> Option<Result<Message<C>>> {
         let bytes = self.rx.recv().await?;
         Some(codec::deserialize_owned(&*bytes))
     }
 }
 
-pub struct Listener {
+pub struct Listener<C> {
     rx: mpsc::Receiver<Bytes>,
     task: Option<JoinHandle<()>>,
+    _marker: PhantomData<fn() -> C>,
 }
 
-impl Drop for Listener {
+impl<C> Drop for Listener<C> {
     fn drop(&mut self) {
         if let Some(ref task) = self.task {
             task.abort();
@@ -60,14 +65,15 @@ impl Drop for Listener {
     }
 }
 
-pub struct TcpNetwork {
+pub struct TcpNetwork<C> {
     conns: RwLock<VecMap<ReplicaId, Connection>>,
     config: NetworkConfig,
+    _marker: PhantomData<fn(C) -> C>,
 }
 
-impl<C> Network<C> for TcpNetwork
+impl<C> Network<C> for TcpNetwork<C>
 where
-    C: Serialize,
+    C: Serialize + 'static,
 {
     fn broadcast(&self, targets: VecSet<ReplicaId>, msg: Message<C>) {
         if targets.is_empty() {
@@ -109,10 +115,14 @@ where
     }
 }
 
-impl TcpNetwork {
+impl<C> TcpNetwork<C> {
     #[must_use]
     pub fn new(config: &NetworkConfig) -> Self {
-        Self { conns: RwLock::new(VecMap::new()), config: config.clone() }
+        Self {
+            conns: RwLock::new(VecMap::new()),
+            config: config.clone(),
+            _marker: PhantomData,
+        }
     }
 
     #[must_use]
@@ -177,7 +187,7 @@ impl TcpNetwork {
         Connection { tx, task: Some(task) }
     }
 
-    pub async fn spawn_listener(addr: SocketAddr, config: &NetworkConfig) -> io::Result<Listener> {
+    pub async fn spawn_listener(addr: SocketAddr, config: &NetworkConfig) -> io::Result<Listener<C>> {
         let listener = TcpListener::bind(addr).await?;
 
         let chan_size = config.inbound_chan_size;
@@ -217,6 +227,6 @@ impl TcpNetwork {
             }
         });
 
-        Ok(Listener { rx, task: Some(task) })
+        Ok(Listener { rx, task: Some(task), _marker: PhantomData })
     }
 }
