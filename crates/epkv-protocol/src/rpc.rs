@@ -60,19 +60,25 @@ impl<A, O> Drop for RpcConnection<A, O> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RpcClientConfig {
+    pub max_frame_length: usize,
+    pub op_chan_size: usize,
+    pub forward_chan_size: usize,
+}
+
 impl<A, O> RpcConnection<A, O>
 where
     A: Serialize + Send + Unpin + 'static,
     O: DeserializeOwned + Send + Unpin + 'static,
 {
     #[inline]
-    pub async fn connect(
-        remote_addr: SocketAddr,
-        max_frame_length: usize,
-        op_chan_size: usize,
-        forward_chan_size: usize,
-    ) -> Result<Self> {
-        let conn = <Connection<A, O>>::connect(remote_addr, max_frame_length, forward_chan_size).await?;
+    pub async fn connect(remote_addr: SocketAddr, config: &RpcClientConfig) -> Result<Self> {
+        let max_frame_length = config.max_frame_length;
+        let op_chan_size = config.op_chan_size;
+        let forward_chan_size = config.forward_chan_size;
+
+        let conn: _ = <Connection<A, O>>::connect(remote_addr, max_frame_length, forward_chan_size).await?;
         let (op_tx, op_rx) = mpsc::channel(op_chan_size);
         let task = spawn(conn.driver(op_rx));
         let next_rpc_id = AtomicU64::new(1);
