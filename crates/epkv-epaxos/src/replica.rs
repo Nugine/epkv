@@ -1172,6 +1172,21 @@ where
 
             drop(guard);
 
+            // 1 -> 2
+            if targets.is_empty() {
+                return Ok(true);
+            }
+
+            // 2 -> 3
+            if targets.len() == 1 {
+                let target = targets.as_slice()[0];
+                let sender = self.rid;
+                let epoch = self.epoch.load();
+                let address = self.address;
+                self.net.send_one(target, Message::Join(Join { sender, epoch, address }));
+                return Ok(true);
+            }
+
             let rx = {
                 let (tx, rx) = mpsc::channel(targets.len());
                 let _ = self.join_tx.lock().insert(tx);
@@ -1288,7 +1303,10 @@ where
         s.log.update_bounds();
         let known_up_to = s.log.known_up_to();
 
-        let target = s.peers.select_one().expect("peer should exist");
+        let target = match s.peers.select_one() {
+            Some(t) => t,
+            None => return Ok(()),
+        };
 
         drop(guard);
 
