@@ -115,7 +115,7 @@ pub struct PrepareOk<C> {
 pub struct Join {
     pub sender: ReplicaId,
     pub epoch: Epoch,
-    pub address: SocketAddr,
+    pub addr: SocketAddr,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

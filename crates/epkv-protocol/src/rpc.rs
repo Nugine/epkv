@@ -146,7 +146,7 @@ where
     ) -> Result<Self> {
         let stream = TcpStream::connect(remote_addr)
             .await
-            .with_context(|| format!("failed to connect to remote address {remote_addr}"))?;
+            .with_context(|| format!("failed to connect to remote addr {remote_addr}"))?;
 
         let (reader, writer) = stream.into_split();
         let remote_rx: _ = codec::bytes_stream(reader, max_frame_length);

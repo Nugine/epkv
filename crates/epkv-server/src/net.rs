@@ -102,9 +102,9 @@ where
         }
     }
 
-    fn register_peer(&self, rid: ReplicaId, address: SocketAddr) {
+    fn register_peer(&self, rid: ReplicaId, addr: SocketAddr) {
         with_write_lock(&self.conns, |conns: _| {
-            let _ = conns.init_with(rid, || Self::spawn_connector(address, &self.config));
+            let _ = conns.init_with(rid, || Self::spawn_connector(addr, &self.config));
         })
     }
 }

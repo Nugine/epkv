@@ -52,7 +52,7 @@ where
     N: Network<C>,
 {
     rid: ReplicaId,
-    address: SocketAddr,
+    public_peer_addr: SocketAddr,
     config: ReplicaConfig,
 
     epoch: AtomicEpoch,
@@ -86,7 +86,7 @@ where
 
 pub struct ReplicaBuilder<C, L, D, N> {
     pub rid: Option<ReplicaId>,
-    pub address: Option<SocketAddr>,
+    pub public_peer_addr: Option<SocketAddr>,
     pub epoch: Option<Epoch>,
     pub peers: Option<VecMap<ReplicaId, SocketAddr>>,
     pub config: Option<ReplicaConfig>,
@@ -119,7 +119,7 @@ where
     pub fn builder() -> ReplicaBuilder<C, L, D, N> {
         ReplicaBuilder {
             rid: None,
-            address: None,
+            public_peer_addr: None,
             epoch: None,
             peers: None,
             config: None,
@@ -132,7 +132,7 @@ where
 
     async fn new(builder: ReplicaBuilder<C, L, D, N>) -> Result<Arc<Self>> {
         let rid = builder.rid.unwrap();
-        let address = builder.address.unwrap();
+        let public_peer_addr = builder.public_peer_addr.unwrap();
         let epoch = builder.epoch.unwrap();
         let peers = builder.peers.unwrap();
         let config = builder.config.unwrap();
@@ -143,7 +143,7 @@ where
         let cluster_size = peers.len().wrapping_add(1);
         let addr_set: VecSet<_> = map_collect(&peers, |&(_, a)| a);
         ensure!(cluster_size >= 3);
-        ensure!(peers.iter().all(|&(p, a)| p != rid && a != address));
+        ensure!(peers.iter().all(|&(p, a)| p != rid && a != public_peer_addr));
         ensure!(addr_set.len() == peers.len());
 
         let epoch = AtomicEpoch::new(epoch);
@@ -179,7 +179,7 @@ where
 
         Ok(Arc::new(Self {
             rid,
-            address,
+            public_peer_addr,
             config,
             state,
             epoch,
@@ -1182,8 +1182,8 @@ where
                 let target = targets.as_slice()[0];
                 let sender = self.rid;
                 let epoch = self.epoch.load();
-                let address = self.address;
-                self.net.send_one(target, Message::Join(Join { sender, epoch, address }));
+                let addr = self.public_peer_addr;
+                self.net.send_one(target, Message::Join(Join { sender, epoch, addr }));
                 return Ok(true);
             }
 
@@ -1195,8 +1195,8 @@ where
             {
                 let sender = self.rid;
                 let epoch = self.epoch.load();
-                let address = self.address;
-                self.net.broadcast(targets, Message::Join(Join { sender, epoch, address }));
+                let addr = self.public_peer_addr;
+                self.net.broadcast(targets, Message::Join(Join { sender, epoch, addr }));
             }
             rx
         };
@@ -1235,7 +1235,7 @@ where
 
         {
             let target = msg.sender;
-            self.net.register_peer(target, msg.address);
+            self.net.register_peer(target, msg.addr);
             self.net.send_one(target, Message::JoinOk(JoinOk { sender: self.rid }));
         }
 
