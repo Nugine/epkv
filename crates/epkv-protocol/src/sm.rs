@@ -24,7 +24,7 @@ pub enum Output {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RegisterArgs {
-    pub addr: SocketAddr,
+    pub public_peer_addr: SocketAddr,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

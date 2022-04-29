@@ -2,6 +2,7 @@
 listen_peer_addr = "127.0.0.1:8010"
 listen_client_addr = "127.0.0.1:8011"
 monitor_addr = "127.0.0.1:9000"
+public_peer_addr = "127.0.0.1:8010"
 
 [replica.preaccept_timeout]
 default_us = 1000
@@ -28,3 +29,8 @@ path = "/tmp/epkv-server/log_db"
 
 [data_db]
 path = "/tmp/epkv-server/data_db"
+
+[rpc_client]
+max_frame_length = 16777216 # 16 MiB
+op_chan_size = 256
+forward_chan_size = 256

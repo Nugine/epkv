@@ -15,6 +15,7 @@ pub mod net;
 
 use self::config::Config;
 
+use epkv_protocol::sm;
 use epkv_rocks::data_db::DataDb;
 use epkv_rocks::log_db::LogDb;
 use epkv_utils::clone;
@@ -48,12 +49,16 @@ impl Server {
 impl Server {
     pub async fn run(config: Config) -> Result<()> {
         let log_db = LogDb::new(&config.log_db.path)?;
-
-        debug!("log_db is opened");
-
         let data_db = DataDb::new(&config.data_db.path)?;
 
-        debug!("data_db is opened");
+        let (rid, epoch, peers): _ = {
+            let remote_addr = config.server.monitor_addr;
+            let monitor = sm::Monitor::connect(remote_addr, &config.rpc_client).await?;
+
+            let public_peer_addr = config.server.public_peer_addr;
+            let output = monitor.register(sm::RegisterArgs { public_peer_addr }).await?;
+            (output.rid, output.epoch, output.peers)
+        };
 
         let waiting_shutdown = AtomicBool::new(false);
         let waitgroup = WaitGroup::new();

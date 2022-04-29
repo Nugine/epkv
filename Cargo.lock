@@ -285,6 +285,7 @@ dependencies = [
  "camino",
  "clap",
  "epkv-epaxos",
+ "epkv-protocol",
  "epkv-rocks",
  "epkv-utils",
  "futures-util",
