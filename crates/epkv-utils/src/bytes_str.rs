@@ -34,6 +34,13 @@ impl From<String> for BytesStr {
     }
 }
 
+impl From<BytesStr> for Bytes {
+    #[inline]
+    fn from(s: BytesStr) -> Self {
+        s.0
+    }
+}
+
 impl AsRef<[u8]> for BytesStr {
     #[inline]
     fn as_ref(&self) -> &[u8] {
