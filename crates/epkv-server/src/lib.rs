@@ -14,8 +14,11 @@ pub mod net;
 // -----------------------------------------------------------------------------
 
 use self::config::Config;
+use self::net::TcpNetwork;
 
+use epkv_epaxos::replica::{Replica, ReplicaMeta};
 use epkv_protocol::sm;
+use epkv_rocks::cmd::BatchedCommand;
 use epkv_rocks::data_db::DataDb;
 use epkv_rocks::log_db::LogDb;
 use epkv_utils::clone;
@@ -29,9 +32,10 @@ use tokio::spawn;
 use tracing::debug;
 use wgp::WaitGroup;
 
+type EpkvReplica = Replica<BatchedCommand, Arc<LogDb>, Arc<DataDb>, TcpNetwork>;
+
 pub struct Server {
-    log_db: Arc<LogDb>,
-    data_db: Arc<DataDb>,
+    replica: Arc<EpkvReplica>,
     waiting_shutdown: AtomicBool,
     waitgroup: WaitGroup,
 }
@@ -48,22 +52,39 @@ impl Server {
 
 impl Server {
     pub async fn run(config: Config) -> Result<()> {
-        let log_db = LogDb::new(&config.log_db.path)?;
-        let data_db = DataDb::new(&config.data_db.path)?;
+        let replica = {
+            let log_store = LogDb::new(&config.log_db.path)?;
+            let data_store = DataDb::new(&config.data_db.path)?;
+            let net = TcpNetwork::new(&config.network);
 
-        let (rid, epoch, peers): _ = {
-            let remote_addr = config.server.monitor_addr;
-            let monitor = sm::Monitor::connect(remote_addr, &config.rpc_client).await?;
+            let (rid, epoch, peers): _ = {
+                let remote_addr = config.server.monitor_addr;
+                let monitor = sm::Monitor::connect(remote_addr, &config.rpc_client).await?;
+
+                let public_peer_addr = config.server.public_peer_addr;
+                let output = monitor.register(sm::RegisterArgs { public_peer_addr }).await?;
+                (output.rid, output.epoch, output.peers)
+            };
 
             let public_peer_addr = config.server.public_peer_addr;
-            let output = monitor.register(sm::RegisterArgs { public_peer_addr }).await?;
-            (output.rid, output.epoch, output.peers)
+
+            let meta = ReplicaMeta {
+                rid,
+                epoch,
+                peers,
+                public_peer_addr,
+                config: config.replica.clone(),
+            };
+
+            EpkvReplica::new(meta, log_store, data_store, net).await?
         };
 
-        let waiting_shutdown = AtomicBool::new(false);
-        let waitgroup = WaitGroup::new();
+        let server = {
+            let waiting_shutdown = AtomicBool::new(false);
+            let waitgroup = WaitGroup::new();
 
-        let server = Arc::new(Server { log_db, data_db, waiting_shutdown, waitgroup });
+            Arc::new(Server { replica, waiting_shutdown, waitgroup })
+        };
 
         let serve_peer_task = {
             clone!(server);
