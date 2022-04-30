@@ -31,7 +31,7 @@ pub struct GetArgs {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetOutput {
-    pub value: Bytes,
+    pub value: Option<Bytes>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -16,6 +16,7 @@ pub struct Config {
     pub data_db: DataDbConfig,
     pub rpc_client: RpcClientConfig,
     pub rpc_server: RpcServerConfig,
+    pub batching: BatchingConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -43,4 +44,11 @@ pub struct LogDbConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DataDbConfig {
     pub path: Utf8PathBuf,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BatchingConfig {
+    pub chan_size: usize,
+    pub batch_initial_capacity: usize,
+    pub batch_max_size: usize,
 }

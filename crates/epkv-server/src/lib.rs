@@ -21,9 +21,12 @@ use self::net::{Listener, TcpNetwork};
 
 use epkv_epaxos::replica::{Replica, ReplicaMeta};
 use epkv_protocol::{cs, rpc, sm};
-use epkv_rocks::cmd::BatchedCommand;
+
+use epkv_rocks::cmd::{BatchedCommand, Command, CommandKind, CommandNotify, Del, Get, MutableCommand, Set};
 use epkv_rocks::data_db::DataDb;
 use epkv_rocks::log_db::LogDb;
+
+use epkv_utils::asc::Asc;
 use epkv_utils::atomic_flag::AtomicFlag;
 
 use std::future::Future;
@@ -32,6 +35,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use tokio::net::TcpListener;
 use tokio::spawn;
+use tokio::sync::mpsc;
 use tracing::debug;
 use tracing::error;
 use wgp::WaitGroup;
@@ -42,6 +46,8 @@ pub struct Server {
     replica: Arc<EpkvReplica>,
 
     config: Config,
+
+    cmd_tx: mpsc::Sender<Command>,
 
     is_waiting_shutdown: AtomicFlag,
     waitgroup: WaitGroup,
@@ -79,10 +85,12 @@ impl Server {
             EpkvReplica::new(meta, log_store, data_store, net).await?
         };
 
+        let (cmd_tx, cmd_rx) = mpsc::channel(config.batching.chan_size);
+
         let server = {
             let is_waiting_shutdown = AtomicFlag::new(false);
             let waitgroup = WaitGroup::new();
-            Arc::new(Server { replica, config, is_waiting_shutdown, waitgroup })
+            Arc::new(Server { replica, config, cmd_tx, is_waiting_shutdown, waitgroup })
         };
 
         let mut bg_tasks = Vec::new();
@@ -99,6 +107,11 @@ impl Server {
             let this = Arc::clone(&server);
             let listener = TcpListener::bind(this.config.server.listen_client_addr).await?;
             bg_tasks.push(spawn(this.serve_client(listener)));
+        }
+
+        {
+            let this = Arc::clone(&server);
+            bg_tasks.push(spawn(this.cmd_batcher(cmd_rx)))
         }
 
         {
@@ -203,14 +216,83 @@ impl Server {
     }
 
     async fn client_rpc_get(self: &Arc<Self>, args: cs::GetArgs) -> Result<cs::GetOutput> {
-        todo!()
+        let (tx, mut rx) = mpsc::channel(1);
+        let cmd = Command::from_mutable(MutableCommand {
+            kind: CommandKind::Get(Get { key: args.key, tx: Some(tx) }),
+            notify: None,
+        });
+        self.cmd_tx.send(cmd).await.map_err(|_| anyhow!("failed to send command"))?;
+        match rx.recv().await {
+            Some(value) => Ok(cs::GetOutput { value }),
+            None => Err(anyhow!("failed to receive command output")),
+        }
     }
 
     async fn client_rpc_set(self: &Arc<Self>, args: cs::SetArgs) -> Result<cs::SetOutput> {
-        todo!()
+        let notify = Asc::new(CommandNotify::new());
+        let cmd = Command::from_mutable(MutableCommand {
+            kind: CommandKind::Set(Set { key: args.key, value: args.value }),
+            notify: Some(Asc::clone(&notify)),
+        });
+        self.cmd_tx.send(cmd).await.map_err(|_| anyhow!("failed to send command"))?;
+        notify.wait_committed().await;
+        Ok(cs::SetOutput {})
     }
 
     async fn client_rpc_del(self: &Arc<Self>, args: cs::DelArgs) -> Result<cs::DelOutput> {
-        todo!()
+        let notify = Asc::new(CommandNotify::new());
+        let cmd = Command::from_mutable(MutableCommand {
+            kind: CommandKind::Del(Del { key: args.key }),
+            notify: Some(Asc::clone(&notify)),
+        });
+        self.cmd_tx.send(cmd).await.map_err(|_| anyhow!("failed to send command"))?;
+        notify.wait_committed().await;
+        Ok(cs::DelOutput {})
+    }
+}
+
+impl Server {
+    async fn cmd_batcher(self: Arc<Self>, mut rx: mpsc::Receiver<Command>) -> Result<()> {
+        let initial_capacity = self.config.batching.batch_initial_capacity;
+        let max_size = self.config.batching.batch_max_size;
+
+        loop {
+            if self.is_waiting_shutdown.get() {
+                break;
+            }
+
+            let cmd = match rx.recv().await {
+                Some(cmd) => cmd,
+                None => break,
+            };
+
+            let mut batch = Vec::<Command>::with_capacity(initial_capacity);
+            batch.push(cmd);
+
+            loop {
+                if batch.len() >= max_size {
+                    break;
+                }
+
+                match rx.try_recv() {
+                    Ok(cmd) => batch.push(cmd),
+                    Err(_) => break,
+                }
+            }
+
+            let this = Arc::clone(&self);
+            spawn(async move {
+                let cmd = BatchedCommand::from_vec(batch);
+                if let Err(err) = this.handle_batched_command(cmd).await {
+                    error!(?err, "handle batched command")
+                }
+            });
+        }
+
+        Ok(())
+    }
+
+    async fn handle_batched_command(self: &Arc<Self>, cmd: BatchedCommand) -> Result<()> {
+        self.replica.run_propose(cmd).await
     }
 }
