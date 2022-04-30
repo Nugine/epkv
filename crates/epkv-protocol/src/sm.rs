@@ -32,6 +32,7 @@ pub struct RegisterOutput {
     pub rid: ReplicaId,
     pub epoch: Epoch,
     pub peers: VecMap<ReplicaId, SocketAddr>,
+    pub prev_rid: Option<ReplicaId>,
 }
 
 pub struct Monitor {
