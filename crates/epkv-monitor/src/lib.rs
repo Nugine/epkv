@@ -12,25 +12,31 @@ pub mod config;
 
 // ------------------------------------------------------------------------------------------------
 
-use std::fs;
-use std::net::SocketAddr;
-use std::sync::Arc;
-
 use self::config::Config;
 
 use epkv_epaxos::id::{Epoch, Head, ReplicaId};
+use epkv_utils::atomic_flag::AtomicFlag;
 use epkv_utils::vecmap::VecMap;
+
+use std::fs;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 use anyhow::Result;
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
+use tokio::spawn;
 use tokio::sync::Mutex;
 use tracing::debug;
 use wgp::WaitGroup;
 
 pub struct Monitor {
     state: Mutex<State>,
+
+    config: Config,
+
+    is_waiting_shutdown: AtomicFlag,
     waitgroup: WaitGroup,
 }
 
@@ -81,11 +87,37 @@ impl Monitor {
         };
         debug!(?state);
 
-        let waitgroup = WaitGroup::new();
+        let monitor = {
+            let state = Mutex::new(state);
 
-        let listener = TcpListener::bind(config.listen_rpc_addr).await?;
+            let is_waiting_shutdown = AtomicFlag::new();
+            let waitgroup = WaitGroup::new();
 
-        todo!()
+            Arc::new(Monitor { state, config, is_waiting_shutdown, waitgroup })
+        };
+
+        let serve_rpc_task = {
+            let listener = TcpListener::bind(monitor.config.listen_rpc_addr).await?;
+            let this = Arc::clone(&monitor);
+            spawn(this.serve_rpc(listener))
+        };
+
+        {
+            tokio::signal::ctrl_c().await?;
+        }
+
+        {
+            monitor.is_waiting_shutdown.set();
+            serve_rpc_task.abort();
+
+            let task_count = monitor.waitgroup.count();
+            debug!(?task_count, "waiting running tasks");
+            monitor.waitgroup.wait().await;
+        }
+
+        monitor.shutdown().await;
+
+        Ok(())
     }
 
     async fn serve_rpc(self: Arc<Self>, listener: TcpListener) -> Result<()> {
