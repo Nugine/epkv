@@ -50,7 +50,6 @@ impl Avg {
 impl Peers {
     #[must_use]
     pub fn new(peers: VecSet<ReplicaId>) -> Self {
-        assert!(peers.len() >= 2);
         let mut rank: Vec<_> = copied_map_collect(peers.iter(), |peer| (u64::MAX, peer));
         sort_rank(&mut rank);
         Self { peers, rank, avg: Avg { sum: 0, cnt: 0 } }

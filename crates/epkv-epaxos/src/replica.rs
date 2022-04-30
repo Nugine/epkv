@@ -105,9 +105,7 @@ where
         let peers = meta.peers;
         let config = meta.config;
 
-        let cluster_size = peers.len().wrapping_add(1);
         let addr_set: VecSet<_> = map_collect(&peers, |&(_, a)| a);
-        ensure!(cluster_size >= 3);
         ensure!(peers.iter().all(|&(p, a)| p != rid && a != public_peer_addr));
         ensure!(addr_set.len() == peers.len());
 
