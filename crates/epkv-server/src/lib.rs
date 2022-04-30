@@ -56,6 +56,9 @@ impl Server {
 
                 let public_peer_addr = config.server.public_peer_addr;
                 let output = monitor.register(sm::RegisterArgs { public_peer_addr }).await?;
+
+                debug!(?output, "monitor register");
+
                 (output.rid, output.epoch, output.peers)
             };
 
