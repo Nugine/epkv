@@ -21,9 +21,9 @@ use epkv_protocol::sm;
 use epkv_rocks::cmd::BatchedCommand;
 use epkv_rocks::data_db::DataDb;
 use epkv_rocks::log_db::LogDb;
+use epkv_utils::atomic_flag::AtomicFlag;
 use epkv_utils::clone;
 
-use std::sync::atomic::{AtomicBool, Ordering::*};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -40,18 +40,8 @@ pub struct Server {
 
     config: Config,
 
-    waiting_shutdown: AtomicBool,
+    is_waiting_shutdown: AtomicFlag,
     waitgroup: WaitGroup,
-}
-
-impl Server {
-    fn is_waiting_shutdown(&self) -> bool {
-        self.waiting_shutdown.load(SeqCst)
-    }
-
-    fn set_waiting_shutdown(&self) {
-        self.waiting_shutdown.store(true, SeqCst);
-    }
 }
 
 impl Server {
@@ -84,9 +74,14 @@ impl Server {
         };
 
         let server = {
-            let waiting_shutdown = AtomicBool::new(false);
+            let waiting_shutdown = AtomicFlag::new();
             let waitgroup = WaitGroup::new();
-            Arc::new(Server { replica, config, waiting_shutdown, waitgroup })
+            Arc::new(Server {
+                replica,
+                config,
+                is_waiting_shutdown: waiting_shutdown,
+                waitgroup,
+            })
         };
 
         let serve_peer_task = {
@@ -111,7 +106,7 @@ impl Server {
         }
 
         {
-            server.set_waiting_shutdown();
+            server.is_waiting_shutdown.set();
             serve_peer_task.abort();
             serve_client_task.abort();
 
@@ -145,7 +140,7 @@ impl Server {
         }
 
         while let Some(result) = listener.recv().await {
-            if self.is_waiting_shutdown() {
+            if self.is_waiting_shutdown.get() {
                 break;
             }
             match result {
