@@ -117,7 +117,7 @@ impl Server {
             server.waitgroup.wait().await;
         }
 
-        server.shutdown().await;
+        server.shutdown().await?;
 
         Ok(())
     }
@@ -170,8 +170,9 @@ impl Server {
         rpc::serve(self, listener, config, working).await
     }
 
-    async fn shutdown(self: Arc<Self>) {
-        todo!()
+    async fn shutdown(self: Arc<Self>) -> Result<()> {
+        // do what?
+        Ok(())
     }
 }
 
