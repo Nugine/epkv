@@ -7,6 +7,9 @@
     clippy::must_use_candidate
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
+//
+#![feature(generic_associated_types)]
+#![feature(type_alias_impl_trait)]
 
 pub mod config;
 
@@ -15,20 +18,22 @@ pub mod config;
 use self::config::Config;
 
 use epkv_epaxos::id::{Epoch, Head, ReplicaId};
+use epkv_protocol::{rpc, sm};
 use epkv_utils::atomic_flag::AtomicFlag;
 use epkv_utils::vecmap::VecMap;
 
 use std::fs;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio::spawn;
 use tokio::sync::Mutex;
-use tracing::debug;
+use tracing::{debug, warn};
 use wgp::WaitGroup;
 
 pub struct Monitor {
@@ -121,7 +126,9 @@ impl Monitor {
     }
 
     async fn serve_rpc(self: Arc<Self>, listener: TcpListener) -> Result<()> {
-        todo!()
+        let config = self.config.rpc_server.clone();
+        let working = self.waitgroup.working();
+        rpc::serve(self, listener, config, working).await
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -130,5 +137,47 @@ impl Monitor {
         s.save(&self.config.state_path)?;
         drop(guard);
         Ok(())
+    }
+}
+
+type HandleRpcFuture<'a> = impl Future<Output = Result<sm::Output>> + Send + 'a;
+
+impl rpc::Service<sm::Args> for Monitor {
+    type Output = sm::Output;
+
+    type Future<'a> = HandleRpcFuture<'a>;
+
+    fn call<'a>(self: &'a Arc<Self>, args: sm::Args) -> Self::Future<'a> {
+        self.handle_rpc(args)
+    }
+
+    fn needs_stop(&self) -> bool {
+        self.is_waiting_shutdown.get()
+    }
+}
+
+impl Monitor {
+    async fn handle_rpc(self: &Arc<Self>, args: sm::Args) -> Result<sm::Output> {
+        match args {
+            sm::Args::Register(args) => self.rpc_register(args).await.map(sm::Output::Register),
+            _ => Err(anyhow!("unexpected rpc method")),
+        }
+    }
+
+    async fn rpc_register(self: &Arc<Self>, args: sm::RegisterArgs) -> Result<sm::RegisterOutput> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let rid = s.rid_head.gen_next();
+        let epoch = s.epoch_head.gen_next();
+        let peers = s.addr_map.clone();
+
+        let opt = s.addr_map.insert(rid, args.public_peer_addr);
+        assert!(opt.is_none());
+
+        drop(guard);
+
+        let output = sm::RegisterOutput { rid, epoch, peers };
+        Ok(output)
     }
 }
