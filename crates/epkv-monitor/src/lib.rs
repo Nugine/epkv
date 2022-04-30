@@ -98,7 +98,7 @@ impl Monitor {
         let monitor = {
             let state = Mutex::new(state);
 
-            let is_waiting_shutdown = AtomicFlag::new();
+            let is_waiting_shutdown = AtomicFlag::new(false);
             let waitgroup = WaitGroup::new();
 
             Arc::new(Monitor { state, config, is_waiting_shutdown, waitgroup })
@@ -115,7 +115,7 @@ impl Monitor {
         }
 
         {
-            monitor.is_waiting_shutdown.set();
+            monitor.is_waiting_shutdown.set(true);
             serve_rpc_task.abort();
 
             let task_count = monitor.waitgroup.count();

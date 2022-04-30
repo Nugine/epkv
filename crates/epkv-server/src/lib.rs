@@ -73,7 +73,7 @@ impl Server {
         };
 
         let server = {
-            let is_waiting_shutdown = AtomicFlag::new();
+            let is_waiting_shutdown = AtomicFlag::new(false);
             let waitgroup = WaitGroup::new();
             Arc::new(Server { replica, config, is_waiting_shutdown, waitgroup })
         };
@@ -98,7 +98,7 @@ impl Server {
         }
 
         {
-            server.is_waiting_shutdown.set();
+            server.is_waiting_shutdown.set(true);
             serve_peer_task.abort();
             serve_client_task.abort();
 

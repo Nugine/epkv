@@ -6,13 +6,13 @@ pub struct AtomicFlag(AtomicBool);
 impl AtomicFlag {
     #[inline]
     #[must_use]
-    pub const fn new() -> Self {
-        Self(AtomicBool::new(false))
+    pub const fn new(val: bool) -> Self {
+        Self(AtomicBool::new(val))
     }
 
     #[inline]
-    pub fn set(&self) {
-        self.0.store(true, SeqCst);
+    pub fn set(&self, val: bool) {
+        self.0.store(val, SeqCst);
     }
 
     #[inline]
