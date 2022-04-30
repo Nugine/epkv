@@ -6,7 +6,7 @@
     clippy::integer_arithmetic,
     clippy::must_use_candidate
 )]
-#![warn(clippy::todo)]
+#![warn(clippy::todo, clippy::dbg_macro)]
 
 use epkv_server::config::Config;
 use epkv_server::Server;
