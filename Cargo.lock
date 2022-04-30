@@ -243,6 +243,17 @@ dependencies = [
 [[package]]
 name = "epkv-monitor"
 version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
+ "camino",
+ "clap",
+ "parking_lot",
+ "serde",
+ "tikv-jemallocator",
+ "tokio",
+ "toml",
+ "tracing",
+]
 
 [[package]]
 name = "epkv-protocol"
