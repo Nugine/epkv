@@ -26,7 +26,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::ops::Not;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use camino::Utf8Path;
@@ -34,11 +36,12 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio::spawn;
 use tokio::sync::Mutex;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 use wgp::WaitGroup;
 
 pub struct Monitor {
     state: Mutex<State>,
+    dirty: AtomicFlag,
 
     config: Config,
 
@@ -97,18 +100,26 @@ impl Monitor {
 
         let monitor = {
             let state = Mutex::new(state);
+            let dirty = AtomicFlag::new(false);
 
             let is_waiting_shutdown = AtomicFlag::new(false);
             let waitgroup = WaitGroup::new();
 
-            Arc::new(Monitor { state, config, is_waiting_shutdown, waitgroup })
+            Arc::new(Monitor { state, dirty, config, is_waiting_shutdown, waitgroup })
         };
 
-        let serve_rpc_task = {
+        let mut background_tasks = Vec::new();
+
+        {
             let listener = TcpListener::bind(monitor.config.listen_rpc_addr).await?;
             let this = Arc::clone(&monitor);
-            spawn(this.serve_rpc(listener))
+            background_tasks.push(spawn(this.serve_rpc(listener)));
         };
+
+        {
+            let this = Arc::clone(&monitor);
+            background_tasks.push(spawn(this.interval_save_state()));
+        }
 
         {
             tokio::signal::ctrl_c().await?;
@@ -116,7 +127,10 @@ impl Monitor {
 
         {
             monitor.is_waiting_shutdown.set(true);
-            serve_rpc_task.abort();
+            for task in &background_tasks {
+                task.abort();
+            }
+            drop(background_tasks);
 
             let task_count = monitor.waitgroup.count();
             debug!(?task_count, "waiting running tasks");
@@ -134,12 +148,35 @@ impl Monitor {
         rpc::serve(self, listener, config, working).await
     }
 
-    async fn shutdown(&self) -> Result<()> {
-        let guard = self.state.lock().await;
-        let s = &*guard;
-        s.save(&self.config.state_path)?;
-        drop(guard);
+    async fn interval_save_state(self: Arc<Self>) -> Result<()> {
+        let mut interval = tokio::time::interval(Duration::from_micros(self.config.save_state_interval_us));
+
+        loop {
+            interval.tick().await;
+
+            if self.is_waiting_shutdown.get() {
+                break;
+            }
+
+            if self.dirty.get().not() {
+                continue;
+            }
+
+            let this = Arc::clone(&self);
+            let working = self.waitgroup.working();
+            spawn(async move {
+                if let Err(err) = this.run_save_state().await {
+                    error!(?err, "interval save state");
+                }
+                drop(working);
+            });
+        }
+
         Ok(())
+    }
+
+    async fn shutdown(self: &Arc<Self>) -> Result<()> {
+        self.run_save_state().await
     }
 }
 
@@ -186,13 +223,23 @@ impl Monitor {
             let _ = peers.remove(&prev_rid);
         }
 
+        self.dirty.set(true);
+
         drop(guard);
 
         let output = sm::RegisterOutput { rid, epoch, peers, prev_rid };
         Ok(output)
     }
 
-    async fn interval_save_state(&self) -> Result<()> {
-        todo!()
+    async fn run_save_state(&self) -> Result<()> {
+        let guard = self.state.lock().await;
+        let s = &*guard;
+        if self.dirty.get() {
+            s.save(&self.config.state_path)?;
+            debug!(state=?s);
+            self.dirty.set(false);
+        }
+        drop(guard);
+        Ok(())
     }
 }

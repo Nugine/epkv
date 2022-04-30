@@ -10,5 +10,7 @@ pub struct Config {
     pub state_path: Utf8PathBuf,
     pub listen_rpc_addr: SocketAddr,
 
+    pub save_state_interval_us: u64,
+
     pub rpc_server: RpcServerConfig,
 }
