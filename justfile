@@ -53,3 +53,9 @@ run-example-server: build
     cd {{justfile_directory()}}
     export RUST_LOG=epkv_server=debug,epkv_rocks=debug,epkv_epaxos=debug
     ./target/release/epkv-server --config crates/epkv-server/tests/example-config.toml
+
+run-example-monitor: build
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+    export RUST_LOG=epkv_monitor=debug
+    ./target/release/epkv-monitor --config crates/epkv-monitor/tests/example-config.toml

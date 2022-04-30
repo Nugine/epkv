@@ -247,6 +247,7 @@ dependencies = [
  "anyhow",
  "camino",
  "clap",
+ "epkv-utils",
  "parking_lot",
  "serde",
  "tikv-jemallocator",

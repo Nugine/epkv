@@ -13,3 +13,13 @@ pub mod config;
 // ------------------------------------------------------------------------------------------------
 
 use self::config::Config;
+
+use anyhow::Result;
+
+pub struct Monitor {}
+
+impl Monitor {
+    pub async fn run(config: Config) -> Result<()> {
+        todo!()
+    }
+}
