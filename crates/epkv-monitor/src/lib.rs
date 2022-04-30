@@ -108,17 +108,17 @@ impl Monitor {
             Arc::new(Monitor { state, dirty, config, is_waiting_shutdown, waitgroup })
         };
 
-        let mut background_tasks = Vec::new();
+        let mut bg_tasks = Vec::new();
 
         {
             let listener = TcpListener::bind(monitor.config.listen_rpc_addr).await?;
             let this = Arc::clone(&monitor);
-            background_tasks.push(spawn(this.serve_rpc(listener)));
+            bg_tasks.push(spawn(this.serve_rpc(listener)));
         };
 
         {
             let this = Arc::clone(&monitor);
-            background_tasks.push(spawn(this.interval_save_state()));
+            bg_tasks.push(spawn(this.interval_save_state()));
         }
 
         {
@@ -127,10 +127,10 @@ impl Monitor {
 
         {
             monitor.is_waiting_shutdown.set(true);
-            for task in &background_tasks {
+            for task in &bg_tasks {
                 task.abort();
             }
-            drop(background_tasks);
+            drop(bg_tasks);
 
             let task_count = monitor.waitgroup.count();
             debug!(?task_count, "waiting running tasks");
