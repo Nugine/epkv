@@ -7,6 +7,9 @@
     clippy::must_use_candidate
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
+//
+#![feature(generic_associated_types)]
+#![feature(type_alias_impl_trait)]
 
 pub mod config;
 pub mod net;
@@ -17,16 +20,17 @@ use self::config::Config;
 use self::net::{Listener, TcpNetwork};
 
 use epkv_epaxos::replica::{Replica, ReplicaMeta};
-use epkv_protocol::sm;
+use epkv_protocol::{cs, rpc, sm};
 use epkv_rocks::cmd::BatchedCommand;
 use epkv_rocks::data_db::DataDb;
 use epkv_rocks::log_db::LogDb;
 use epkv_utils::atomic_flag::AtomicFlag;
-use epkv_utils::clone;
 
+use std::future::Future;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use tokio::net::TcpListener;
 use tokio::spawn;
 use tracing::debug;
 use tracing::error;
@@ -88,14 +92,13 @@ impl Server {
             let addr = this.config.server.listen_peer_addr;
             let config = &this.config.network;
             let listener = TcpNetwork::spawn_listener(addr, config).await?;
-
-            clone!(server);
-            bg_tasks.push(spawn(server.serve_peer(listener)));
+            bg_tasks.push(spawn(this.serve_peer(listener)));
         }
 
         {
-            clone!(server);
-            bg_tasks.push(spawn(server.serve_client()));
+            let this = Arc::clone(&server);
+            let listener = TcpListener::bind(this.config.server.listen_client_addr).await?;
+            bg_tasks.push(spawn(this.serve_client(listener)));
         }
 
         {
@@ -119,7 +122,7 @@ impl Server {
         Ok(())
     }
 
-    async fn serve_peer(self: Arc<Self>, mut listener: Listener<BatchedCommand>) {
+    async fn serve_peer(self: Arc<Self>, mut listener: Listener<BatchedCommand>) -> Result<()> {
         {
             let this = Arc::clone(&self);
             spawn(async move {
@@ -157,13 +160,56 @@ impl Server {
                 }
             }
         }
+
+        Ok(())
     }
 
-    async fn serve_client(self: Arc<Self>) {
-        todo!()
+    async fn serve_client(self: Arc<Self>, listener: TcpListener) -> Result<()> {
+        let config = self.config.rpc_server.clone();
+        let working = self.waitgroup.working();
+        rpc::serve(self, listener, config, working).await
     }
 
     async fn shutdown(self: Arc<Self>) {
+        todo!()
+    }
+}
+
+type HandleClientRpcFuture<'a> = impl Future<Output = Result<cs::Output>> + Send + 'a;
+
+impl rpc::Service<cs::Args> for Server {
+    type Output = cs::Output;
+
+    type Future<'a> = HandleClientRpcFuture<'a>;
+
+    fn call<'a>(self: &'a Arc<Self>, args: cs::Args) -> Self::Future<'a> {
+        self.handle_client_rpc(args)
+    }
+
+    fn needs_stop(&self) -> bool {
+        self.is_waiting_shutdown.get()
+    }
+}
+
+impl Server {
+    async fn handle_client_rpc(self: &Arc<Self>, args: cs::Args) -> Result<cs::Output> {
+        match args {
+            cs::Args::Get(args) => self.client_rpc_get(args).await.map(cs::Output::Get),
+            cs::Args::Set(args) => self.client_rpc_set(args).await.map(cs::Output::Set),
+            cs::Args::Del(args) => self.client_rpc_del(args).await.map(cs::Output::Del),
+            _ => Err(anyhow!("unexpected rpc method")),
+        }
+    }
+
+    async fn client_rpc_get(self: &Arc<Self>, args: cs::GetArgs) -> Result<cs::GetOutput> {
+        todo!()
+    }
+
+    async fn client_rpc_set(self: &Arc<Self>, args: cs::SetArgs) -> Result<cs::SetOutput> {
+        todo!()
+    }
+
+    async fn client_rpc_del(self: &Arc<Self>, args: cs::DelArgs) -> Result<cs::DelOutput> {
         todo!()
     }
 }

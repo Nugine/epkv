@@ -1,5 +1,5 @@
 use epkv_epaxos::config::ReplicaConfig;
-use epkv_protocol::rpc::RpcClientConfig;
+use epkv_protocol::rpc::{RpcClientConfig, RpcServerConfig};
 
 use std::net::SocketAddr;
 
@@ -15,6 +15,7 @@ pub struct Config {
     pub log_db: LogDbConfig,
     pub data_db: DataDbConfig,
     pub rpc_client: RpcClientConfig,
+    pub rpc_server: RpcServerConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

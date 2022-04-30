@@ -34,3 +34,6 @@ path = "/tmp/epkv-server/data_db"
 max_frame_length = 16777216 # 16 MiB
 op_chan_size = 256
 forward_chan_size = 256
+
+[rpc_server]
+max_frame_length = 16777216 # 16 MiB
