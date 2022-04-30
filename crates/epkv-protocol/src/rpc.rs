@@ -280,11 +280,16 @@ pub trait Service<A: Send + 'static>: Send + Sync + 'static {
     fn needs_stop(&self) -> bool;
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RpcServerConfig {
+    pub max_frame_length: usize,
+}
+
 #[inline]
 pub async fn serve<S, A>(
     service: Arc<S>,
     listener: TcpListener,
-    max_frame_length: usize,
+    config: RpcServerConfig,
     working: Working,
 ) -> Result<()>
 where
@@ -292,6 +297,8 @@ where
     A: DeserializeOwned + Send + 'static,
     <S as Service<A>>::Output: Serialize + Send + 'static,
 {
+    let max_frame_length = config.max_frame_length;
+
     loop {
         if service.needs_stop() {
             break;
@@ -317,7 +324,7 @@ where
                 while let Some(result) = remote_stream.next().await {
                     if service.needs_stop() {
                         debug!("drop rpc request because of waiting shutdown");
-                        break; // ASK: is it ok?
+                        break;
                     }
 
                     let bytes = result.inspect_err(|err| error!(?err, "remote rx error"))?;

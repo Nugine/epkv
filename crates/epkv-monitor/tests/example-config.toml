@@ -1,2 +1,5 @@
 state_path = "/tmp/epkv-monitor/state"
 listen_rpc_addr = "127.0.0.1:9000"
+
+[rpc_server]
+max_frame_length = 16777216 # 16 MiB

@@ -14,7 +14,6 @@ pub mod config;
 
 use std::fs;
 use std::net::SocketAddr;
-use std::ops::Not;
 use std::sync::Arc;
 
 use self::config::Config;
@@ -25,11 +24,14 @@ use epkv_utils::vecmap::VecMap;
 use anyhow::Result;
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
+use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tracing::debug;
+use wgp::WaitGroup;
 
 pub struct Monitor {
     state: Mutex<State>,
+    waitgroup: WaitGroup,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -78,10 +80,15 @@ impl Monitor {
             State::load_or_create(path)?
         };
         debug!(?state);
+
+        let waitgroup = WaitGroup::new();
+
+        let listener = TcpListener::bind(config.listen_rpc_addr).await?;
+
         todo!()
     }
 
-    async fn serve_rpc(self: Arc<Self>) {
+    async fn serve_rpc(self: Arc<Self>, listener: TcpListener) -> Result<()> {
         todo!()
     }
 

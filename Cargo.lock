@@ -248,6 +248,7 @@ dependencies = [
  "camino",
  "clap",
  "epkv-epaxos",
+ "epkv-protocol",
  "epkv-utils",
  "parking_lot",
  "serde",
@@ -256,6 +257,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "wgp",
 ]
 
 [[package]]
