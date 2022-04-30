@@ -81,20 +81,22 @@ impl Server {
             Arc::new(Server { replica, config, is_waiting_shutdown, waitgroup })
         };
 
-        let serve_peer_task = {
+        let mut bg_tasks = Vec::new();
+
+        {
             let this = Arc::clone(&server);
             let addr = this.config.server.listen_peer_addr;
             let config = &this.config.network;
             let listener = TcpNetwork::spawn_listener(addr, config).await?;
 
             clone!(server);
-            spawn(server.serve_peer(listener))
-        };
+            bg_tasks.push(spawn(server.serve_peer(listener)));
+        }
 
-        let serve_client_task = {
+        {
             clone!(server);
-            spawn(server.serve_client())
-        };
+            bg_tasks.push(spawn(server.serve_client()));
+        }
 
         {
             tokio::signal::ctrl_c().await?;
@@ -102,8 +104,10 @@ impl Server {
 
         {
             server.is_waiting_shutdown.set(true);
-            serve_peer_task.abort();
-            serve_client_task.abort();
+            for task in &bg_tasks {
+                task.abort();
+            }
+            drop(bg_tasks);
 
             let task_count = server.waitgroup.count();
             debug!(?task_count, "waiting running tasks");
