@@ -27,7 +27,6 @@ use epkv_utils::clone;
 use std::sync::Arc;
 
 use anyhow::Result;
-use futures_util::pin_mut;
 use tokio::spawn;
 use tracing::debug;
 use tracing::error;
@@ -74,14 +73,9 @@ impl Server {
         };
 
         let server = {
-            let waiting_shutdown = AtomicFlag::new();
+            let is_waiting_shutdown = AtomicFlag::new();
             let waitgroup = WaitGroup::new();
-            Arc::new(Server {
-                replica,
-                config,
-                is_waiting_shutdown: waiting_shutdown,
-                waitgroup,
-            })
+            Arc::new(Server { replica, config, is_waiting_shutdown, waitgroup })
         };
 
         let serve_peer_task = {
@@ -100,9 +94,7 @@ impl Server {
         };
 
         {
-            let shutdown_signal: _ = tokio::signal::ctrl_c();
-            pin_mut!(shutdown_signal);
-            shutdown_signal.await?
+            tokio::signal::ctrl_c().await?;
         }
 
         {
