@@ -81,7 +81,7 @@ macro_rules! impl_add_one {
     };
 }
 
-impl_add_one!(ReplicaId, LocalInstanceId, Seq, Round, SyncId,);
+impl_add_one!(ReplicaId, LocalInstanceId, Seq, Round, SyncId, Epoch,);
 
 macro_rules! impl_sub_one {
     ($($ty: ident,)+) => {
@@ -156,12 +156,30 @@ impl LocalInstanceId {
     }
 }
 
+/// `++i`
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Head<T>(T);
 
 impl<T> Head<T> {
     #[inline]
     pub const fn new(val: T) -> Self {
         Self(val)
+    }
+}
+
+impl Head<ReplicaId> {
+    #[inline]
+    pub fn gen_next(&mut self) -> ReplicaId {
+        self.0 = self.0.add_one();
+        self.0
+    }
+}
+
+impl Head<Epoch> {
+    #[inline]
+    pub fn gen_next(&mut self) -> Epoch {
+        self.0 = self.0.add_one();
+        self.0
     }
 }
 
