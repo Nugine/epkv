@@ -115,7 +115,7 @@ impl Monitor {
             monitor.waitgroup.wait().await;
         }
 
-        monitor.shutdown().await;
+        monitor.shutdown().await?;
 
         Ok(())
     }
@@ -124,7 +124,11 @@ impl Monitor {
         todo!()
     }
 
-    async fn shutdown(self: Arc<Self>) {
-        todo!()
+    async fn shutdown(&self) -> Result<()> {
+        let guard = self.state.lock().await;
+        let s = &*guard;
+        s.save(&self.config.state_path)?;
+        drop(guard);
+        Ok(())
     }
 }

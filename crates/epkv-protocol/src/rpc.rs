@@ -274,8 +274,10 @@ where
 
 pub trait Service<A: Send + 'static>: Send + Sync + 'static {
     type Output: Send + 'static;
-    type Future<'a>: Future<Output = Self::Output> + Send + 'a;
-    fn call(&self, args: A) -> Self::Future<'_>;
+
+    type Future<'a>: Future<Output = Result<Self::Output>> + Send + 'a;
+
+    fn call<'a>(self: &'a Arc<Self>, args: A) -> Self::Future<'a>;
 
     fn needs_stop(&self) -> bool;
 }
@@ -313,7 +315,7 @@ where
         let (reader, writer) = tcp.into_split();
         let mut remote_stream: _ = codec::bytes_stream(reader, max_frame_length);
         let mut remote_sink: _ = codec::bytes_sink(writer, max_frame_length);
-        let (res_tx, mut res_rx): _ = mpsc::unbounded_channel();
+        let (res_tx, mut res_rx): _ = mpsc::unbounded_channel::<RpcResponse<S::Output>>();
 
         {
             clone!(service, working);
@@ -331,17 +333,26 @@ where
 
                     clone!(service, working, res_tx);
                     spawn(async move {
-                        match codec::deserialize_owned::<RpcRequest<A>>(&*bytes) {
-                            Ok(req) => {
-                                let output = service.call(req.args).await;
-                                let rpc_id = req.rpc_id;
-                                let res = RpcResponse { rpc_id, output };
-                                let _ = res_tx.send(res);
-                            }
+                        let req = match codec::deserialize_owned::<RpcRequest<A>>(&*bytes) {
+                            Ok(req) => req,
                             Err(err) => {
                                 error!(?err, "codec deserialize error");
+                                return;
                             }
-                        }
+                        };
+
+                        let output = match service.call(req.args).await {
+                            Ok(output) => output,
+                            Err(err) => {
+                                error!(?err, "service call failed");
+                                return;
+                            }
+                        };
+
+                        let rpc_id = req.rpc_id;
+                        let res = RpcResponse { rpc_id, output };
+                        let _ = res_tx.send(res);
+
                         drop(working);
                     });
                 }
