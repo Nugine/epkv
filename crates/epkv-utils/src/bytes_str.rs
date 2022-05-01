@@ -61,7 +61,7 @@ impl Serialize for BytesStr {
     where
         S: serde::Serializer,
     {
-        <str as Serialize>::serialize(self.as_str(), serializer)
+        <Bytes as Serialize>::serialize(&self.0, serializer)
     }
 }
 
@@ -71,7 +71,11 @@ impl<'de> Deserialize<'de> for BytesStr {
     where
         D: serde::Deserializer<'de>,
     {
-        <String as Deserialize<'de>>::deserialize(deserializer).map(Self::from)
+        let bytes = <Bytes as Deserialize<'de>>::deserialize(deserializer)?;
+        match simdutf8::basic::from_utf8(&*bytes) {
+            Ok(_) => Ok(Self(bytes)),
+            Err(err) => Err(serde::de::Error::custom(err)),
+        }
     }
 }
 
