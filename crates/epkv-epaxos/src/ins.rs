@@ -1,8 +1,7 @@
+use crate::acc::Acc;
 use crate::deps::Deps;
-use crate::id::{Ballot, ReplicaId, Seq};
+use crate::id::{Ballot, Seq};
 use crate::status::Status;
-
-use epkv_utils::vecset::VecSet;
 
 use serde::{Deserialize, Serialize};
 
@@ -14,5 +13,5 @@ pub struct Instance<C> {
     pub deps: Deps,
     pub abal: Ballot,
     pub status: Status,
-    pub acc: VecSet<ReplicaId>,
+    pub acc: Acc,
 }

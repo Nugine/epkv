@@ -1,3 +1,4 @@
+use crate::acc::Acc;
 use crate::deps::Deps;
 use crate::id::*;
 use crate::ins::Instance;
@@ -5,7 +6,6 @@ use crate::status::Status;
 
 use epkv_utils::time::LocalInstant;
 use epkv_utils::vecmap::VecMap;
-use epkv_utils::vecset::VecSet;
 
 use std::net::SocketAddr;
 
@@ -20,7 +20,7 @@ pub struct PreAccept<C> {
     pub cmd: Option<C>,
     pub seq: Seq,
     pub deps: Deps,
-    pub acc: VecSet<ReplicaId>,
+    pub acc: Acc,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,7 +50,7 @@ pub struct Accept<C> {
     pub cmd: Option<C>,
     pub seq: Seq,
     pub deps: Deps,
-    pub acc: VecSet<ReplicaId>,
+    pub acc: Acc,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,7 +70,7 @@ pub struct Commit<C> {
     pub cmd: Option<C>,
     pub seq: Seq,
     pub deps: Deps,
-    pub acc: VecSet<ReplicaId>,
+    pub acc: Acc,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -108,7 +108,7 @@ pub struct PrepareOk<C> {
     pub deps: Deps,
     pub abal: Ballot,
     pub status: Status,
-    pub acc: VecSet<ReplicaId>,
+    pub acc: Acc,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -238,6 +238,7 @@ impl<C> PrepareReply<C> {
 mod tests {
     use super::*;
 
+    use crate::acc::MutableAcc;
     use crate::deps::MutableDeps;
     use crate::id::{Epoch, LocalInstanceId, Round};
 
@@ -249,7 +250,7 @@ mod tests {
     fn message_size() {
         {
             let baseline_type_size = mem::size_of::<Message<()>>();
-            assert_eq!(baseline_type_size, 120); // track message type size
+            assert_eq!(baseline_type_size, 104); // track message type size
         }
 
         {
@@ -261,8 +262,11 @@ mod tests {
             let cmd = None;
             let seq = Seq::from(1);
             let deps = Deps::from_mutable(MutableDeps::with_capacity(3));
-            let mut acc = VecSet::with_capacity(3);
-            let _ = acc.insert(rid);
+            let acc = {
+                let mut acc = MutableAcc::with_capacity(1);
+                acc.insert(rid);
+                Acc::from_mutable(acc)
+            };
 
             let preaccept =
                 Message::<()>::PreAccept(PreAccept { sender: rid, epoch, id, pbal, cmd, seq, deps, acc });

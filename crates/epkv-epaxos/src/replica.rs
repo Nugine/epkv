@@ -1,3 +1,4 @@
+use crate::acc::{Acc, MutableAcc};
 use crate::bounds::PeerStatusBounds;
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
@@ -227,7 +228,7 @@ where
 
         let id = InstanceId(self.rid, s.lid_head.gen_next());
         let pbal = Ballot(Round::ZERO, self.rid);
-        let acc = VecSet::<ReplicaId>::with_capacity(1);
+        let acc = Acc::from_mutable(MutableAcc::with_capacity(1));
 
         self.phase_preaccept(guard, id, pbal, Some(cmd), acc).await
     }
@@ -238,7 +239,7 @@ where
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,
-        mut acc: VecSet<ReplicaId>,
+        acc: Acc,
     ) -> Result<()> {
         let (mut rx, mut seq, mut deps, mut acc) = {
             let s = &mut *guard;
@@ -258,7 +259,12 @@ where
 
             let abal = pbal;
             let status = Status::PreAccepted;
-            let _ = acc.insert(self.rid);
+
+            let acc = {
+                let mut acc = acc;
+                acc.cow_insert(self.rid);
+                acc
+            };
 
             {
                 clone!(cmd, deps, acc);
@@ -267,7 +273,7 @@ where
             }
 
             let quorum = s.peers.cluster_size().wrapping_sub(2);
-            let selected_peers = s.peers.select(quorum, &acc);
+            let selected_peers = s.peers.select(quorum, acc.as_ref());
 
             let rx = {
                 let (tx, rx) = mpsc::channel(quorum);
@@ -295,7 +301,7 @@ where
                 self.spawn_recover_timeout(id, avg_rtt);
             }
 
-            (rx, seq, Deps::into_mutable(deps), acc)
+            (rx, seq, deps.into_mutable(), acc.into_mutable())
         };
 
         {
@@ -363,7 +369,7 @@ where
                             if received.insert(msg_sender).is_some() {
                                 continue;
                             }
-                            let _ = acc.insert(msg_sender);
+                            acc.insert(msg_sender);
                         }
 
                         match msg {
@@ -407,6 +413,7 @@ where
                         let _ = self.propose_tx.remove(&id);
 
                         let deps = Deps::from_mutable(deps);
+                        let acc = Acc::from_mutable(acc);
 
                         if is_fast_path {
                             return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
@@ -435,6 +442,7 @@ where
 
                 let cmd = None;
                 let deps = Deps::from_mutable(deps);
+                let acc = Acc::from_mutable(acc);
 
                 self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
             }
@@ -482,7 +490,7 @@ where
         let status = Status::PreAccepted;
 
         let mut acc = msg.acc;
-        let _ = acc.insert(self.rid);
+        acc.cow_insert(self.rid);
 
         {
             clone!(deps);
@@ -525,7 +533,7 @@ where
         cmd: Option<C>,
         seq: Seq,
         deps: Deps,
-        acc: VecSet<ReplicaId>,
+        acc: Acc,
     ) -> Result<()> {
         let (mut rx, mut acc) = {
             let s = &mut *guard;
@@ -534,7 +542,7 @@ where
             let status = Status::Accepted;
 
             let quorum = s.peers.cluster_size() / 2;
-            let selected_peers = s.peers.select(quorum, &acc);
+            let selected_peers = s.peers.select(quorum, acc.as_ref());
 
             let (cmd, mode) = match cmd {
                 Some(cmd) => (cmd, UpdateMode::Full),
@@ -571,7 +579,7 @@ where
                 );
             }
 
-            (rx, acc)
+            (rx, acc.into_mutable())
         };
 
         {
@@ -615,7 +623,7 @@ where
                     if received.insert(msg.sender).is_some() {
                         continue;
                     }
-                    let _ = acc.insert(msg.sender);
+                    acc.insert(msg.sender);
                 }
 
                 let cluster_size = s.peers.cluster_size();
@@ -627,6 +635,7 @@ where
                 let _ = self.propose_tx.remove(&id);
 
                 let cmd = None;
+                let acc = Acc::from_mutable(acc);
                 return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
             }
         }
@@ -658,7 +667,7 @@ where
         let status = Status::Accepted;
 
         let mut acc = msg.acc;
-        let _ = acc.insert(self.rid);
+        acc.cow_insert(self.rid);
 
         let seq = msg.seq;
         let deps = msg.deps;
@@ -696,7 +705,7 @@ where
         cmd: Option<C>,
         seq: Seq,
         deps: Deps,
-        acc: VecSet<ReplicaId>,
+        acc: Acc,
     ) -> Result<()> {
         let s = &mut *guard;
 
@@ -704,7 +713,7 @@ where
         let status = Status::Committed;
 
         let quorum = s.peers.cluster_size().wrapping_sub(1);
-        let selected_peers = s.peers.select(quorum, &acc);
+        let selected_peers = s.peers.select(quorum, acc.as_ref());
 
         let (cmd, mode) = match cmd {
             Some(cmd) => (cmd, UpdateMode::Full),
@@ -736,8 +745,6 @@ where
                 Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
             );
         }
-
-        {}
 
         Ok(())
     }
@@ -783,7 +790,7 @@ where
         let abal = pbal;
 
         let mut acc = msg.acc;
-        let _ = acc.insert(self.rid);
+        acc.cow_insert(self.rid);
 
         {
             clone!(cmd, deps);
@@ -865,7 +872,7 @@ where
             let mut cmd: Option<C> = None;
 
             // (sender, seq, deps, status, acc)
-            let mut tuples: Vec<(ReplicaId, Seq, Deps, Status, VecSet<ReplicaId>)> = Vec::new();
+            let mut tuples: Vec<(ReplicaId, Seq, Deps, Status, Acc)> = Vec::new();
 
             while let Some(msg) = rx.recv().await {
                 let msg = match PrepareReply::convert(msg) {
@@ -956,13 +963,16 @@ where
 
                 let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
 
-                let mut acc = match s.log.get_cached_ins(id) {
-                    Some(ins) => ins.acc.clone(),
-                    None => VecSet::new(),
+                let acc = {
+                    let mut acc = match s.log.get_cached_ins(id) {
+                        Some(ins) => MutableAcc::clone(ins.acc.as_ref()),
+                        None => MutableAcc::default(),
+                    };
+                    for (_, _, _, _, a) in tuples.iter() {
+                        acc.union(a.as_ref());
+                    }
+                    Acc::from_mutable(acc)
                 };
-                for (_, _, _, _, a) in tuples.iter() {
-                    acc.union_copied(a);
-                }
 
                 for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
                     if status >= Status::Committed {
@@ -1008,12 +1018,9 @@ where
                     return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
                 }
 
-                let cmd = match s.log.get_cached_ins(id) {
-                    Some(_) => None,
-                    None => {
-                        acc = VecSet::new();
-                        Some(C::create_nop())
-                    }
+                let (cmd, acc) = match s.log.get_cached_ins(id) {
+                    Some(_) => (None, acc),
+                    None => (Some(C::create_nop()), Acc::default()),
                 };
 
                 return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
@@ -1439,7 +1446,7 @@ where
                         max_assign(&mut ins.abal, saved_ins.abal);
                         ins.status = Status::Committed;
 
-                        let _ = ins.acc.insert(self.rid);
+                        ins.acc.cow_insert(self.rid);
                         let mode = if saved_ins.cmd.is_nop() != ins.cmd.is_nop() {
                             UpdateMode::Full
                         } else {

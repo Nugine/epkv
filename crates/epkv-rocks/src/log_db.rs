@@ -4,6 +4,7 @@ use crate::cmd::BatchedCommand;
 use crate::db_utils::{get_value, put_small_value, put_value};
 use crate::log_key::{GlobalFieldKey, InstanceFieldKey};
 
+use epkv_epaxos::acc::Acc;
 use epkv_epaxos::bounds::{AttrBounds, SavedStatusBounds, StatusBounds, StatusMap};
 use epkv_epaxos::deps::Deps;
 use epkv_epaxos::id::{Ballot, InstanceId, LocalInstanceId, ReplicaId, Seq};
@@ -15,7 +16,6 @@ use epkv_utils::cmp::max_assign;
 use epkv_utils::codec;
 use epkv_utils::onemap::OneMap;
 use epkv_utils::vecmap::VecMap;
-use epkv_utils::vecset::VecSet;
 
 use std::future::Future;
 use std::ops::Not;
@@ -139,7 +139,7 @@ impl LogDb {
         let seq: Seq = next_field!(FIELD_SEQ);
         let pbal: Ballot = next_field!(FIELD_PBAL);
         let cmd: BatchedCommand = next_field!(FIELD_CMD);
-        let others: (Deps, Ballot, VecSet<ReplicaId>) = next_field!(FIELD_OTHERS);
+        let others: (Deps, Ballot, Acc) = next_field!(FIELD_OTHERS);
         let (deps, abal, acc) = others;
 
         let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
