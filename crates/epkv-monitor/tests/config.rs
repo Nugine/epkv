@@ -1,7 +1,7 @@
 use epkv_monitor::config::Config;
+use epkv_utils::config::read_config_file;
 
 use std::env;
-use std::fs;
 
 use camino::Utf8PathBuf;
 
@@ -14,7 +14,6 @@ fn tests_dir() -> Utf8PathBuf {
 #[test]
 fn example_config() {
     let example_config_path = tests_dir().join("example-config.toml");
-    let content = fs::read_to_string(&example_config_path).unwrap();
-    let config: Config = toml::from_str(&content).unwrap();
+    let config: Config = read_config_file(&example_config_path).unwrap();
     println!("{:#?}", config);
 }

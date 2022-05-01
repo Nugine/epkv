@@ -26,6 +26,7 @@ pub mod bytes_str;
 pub mod chan;
 pub mod cmp;
 pub mod codec;
+pub mod config;
 pub mod flag_group;
 pub mod iter;
 pub mod lock;
