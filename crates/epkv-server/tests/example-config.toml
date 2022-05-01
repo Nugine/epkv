@@ -5,23 +5,23 @@ monitor_addr = "127.0.0.1:9000"
 public_peer_addr = "127.0.0.1:8010"
 
 [replica.preaccept_timeout]
-default_us = 1000
+default_us = 1_000
 enable_adaptive = true
 
 [replica.recover_timeout]
-default_us = 1000      # 1 ms
+default_us = 1_000      # 1 ms
 enable_adaptive = true
 
 [replica.sync_limits]
 max_instance_num = 512
 
 [replica.join_timeout]
-default_us = 1000000 # 1s
+default_us = 1_000_000 # 1s
 
 [network]
 inbound_chan_size = 4096
 outbound_chan_size = 256
-reconnect_interval_us = 10000 # 10 ms
+reconnect_interval_us = 10_000 # 10 ms
 max_frame_length = 16777216   # 16 MiB
 
 [log_db]
@@ -42,3 +42,8 @@ max_frame_length = 16777216 # 16 MiB
 chan_size = 4096
 batch_initial_capacity = 64
 batch_max_size = 1024
+
+[interval]
+probe_rtt_interval_us = 1_000_000 # 1 s
+clear_key_map_interval_us = 10_000_000 # 10 s
+save_bounds_interval_us = 1_000_000 # 1 s

@@ -17,6 +17,7 @@ pub struct Config {
     pub rpc_client: RpcClientConfig,
     pub rpc_server: RpcServerConfig,
     pub batching: BatchingConfig,
+    pub interval: IntervalConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,4 +52,11 @@ pub struct BatchingConfig {
     pub chan_size: usize,
     pub batch_initial_capacity: usize,
     pub batch_max_size: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IntervalConfig {
+    pub probe_rtt_interval_us: u64,
+    pub clear_key_map_interval_us: u64,
+    pub save_bounds_interval_us: u64,
 }
