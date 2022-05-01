@@ -9,7 +9,7 @@ use crate::id::*;
 use crate::ins::Instance;
 use crate::log::Log;
 use crate::msg::*;
-use crate::net::{broadcast_accept, broadcast_commit, broadcast_preaccept, Network};
+use crate::net::{self, Network};
 use crate::peers::Peers;
 use crate::status::{ExecStatus, Status};
 use crate::store::{DataStore, LogStore, UpdateMode};
@@ -293,7 +293,7 @@ where
                 clone!(deps, acc);
                 let sender = self.rid;
                 let epoch = self.epoch.load();
-                broadcast_preaccept(
+                net::broadcast_preaccept(
                     &self.network,
                     selected_peers.acc,
                     selected_peers.others,
@@ -575,7 +575,7 @@ where
                 clone!(acc);
                 let sender = self.rid;
                 let epoch = self.epoch.load();
-                broadcast_accept(
+                net::broadcast_accept(
                     &self.network,
                     selected_peers.acc,
                     selected_peers.others,
@@ -742,7 +742,7 @@ where
             let sender = self.rid;
             let epoch = self.epoch.load();
             clone!(cmd, deps);
-            broadcast_commit(
+            net::broadcast_commit(
                 &self.network,
                 selected_peers.acc,
                 selected_peers.others,
