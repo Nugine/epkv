@@ -293,12 +293,15 @@ where
                 clone!(deps, acc);
                 let sender = self.rid;
                 let epoch = self.epoch.load();
-                net::broadcast_preaccept(
-                    &self.network,
-                    selected_peers.acc,
-                    selected_peers.others,
-                    PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
-                );
+
+                let msg: _ = PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
+
+                if self.config.optimization.enable_acc {
+                    net::broadcast_preaccept(&self.network, selected_peers.acc, selected_peers.others, msg);
+                } else {
+                    let targets = selected_peers.into_merged();
+                    self.network.broadcast(targets, Message::PreAccept(msg))
+                }
             }
 
             if pbal.0 == Round::ZERO {
@@ -575,12 +578,15 @@ where
                 clone!(acc);
                 let sender = self.rid;
                 let epoch = self.epoch.load();
-                net::broadcast_accept(
-                    &self.network,
-                    selected_peers.acc,
-                    selected_peers.others,
-                    Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
-                );
+
+                let msg = Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
+
+                if self.config.optimization.enable_acc {
+                    net::broadcast_accept(&self.network, selected_peers.acc, selected_peers.others, msg);
+                } else {
+                    let targets = selected_peers.into_merged();
+                    self.network.broadcast(targets, Message::Accept(msg));
+                }
             }
 
             (rx, acc.into_mutable())
@@ -742,12 +748,15 @@ where
             let sender = self.rid;
             let epoch = self.epoch.load();
             clone!(cmd, deps);
-            net::broadcast_commit(
-                &self.network,
-                selected_peers.acc,
-                selected_peers.others,
-                Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
-            );
+
+            let msg: _ = Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
+
+            if self.config.optimization.enable_acc {
+                net::broadcast_commit(&self.network, selected_peers.acc, selected_peers.others, msg);
+            } else {
+                let targets = selected_peers.into_merged();
+                self.network.broadcast(targets, Message::Commit(msg));
+            }
         }
 
         Ok(())

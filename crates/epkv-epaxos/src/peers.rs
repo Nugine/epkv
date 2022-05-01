@@ -19,8 +19,13 @@ pub struct SelectedPeers {
     pub others: VecSet<ReplicaId>,
 }
 
-fn sort_rank(rank: &mut [(u64, ReplicaId)]) {
-    rank.sort_unstable_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
+impl SelectedPeers {
+    #[must_use]
+    pub fn into_merged(self) -> VecSet<ReplicaId> {
+        let mut peers = self.acc;
+        peers.union_copied(&self.others);
+        peers
+    }
 }
 
 struct Avg {
@@ -45,6 +50,10 @@ impl Avg {
     fn get(&self) -> Option<u64> {
         self.sum.checked_div(self.cnt)
     }
+}
+
+fn sort_rank(rank: &mut [(u64, ReplicaId)]) {
+    rank.sort_unstable_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
 }
 
 impl Peers {
