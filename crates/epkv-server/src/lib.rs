@@ -31,6 +31,7 @@ use epkv_utils::atomic_flag::AtomicFlag;
 
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use tokio::net::TcpListener;
@@ -112,6 +113,21 @@ impl Server {
         {
             let this = Arc::clone(&server);
             bg_tasks.push(spawn(this.cmd_batcher(cmd_rx)))
+        }
+
+        {
+            let this = Arc::clone(&server);
+            bg_tasks.push(spawn(this.interval_probe_rtt()));
+        }
+
+        {
+            let this = Arc::clone(&server);
+            bg_tasks.push(spawn(this.interval_clear_key_map()));
+        }
+
+        {
+            let this = Arc::clone(&server);
+            bg_tasks.push(spawn(this.interval_save_bounds()));
         }
 
         {
@@ -294,5 +310,77 @@ impl Server {
 
     async fn handle_batched_command(self: &Arc<Self>, cmd: BatchedCommand) -> Result<()> {
         self.replica.run_propose(cmd).await
+    }
+}
+
+impl Server {
+    async fn interval_probe_rtt(self: Arc<Self>) -> Result<()> {
+        let mut interval = {
+            let duration = Duration::from_micros(self.config.interval.probe_rtt_interval_us);
+            tokio::time::interval(duration)
+        };
+
+        loop {
+            interval.tick().await;
+
+            if self.is_waiting_shutdown.get() {
+                break;
+            }
+
+            let this = Arc::clone(&self);
+            spawn(async move {
+                if let Err(err) = this.replica.run_probe_rtt().await {
+                    error!(?err, "interval probe rtt")
+                }
+            });
+        }
+
+        Ok(())
+    }
+
+    async fn interval_clear_key_map(self: Arc<Self>) -> Result<()> {
+        let mut interval = {
+            let duration = Duration::from_micros(self.config.interval.clear_key_map_interval_us);
+            tokio::time::interval(duration)
+        };
+
+        loop {
+            interval.tick().await;
+
+            if self.is_waiting_shutdown.get() {
+                break;
+            }
+
+            let this = Arc::clone(&self);
+            spawn(async move {
+                this.replica.run_clear_key_map().await;
+            });
+        }
+
+        Ok(())
+    }
+
+    async fn interval_save_bounds(self: Arc<Self>) -> Result<()> {
+        let mut interval = {
+            let duration = Duration::from_micros(self.config.interval.save_bounds_interval_us);
+            tokio::time::interval(duration)
+        };
+
+        loop {
+            interval.tick().await;
+
+            if self.is_waiting_shutdown.get() {
+                break;
+            }
+
+            let this = Arc::clone(&self);
+            spawn(async move {
+                if let Err(err) = this.replica.run_save_bounds().await {
+                    error!(?err, "interval save bounds")
+                }
+            });
+        }
+
+        Ok(())
     }
 }
