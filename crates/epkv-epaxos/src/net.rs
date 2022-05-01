@@ -18,19 +18,21 @@ pub fn broadcast_preaccept<C>(
     others: VecSet<ReplicaId>,
     msg: PreAccept<C>,
 ) {
-    net.broadcast(
-        acc,
-        Message::PreAccept(PreAccept {
-            sender: msg.sender,
-            epoch: msg.epoch,
-            id: msg.id,
-            pbal: msg.pbal,
-            cmd: None,
-            seq: msg.seq,
-            deps: msg.deps.clone(),
-            acc: msg.acc.clone(),
-        }),
-    );
+    if acc.is_empty().not() {
+        net.broadcast(
+            acc,
+            Message::PreAccept(PreAccept {
+                sender: msg.sender,
+                epoch: msg.epoch,
+                id: msg.id,
+                pbal: msg.pbal,
+                cmd: None,
+                seq: msg.seq,
+                deps: msg.deps.clone(),
+                acc: msg.acc.clone(),
+            }),
+        );
+    }
     if others.is_empty().not() {
         assert!(msg.cmd.is_some());
         net.broadcast(others, Message::PreAccept(msg));
@@ -43,19 +45,21 @@ pub fn broadcast_accept<C>(
     others: VecSet<ReplicaId>,
     msg: Accept<C>,
 ) {
-    net.broadcast(
-        acc,
-        Message::Accept(Accept {
-            sender: msg.sender,
-            epoch: msg.epoch,
-            id: msg.id,
-            pbal: msg.pbal,
-            cmd: None,
-            seq: msg.seq,
-            deps: msg.deps.clone(),
-            acc: msg.acc.clone(),
-        }),
-    );
+    if acc.is_empty().not() {
+        net.broadcast(
+            acc,
+            Message::Accept(Accept {
+                sender: msg.sender,
+                epoch: msg.epoch,
+                id: msg.id,
+                pbal: msg.pbal,
+                cmd: None,
+                seq: msg.seq,
+                deps: msg.deps.clone(),
+                acc: msg.acc.clone(),
+            }),
+        );
+    }
     if others.is_empty().not() {
         assert!(msg.cmd.is_some());
         net.broadcast(others, Message::Accept(msg));
@@ -68,19 +72,21 @@ pub fn broadcast_commit<C>(
     others: VecSet<ReplicaId>,
     msg: Commit<C>,
 ) {
-    net.broadcast(
-        acc,
-        Message::Commit(Commit {
-            sender: msg.sender,
-            epoch: msg.epoch,
-            id: msg.id,
-            pbal: msg.pbal,
-            cmd: None,
-            seq: msg.seq,
-            deps: msg.deps.clone(),
-            acc: msg.acc.clone(),
-        }),
-    );
+    if acc.is_empty().not() {
+        net.broadcast(
+            acc,
+            Message::Commit(Commit {
+                sender: msg.sender,
+                epoch: msg.epoch,
+                id: msg.id,
+                pbal: msg.pbal,
+                cmd: None,
+                seq: msg.seq,
+                deps: msg.deps.clone(),
+                acc: msg.acc.clone(),
+            }),
+        );
+    }
     if others.is_empty().not() {
         assert!(msg.cmd.is_some());
         net.broadcast(others, Message::Commit(msg));
