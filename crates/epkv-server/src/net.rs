@@ -76,8 +76,8 @@ pub struct TcpNetwork<C> {
 
 #[derive(Debug, Clone)]
 pub struct Metrics {
-    pub msg_total_size: usize,
-    pub msg_count: usize,
+    pub msg_total_size: u64,
+    pub msg_count: u64,
 }
 
 impl<C> Network<C> for TcpNetwork<C>
@@ -98,11 +98,15 @@ where
         with_read_lock(&self.conns, |conns: _| {
             conns.apply(&targets, |conn| txs.push(conn.tx.clone()));
         });
-        with_mutex(&self.metrics, |metrics| {
-            let total_size = msg_bytes.len().wrapping_mul(targets.len());
-            metrics.msg_total_size = metrics.msg_total_size.wrapping_add(total_size);
-            metrics.msg_count = metrics.msg_count.wrapping_add(targets.len());
-        });
+        {
+            let cnt = u64::try_from(targets.len()).unwrap();
+            let single_size = u64::try_from(msg_bytes.len()).unwrap();
+            let total_size = single_size.wrapping_mul(cnt);
+            with_mutex(&self.metrics, |metrics| {
+                metrics.msg_total_size = metrics.msg_total_size.wrapping_add(total_size);
+                metrics.msg_count = metrics.msg_count.wrapping_add(cnt);
+            });
+        }
         spawn(async move {
             let futures: _ = txs.iter().map(|tx: _| tx.send(msg_bytes.clone()));
             let _ = join_all(futures).await;
@@ -115,10 +119,13 @@ where
             conns.get(&target).map(|conn| conn.tx.clone())
         });
         if let Some(tx) = tx {
-            with_mutex(&self.metrics, |metrics| {
-                metrics.msg_total_size = metrics.msg_total_size.wrapping_add(msg_bytes.len());
-                metrics.msg_count = metrics.msg_count.wrapping_add(1);
-            });
+            {
+                let single_size = u64::try_from(msg_bytes.len()).unwrap();
+                with_mutex(&self.metrics, |metrics| {
+                    metrics.msg_total_size = metrics.msg_total_size.wrapping_add(single_size);
+                    metrics.msg_count = metrics.msg_count.wrapping_add(1);
+                });
+            }
             spawn(async move {
                 let _ = tx.send(msg_bytes).await;
             });

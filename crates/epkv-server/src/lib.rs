@@ -267,7 +267,12 @@ impl Server {
     }
 
     async fn client_rpc_get_metrics(self: &Arc<Self>, _: cs::GetMetricsArgs) -> Result<cs::GetMetricsOutput> {
-        todo!()
+        let m = self.replica.network().metrics();
+
+        Ok(cs::GetMetricsOutput {
+            network_msg_total_size: m.msg_total_size,
+            network_msg_count: m.msg_count,
+        })
     }
 }
 
