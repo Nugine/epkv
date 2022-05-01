@@ -30,7 +30,7 @@ use std::ops::Not;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
@@ -200,7 +200,6 @@ impl Monitor {
     async fn handle_rpc(self: &Arc<Self>, args: sm::Args) -> Result<sm::Output> {
         match args {
             sm::Args::Register(args) => self.rpc_register(args).await.map(sm::Output::Register),
-            _ => Err(anyhow!("unexpected rpc method")),
         }
     }
 

@@ -11,13 +11,13 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-#[non_exhaustive]
+// #[non_exhaustive]
 pub enum Args {
     Register(RegisterArgs),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[non_exhaustive]
+// #[non_exhaustive]
 pub enum Output {
     Register(RegisterOutput),
 }

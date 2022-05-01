@@ -227,7 +227,7 @@ impl Server {
             cs::Args::Get(args) => self.client_rpc_get(args).await.map(cs::Output::Get),
             cs::Args::Set(args) => self.client_rpc_set(args).await.map(cs::Output::Set),
             cs::Args::Del(args) => self.client_rpc_del(args).await.map(cs::Output::Del),
-            _ => Err(anyhow!("unexpected rpc method")),
+            cs::Args::GetMetrics(args) => self.client_rpc_get_metrics(args).await.map(cs::Output::GetMetrics),
         }
     }
 
@@ -264,6 +264,10 @@ impl Server {
         self.cmd_tx.send(cmd).await.map_err(|_| anyhow!("failed to send command"))?;
         notify.wait_committed().await;
         Ok(cs::DelOutput {})
+    }
+
+    async fn client_rpc_get_metrics(self: &Arc<Self>, _: cs::GetMetricsArgs) -> Result<cs::GetMetricsOutput> {
+        todo!()
     }
 }
 
