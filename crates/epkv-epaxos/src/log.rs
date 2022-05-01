@@ -11,6 +11,7 @@ use std::mem;
 use std::ops::Not;
 
 use epkv_utils::asc::Asc;
+use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::iter::{copied_map_collect, map_collect};
 use epkv_utils::lock::with_mutex;
@@ -180,7 +181,10 @@ where
             true
         };
 
-        self.log_store.save(id, ins.clone(), mode).await?;
+        {
+            clone!(ins);
+            self.log_store.save(id, ins, mode).await?;
+        }
 
         if needs_update_attrs {
             self.update_attrs(id, ins.cmd.keys(), ins.seq);
