@@ -65,7 +65,7 @@ where
     graph: Graph<C>,
     data_store: D,
 
-    net: N,
+    network: N,
 }
 
 struct State<C, L>
@@ -99,7 +99,7 @@ where
     D: DataStore<C>,
     N: Network<C>,
 {
-    pub async fn new(meta: ReplicaMeta, mut log_store: L, data_store: D, net: N) -> Result<Arc<Self>> {
+    pub async fn new(meta: ReplicaMeta, mut log_store: L, data_store: D, network: N) -> Result<Arc<Self>> {
         let rid = meta.rid;
         let public_peer_addr = meta.public_peer_addr;
         let epoch = meta.epoch;
@@ -138,7 +138,7 @@ where
         let graph = Graph::new(status_bounds);
 
         for &(p, a) in &peers {
-            net.register_peer(p, a)
+            network.register_peer(p, a)
         }
 
         Ok(Arc::new(Self {
@@ -152,12 +152,16 @@ where
             sync_tx,
             graph,
             data_store,
-            net,
+            network,
         }))
     }
 
     pub fn config(&self) -> &ReplicaConfig {
         &self.config
+    }
+
+    pub fn network(&self) -> &N {
+        &self.network
     }
 
     pub async fn handle_message(self: &Arc<Self>, msg: Message<C>) -> Result<()> {
@@ -290,7 +294,7 @@ where
                 let sender = self.rid;
                 let epoch = self.epoch.load();
                 broadcast_preaccept(
-                    &self.net,
+                    &self.network,
                     selected_peers.acc,
                     selected_peers.others,
                     PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
@@ -504,7 +508,7 @@ where
             let target = msg.sender;
             let sender = self.rid;
             let epoch = self.epoch.load();
-            self.net.send_one(
+            self.network.send_one(
                 target,
                 if is_changed {
                     Message::PreAcceptDiff(PreAcceptDiff { sender, epoch, id, pbal, seq, deps })
@@ -572,7 +576,7 @@ where
                 let sender = self.rid;
                 let epoch = self.epoch.load();
                 broadcast_accept(
-                    &self.net,
+                    &self.network,
                     selected_peers.acc,
                     selected_peers.others,
                     Accept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
@@ -691,7 +695,7 @@ where
             let target = msg.sender;
             let sender = self.rid;
             let epoch = self.epoch.load();
-            self.net.send_one(target, Message::AcceptOk(AcceptOk { sender, epoch, id, pbal }));
+            self.network.send_one(target, Message::AcceptOk(AcceptOk { sender, epoch, id, pbal }));
         }
         Ok(())
     }
@@ -739,7 +743,7 @@ where
             let epoch = self.epoch.load();
             clone!(cmd, deps);
             broadcast_commit(
-                &self.net,
+                &self.network,
                 selected_peers.acc,
                 selected_peers.others,
                 Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc },
@@ -847,7 +851,7 @@ where
             {
                 let sender = self.rid;
                 let epoch = self.epoch.load();
-                self.net.broadcast(
+                self.network.broadcast(
                     targets,
                     Message::Prepare(Prepare { sender, epoch, id, pbal, known }),
                 );
@@ -1083,7 +1087,7 @@ where
 
                 let target = msg.sender;
                 let sender = self.rid;
-                self.net.send_one(
+                self.network.send_one(
                     target,
                     Message::PrepareNack(PrepareNack { sender, epoch, id, pbal }),
                 );
@@ -1102,7 +1106,7 @@ where
 
                 let target = msg.sender;
                 let sender = self.rid;
-                self.net.send_one(
+                self.network.send_one(
                     target,
                     Message::PrepareUnchosen(PrepareUnchosen { sender, epoch, id }),
                 );
@@ -1126,7 +1130,7 @@ where
 
         let target = msg.sender;
         let sender = self.rid;
-        self.net.send_one(
+        self.network.send_one(
             target,
             Message::PrepareOk(PrepareOk { sender, epoch, id, pbal, cmd, seq, deps, abal, status, acc }),
         );
@@ -1153,7 +1157,7 @@ where
                 let sender = self.rid;
                 let epoch = self.epoch.load();
                 let addr = self.public_peer_addr;
-                self.net.send_one(target, Message::Join(Join { sender, epoch, addr }));
+                self.network.send_one(target, Message::Join(Join { sender, epoch, addr }));
                 return Ok(true);
             }
 
@@ -1166,7 +1170,7 @@ where
                 let sender = self.rid;
                 let epoch = self.epoch.load();
                 let addr = self.public_peer_addr;
-                self.net.broadcast(targets, Message::Join(Join { sender, epoch, addr }));
+                self.network.broadcast(targets, Message::Join(Join { sender, epoch, addr }));
             }
             rx
         };
@@ -1205,8 +1209,8 @@ where
 
         {
             let target = msg.sender;
-            self.net.register_peer(target, msg.addr);
-            self.net.send_one(target, Message::JoinOk(JoinOk { sender: self.rid }));
+            self.network.register_peer(target, msg.addr);
+            self.network.send_one(target, Message::JoinOk(JoinOk { sender: self.rid }));
         }
 
         Ok(())
@@ -1241,7 +1245,7 @@ where
 
         let sender = self.rid;
         let time = LocalInstant::now();
-        self.net.broadcast(targets, Message::ProbeRtt(ProbeRtt { sender, time }));
+        self.network.broadcast(targets, Message::ProbeRtt(ProbeRtt { sender, time }));
         Ok(())
     }
 
@@ -1249,7 +1253,7 @@ where
         let target = msg.sender;
         let sender = self.rid;
         let time = msg.time;
-        self.net.send_one(target, Message::ProbeRttOk(ProbeRttOk { sender, time }));
+        self.network.send_one(target, Message::ProbeRttOk(ProbeRttOk { sender, time }));
         Ok(())
     }
 
@@ -1285,14 +1289,14 @@ where
         {
             let sender = self.rid;
             let addr = self.public_peer_addr;
-            self.net.send_one(target, Message::AskLog(AskLog { sender, addr, known_up_to }));
+            self.network.send_one(target, Message::AskLog(AskLog { sender, addr, known_up_to }));
         }
 
         Ok(())
     }
 
     async fn handle_ask_log(self: &Arc<Self>, msg: AskLog) -> Result<()> {
-        self.net.register_peer(msg.sender, msg.addr);
+        self.network.register_peer(msg.sender, msg.addr);
 
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
@@ -1303,8 +1307,9 @@ where
         let target = msg.sender;
         let sender = self.rid;
         let sync_id = SyncId::ZERO;
-        let send_log =
-            |instances| self.net.send_one(target, Message::SyncLog(SyncLog { sender, sync_id, instances }));
+        let send_log = |instances| {
+            self.network.send_one(target, Message::SyncLog(SyncLog { sender, sync_id, instances }))
+        };
 
         let conf = &self.config.sync_limits;
         let limit: usize = conf.max_instance_num.try_into().expect("usize overflow");
@@ -1361,7 +1366,7 @@ where
                 rxs.push((sync_id, rx));
 
                 clone!(targets);
-                self.net.broadcast(targets, Message::SyncLog(SyncLog { sender, sync_id, instances }))
+                self.network.broadcast(targets, Message::SyncLog(SyncLog { sender, sync_id, instances }))
             };
 
             for &(rid, higher) in local_bounds.iter() {
@@ -1468,7 +1473,7 @@ where
             let target = msg.sender;
             let sender = self.rid;
             let sync_id = msg.sync_id;
-            self.net.send_one(target, Message::SyncLogOk(SyncLogOk { sender, sync_id }));
+            self.network.send_one(target, Message::SyncLogOk(SyncLogOk { sender, sync_id }));
         }
 
         Ok(())

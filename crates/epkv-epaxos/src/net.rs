@@ -13,13 +13,13 @@ pub trait Network<C>: Send + Sync + 'static {
 }
 
 pub fn broadcast_preaccept<C>(
-    net: &impl Network<C>,
+    network: &impl Network<C>,
     acc: VecSet<ReplicaId>,
     others: VecSet<ReplicaId>,
     msg: PreAccept<C>,
 ) {
     if acc.is_empty().not() {
-        net.broadcast(
+        network.broadcast(
             acc,
             Message::PreAccept(PreAccept {
                 sender: msg.sender,
@@ -35,18 +35,18 @@ pub fn broadcast_preaccept<C>(
     }
     if others.is_empty().not() {
         assert!(msg.cmd.is_some());
-        net.broadcast(others, Message::PreAccept(msg));
+        network.broadcast(others, Message::PreAccept(msg));
     }
 }
 
 pub fn broadcast_accept<C>(
-    net: &impl Network<C>,
+    network: &impl Network<C>,
     acc: VecSet<ReplicaId>,
     others: VecSet<ReplicaId>,
     msg: Accept<C>,
 ) {
     if acc.is_empty().not() {
-        net.broadcast(
+        network.broadcast(
             acc,
             Message::Accept(Accept {
                 sender: msg.sender,
@@ -62,18 +62,18 @@ pub fn broadcast_accept<C>(
     }
     if others.is_empty().not() {
         assert!(msg.cmd.is_some());
-        net.broadcast(others, Message::Accept(msg));
+        network.broadcast(others, Message::Accept(msg));
     }
 }
 
 pub fn broadcast_commit<C>(
-    net: &impl Network<C>,
+    network: &impl Network<C>,
     acc: VecSet<ReplicaId>,
     others: VecSet<ReplicaId>,
     msg: Commit<C>,
 ) {
     if acc.is_empty().not() {
-        net.broadcast(
+        network.broadcast(
             acc,
             Message::Commit(Commit {
                 sender: msg.sender,
@@ -89,6 +89,6 @@ pub fn broadcast_commit<C>(
     }
     if others.is_empty().not() {
         assert!(msg.cmd.is_some());
-        net.broadcast(others, Message::Commit(msg));
+        network.broadcast(others, Message::Commit(msg));
     }
 }
