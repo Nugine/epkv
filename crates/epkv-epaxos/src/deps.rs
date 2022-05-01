@@ -75,8 +75,7 @@ static EMPTY: Lazy<Deps> = Lazy::new(|| Deps(Asc::new(MutableDeps(VecMap::new())
 
 impl Default for Deps {
     fn default() -> Self {
-        let empty = &*EMPTY;
-        empty.clone()
+        Deps::clone(&*EMPTY)
     }
 }
 
