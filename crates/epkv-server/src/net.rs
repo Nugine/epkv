@@ -5,7 +5,7 @@ use epkv_epaxos::msg::Message;
 use epkv_epaxos::net::Network;
 
 use epkv_utils::codec::{self, bytes_sink, bytes_stream};
-use epkv_utils::lock::{with_read_lock, with_write_lock};
+use epkv_utils::lock::{with_mutex, with_read_lock, with_write_lock};
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
@@ -18,7 +18,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use futures_util::future::join_all;
 use futures_util::{SinkExt, StreamExt};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::net::{TcpListener, TcpStream};
@@ -68,7 +68,16 @@ impl<C> Drop for Listener<C> {
 pub struct TcpNetwork<C> {
     conns: RwLock<VecMap<ReplicaId, Connection>>,
     config: NetworkConfig,
+
+    metrics: Mutex<Metrics>,
+
     _marker: PhantomData<fn(C) -> C>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Metrics {
+    pub msg_total_size: usize,
+    pub msg_count: usize,
 }
 
 impl<C> Network<C> for TcpNetwork<C>
@@ -89,7 +98,11 @@ where
         with_read_lock(&self.conns, |conns: _| {
             conns.apply(&targets, |conn| txs.push(conn.tx.clone()));
         });
-
+        with_mutex(&self.metrics, |metrics| {
+            let total_size = msg_bytes.len().wrapping_mul(targets.len());
+            metrics.msg_total_size = metrics.msg_total_size.wrapping_add(total_size);
+            metrics.msg_count = metrics.msg_count.wrapping_add(targets.len());
+        });
         spawn(async move {
             let futures: _ = txs.iter().map(|tx: _| tx.send(msg_bytes.clone()));
             let _ = join_all(futures).await;
@@ -102,6 +115,10 @@ where
             conns.get(&target).map(|conn| conn.tx.clone())
         });
         if let Some(tx) = tx {
+            with_mutex(&self.metrics, |metrics| {
+                metrics.msg_total_size = metrics.msg_total_size.wrapping_add(msg_bytes.len());
+                metrics.msg_count = metrics.msg_count.wrapping_add(1);
+            });
             spawn(async move {
                 let _ = tx.send(msg_bytes).await;
             });
@@ -121,6 +138,7 @@ impl<C> TcpNetwork<C> {
         Self {
             conns: RwLock::new(VecMap::new()),
             config: config.clone(),
+            metrics: Mutex::new(Metrics { msg_total_size: 0, msg_count: 0 }),
             _marker: PhantomData,
         }
     }
@@ -228,5 +246,9 @@ impl<C> TcpNetwork<C> {
         });
 
         Ok(Listener { rx, task: Some(task), _marker: PhantomData })
+    }
+
+    pub fn metrics(&self) -> Metrics {
+        with_mutex(&self.metrics, |metrics| metrics.clone())
     }
 }
