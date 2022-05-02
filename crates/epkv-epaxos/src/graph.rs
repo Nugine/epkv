@@ -45,6 +45,17 @@ pub struct InsNode<C> {
 pub struct RowGuard(OwnedAsyncMutexGuard<()>);
 pub struct GlobalGuard<'a>(AsyncMutexGuard<'a, ()>);
 
+impl<C> fmt::Debug for InsNode<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let status = with_mutex(&self.status, |s| *s);
+        f.debug_struct("InsNode")
+            .field("seq", &self.seq)
+            .field("deps", &self.deps)
+            .field("status", &status)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<C> Graph<C> {
     #[must_use]
     pub fn new(status_bounds: Asc<SyncMutex<StatusBounds>>) -> Self {
@@ -197,6 +208,7 @@ pub trait GraphNode: Clone {
     fn deps_for_each(&self, f: impl FnMut(Self::Id));
 }
 
+#[derive(Debug)]
 pub struct LocalGraph<I, N> {
     nodes: FnvHashMap<I, N>,
 }
@@ -294,7 +306,7 @@ struct TarjanSccAttr {
 
 impl<'a, I, N> TarjanScc<'a, I, N>
 where
-    I: GraphId,
+    I: GraphId + fmt::Debug,
     N: GraphNode<Id = I>,
 {
     fn new(nodes: &'a FnvHashMap<I, N>) -> Self {
@@ -316,7 +328,7 @@ where
 
         self.stack.push(u);
 
-        let node = &self.nodes[&u];
+        let node = self.nodes.get(&u).unwrap_or_else(|| panic!("cannot find node {u:?}"));
 
         node.deps_for_each(|v| {
             if self.attr.contains_key(&v).not() {

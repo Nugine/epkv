@@ -1657,7 +1657,7 @@ where
             }
         }
 
-        debug!(?id, "tarjan scc");
+        debug!(?id, ?local_graph, "tarjan scc");
 
         {
             let mut scc_list = local_graph.tarjan_scc(id);
