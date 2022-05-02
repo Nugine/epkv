@@ -152,8 +152,10 @@ impl<C> TcpNetwork<C> {
     #[must_use]
     pub fn spawn_connector(addr: SocketAddr, config: &NetworkConfig) -> Connection {
         let chan_size = config.outbound_chan_size;
-        let reconnect_interval = Duration::from_micros(config.reconnect_interval_us);
         let max_frame_length = config.max_frame_length;
+
+        let initial_reconnect_timeout = config.initial_reconnect_timeout_us;
+        let max_reconnect_timeout = config.max_reconnect_timeout_us;
 
         let (tx, rx) = mpsc::channel::<Bytes>(chan_size);
 
@@ -161,16 +163,28 @@ impl<C> TcpNetwork<C> {
             let mut rx = rx;
 
             'drive: loop {
-                let mut sink = loop {
-                    // FIXME: check rx.is_closed()
-                    // https://github.com/tokio-rs/tokio/issues/4638
-                    match TcpStream::connect(addr).await {
-                        Ok(tcp) => {
-                            break bytes_sink(tcp, max_frame_length);
-                        }
-                        Err(err) => {
-                            error!(?err, ?addr, "failed to reconnect");
-                            sleep(reconnect_interval).await;
+                let mut sink = {
+                    let mut spin_weight: u64 = 1;
+                    loop {
+                        // FIXME: check rx.is_closed()
+                        // https://github.com/tokio-rs/tokio/issues/4638
+                        match TcpStream::connect(addr).await {
+                            Ok(tcp) => {
+                                break bytes_sink(tcp, max_frame_length);
+                            }
+                            Err(err) => {
+                                spin_weight = spin_weight.wrapping_mul(2);
+
+                                let timeout = Duration::from_micros(
+                                    initial_reconnect_timeout
+                                        .saturating_mul(spin_weight)
+                                        .min(max_reconnect_timeout),
+                                );
+
+                                error!(?err, ?addr, ?timeout, "failed to reconnect");
+
+                                sleep(timeout).await;
+                            }
                         }
                     }
                 };

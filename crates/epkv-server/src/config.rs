@@ -33,7 +33,8 @@ pub struct ServerConfig {
 pub struct NetworkConfig {
     pub inbound_chan_size: usize,
     pub outbound_chan_size: usize,
-    pub reconnect_interval_us: u64,
+    pub initial_reconnect_timeout_us: u64,
+    pub max_reconnect_timeout_us: u64,
     pub max_frame_length: usize,
 }
 

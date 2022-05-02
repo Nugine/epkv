@@ -30,7 +30,8 @@ enable_acc = true
 [network]
 inbound_chan_size = 4096
 outbound_chan_size = 256
-reconnect_interval_us = 10_000 # 10 ms
+initial_reconnect_timeout_us = 10_000 # 10 ms
+max_reconnect_timeout_us = 1_000_000 # 1s
 max_frame_length = 16777216    # 16 MiB
 
 [rpc_client]
