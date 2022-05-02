@@ -60,12 +60,19 @@ local-server name: build
     #!/bin/bash -ex
     cd {{justfile_directory()}}
     export RUST_BACKTRACE=full
-    export RUST_LOG=epkv_server=debug,epkv_rocks=debug,epkv_epaxos=debug
+    export RUST_LOG=epkv_server=debug,epkv_rocks=debug,epkv_epaxos=debug,epkv_protocol=debug
     ./target/release/epkv-server --config /tmp/epkv-cluster/config/{{name}}.json
 
 local-monitor: build
     #!/bin/bash -ex
     cd {{justfile_directory()}}
     export RUST_BACKTRACE=full
-    export RUST_LOG=epkv_monitor=debug
+    export RUST_LOG=epkv_monitor=debug,epkv_protocol=debug
     ./target/release/epkv-monitor --config /tmp/epkv-cluster/config/monitor.json
+
+eval *ARGS:
+    #!/bin/bash -e
+    cd {{justfile_directory()}}
+    export RUST_BACKTRACE=full
+    export RUST_LOG=epkv_eval=debug,epkv_protocol=debug
+    ./target/release/epkv-eval {{ARGS}}
