@@ -7,6 +7,16 @@ use camino::{Utf8Path, Utf8PathBuf};
 use epkv_utils::config::read_config_file;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, clap::Subcommand)]
+pub enum ClusterOpt {
+    Generate {
+        #[clap(long)]
+        config: Utf8PathBuf,
+        #[clap(long)]
+        target: Utf8PathBuf,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub monitor: MergeConfig,
@@ -82,7 +92,7 @@ impl Config {
     }
 }
 
-pub fn run(config_path: &Utf8Path, target_dir: &Utf8Path) -> Result<()> {
+pub fn generate(config_path: &Utf8Path, target_dir: &Utf8Path) -> Result<()> {
     fs::create_dir_all(target_dir)?;
 
     let config: Config =
@@ -111,5 +121,12 @@ pub fn run(config_path: &Utf8Path, target_dir: &Utf8Path) -> Result<()> {
 
     println!("done");
 
+    Ok(())
+}
+
+pub fn run(opt: ClusterOpt) -> Result<()> {
+    match opt {
+        ClusterOpt::Generate { config, target } => generate(&config, &target)?,
+    };
     Ok(())
 }

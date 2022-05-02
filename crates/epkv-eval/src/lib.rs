@@ -8,4 +8,4 @@
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
 
-pub mod cluster_generate;
+pub mod cluster;
