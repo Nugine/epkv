@@ -1,13 +1,12 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use minstant::{Anchor, Instant};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct LocalInstant(u64);
 
-static ANCHOR: Lazy<Anchor> = Lazy::new(Anchor::new);
+static ANCHOR: Lazy<Instant> = Lazy::new(Instant::now);
 
 impl LocalInstant {
     #[cfg(test)]
@@ -19,8 +18,9 @@ impl LocalInstant {
     #[inline]
     #[must_use]
     pub fn now() -> Self {
-        let anchor = &*ANCHOR;
-        Self(Instant::now().as_unix_nanos(anchor))
+        let anchor = *ANCHOR;
+        let duration = Instant::now().duration_since(anchor);
+        Self(duration.as_nanos().try_into().unwrap())
     }
 
     #[inline]
