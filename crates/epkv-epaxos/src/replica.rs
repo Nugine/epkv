@@ -166,6 +166,8 @@ where
 
     #[tracing::instrument(skip_all, fields(rid = ?self.rid))]
     pub async fn handle_message(self: &Arc<Self>, msg: Message<C>) -> Result<()> {
+        debug!(msg_variant_name = ?msg.variant_name());
+
         match msg {
             Message::PreAccept(msg) => {
                 self.handle_preaccept(msg).await //

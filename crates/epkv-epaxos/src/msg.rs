@@ -234,6 +234,32 @@ impl<C> PrepareReply<C> {
     }
 }
 
+impl<C> Message<C> {
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            Message::PreAccept(_) => "PreAccept",
+            Message::PreAcceptOk(_) => "PreAcceptOk",
+            Message::PreAcceptDiff(_) => "PreAcceptDiff",
+            Message::Accept(_) => "Accept",
+            Message::AcceptOk(_) => "AcceptOk",
+            Message::Commit(_) => "Commit",
+            Message::Prepare(_) => "Prepare",
+            Message::PrepareOk(_) => "PrepareOk",
+            Message::PrepareNack(_) => "PrepareNack",
+            Message::PrepareUnchosen(_) => "PrepareUnchosen",
+            Message::Join(_) => "Join",
+            Message::JoinOk(_) => "JoinOk",
+            Message::Leave(_) => "Leave",
+            Message::ProbeRtt(_) => "ProbeRtt",
+            Message::ProbeRttOk(_) => "ProbeRttOk",
+            Message::AskLog(_) => "AskLog",
+            Message::SyncLog(_) => "SyncLog",
+            Message::SyncLogOk(_) => "SyncLogOk",
+            Message::PeerBounds(_) => "PeerBounds",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
