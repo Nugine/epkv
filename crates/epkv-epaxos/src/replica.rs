@@ -1084,6 +1084,8 @@ where
             return Ok(());
         }
 
+        debug!(id =?msg.id, "handle_prepare");
+
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
