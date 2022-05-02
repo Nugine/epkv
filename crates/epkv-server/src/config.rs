@@ -60,4 +60,5 @@ pub struct IntervalConfig {
     pub probe_rtt_interval_us: u64,
     pub clear_key_map_interval_us: u64,
     pub save_bounds_interval_us: u64,
+    pub broadcast_bounds_interval_us: u64,
 }

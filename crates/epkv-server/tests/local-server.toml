@@ -51,3 +51,4 @@ batch_max_size = 1024
 probe_rtt_interval_us = 10_000_000     # 10 s
 clear_key_map_interval_us = 10_000_000 # 10 s
 save_bounds_interval_us = 1_000_000    # 1 s
+broadcast_bounds_interval_us = 10_000_000 # 10 s

@@ -155,6 +155,11 @@ impl Server {
         }
 
         {
+            let this = Arc::clone(&server);
+            bg_tasks.push(spawn(this.interval_broadcast_bounds()));
+        }
+
+        {
             tokio::signal::ctrl_c().await?;
         }
 
@@ -421,6 +426,30 @@ impl Server {
             spawn(async move {
                 if let Err(err) = this.replica.run_save_bounds().await {
                     error!(?err, "interval save bounds")
+                }
+            });
+        }
+
+        Ok(())
+    }
+
+    async fn interval_broadcast_bounds(self: Arc<Self>) -> Result<()> {
+        let mut interval = {
+            let duration = Duration::from_micros(self.config.interval.broadcast_bounds_interval_us);
+            tokio::time::interval(duration)
+        };
+
+        loop {
+            interval.tick().await;
+
+            if self.is_waiting_shutdown.get() {
+                break;
+            }
+
+            let this = Arc::clone(&self);
+            spawn(async move {
+                if let Err(err) = this.replica.run_broadcast_bounds().await {
+                    error!(?err, "interval broadcast bounds")
                 }
             });
         }
