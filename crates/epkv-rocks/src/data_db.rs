@@ -4,6 +4,7 @@ use epkv_epaxos::exec::ExecNotify;
 use epkv_epaxos::id::InstanceId;
 use epkv_epaxos::store::DataStore;
 use epkv_utils::asc::Asc;
+use tracing::debug;
 
 use std::future::Future;
 use std::sync::Arc;
@@ -68,11 +69,12 @@ type IssueFuture = impl Future<Output = Result<()>> + Send + 'static;
 
 impl DataStore<BatchedCommand> for Arc<DataDb> {
     type Future<'a> = IssueFuture;
-    fn issue(&self, _: InstanceId, cmd: BatchedCommand, notify: Asc<ExecNotify>) -> Self::Future<'_> {
+    fn issue(&self, id: InstanceId, cmd: BatchedCommand, notify: Asc<ExecNotify>) -> Self::Future<'_> {
         let this = Arc::clone(self);
         let task = move || {
             let result = this.batched_execute(cmd);
             notify.notify_executed();
+            debug!(?id, "cmd has been executed");
             result
         };
         async move { tokio::task::spawn_blocking(task).await.unwrap() }
