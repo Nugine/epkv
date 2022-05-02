@@ -38,3 +38,4 @@ pub mod tracing;
 pub mod vecmap;
 pub mod vecset;
 pub mod watermark;
+pub mod utf8;
