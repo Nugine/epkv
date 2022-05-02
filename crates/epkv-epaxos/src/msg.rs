@@ -264,7 +264,6 @@ impl<C> Message<C> {
 mod tests {
     use super::*;
 
-    use crate::acc::MutableAcc;
     use crate::deps::MutableDeps;
     use crate::id::{Epoch, LocalInstanceId, Round};
 
@@ -288,11 +287,7 @@ mod tests {
             let cmd = None;
             let seq = Seq::from(1);
             let deps = Deps::from_mutable(MutableDeps::with_capacity(3));
-            let acc = {
-                let mut acc = MutableAcc::with_capacity(1);
-                acc.insert(rid);
-                Acc::from_mutable(acc)
-            };
+            let acc = Acc::from_iter([rid]);
 
             let preaccept =
                 Message::<()>::PreAccept(PreAccept { sender: rid, epoch, id, pbal, cmd, seq, deps, acc });

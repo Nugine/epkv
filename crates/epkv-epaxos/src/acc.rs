@@ -93,3 +93,15 @@ impl AsRef<VecSet<ReplicaId>> for Acc {
         &self.as_inner().0
     }
 }
+
+impl FromIterator<ReplicaId> for MutableAcc {
+    fn from_iter<T: IntoIterator<Item = ReplicaId>>(iter: T) -> Self {
+        MutableAcc(VecSet::from_iter(iter))
+    }
+}
+
+impl FromIterator<ReplicaId> for Acc {
+    fn from_iter<T: IntoIterator<Item = ReplicaId>>(iter: T) -> Self {
+        Acc::from_mutable(MutableAcc(VecSet::from_iter(iter)))
+    }
+}
