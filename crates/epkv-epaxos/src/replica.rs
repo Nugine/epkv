@@ -841,6 +841,8 @@ where
     }
 
     async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
+        debug!(?id, "run_recover");
+
         let mut rx = {
             let mut guard = self.state.lock().await;
             let s = &mut *guard;
