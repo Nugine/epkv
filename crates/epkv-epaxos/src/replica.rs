@@ -138,7 +138,7 @@ where
         let graph = Graph::new(status_bounds);
 
         for &(p, a) in &peers {
-            network.register_peer(p, a);
+            network.join(p, a);
         }
 
         Ok(Arc::new(Self {
@@ -1216,7 +1216,7 @@ where
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
-        if let Some(prev) = self.network.register_peer(msg.sender, msg.addr) {
+        if let Some(prev) = self.network.join(msg.sender, msg.addr) {
             s.peers.remove(prev);
         }
 
@@ -1319,7 +1319,7 @@ where
     }
 
     async fn handle_ask_log(self: &Arc<Self>, msg: AskLog) -> Result<()> {
-        self.network.register_peer(msg.sender, msg.addr);
+        self.network.join(msg.sender, msg.addr);
 
         let mut guard = self.state.lock().await;
         let s = &mut *guard;

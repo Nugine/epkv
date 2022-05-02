@@ -137,11 +137,26 @@ where
         }
     }
 
-    fn register_peer(&self, rid: ReplicaId, addr: SocketAddr) -> Option<ReplicaId> {
+    fn join(&self, rid: ReplicaId, addr: SocketAddr) -> Option<ReplicaId> {
         with_write_lock(&self.state, |s: _| {
-            let _ = s.conns.init_with(rid, || Self::spawn_connector(addr, &self.config));
-            s.addr_map.update(rid, addr)
+            let prev_rid = s.addr_map.update(rid, addr);
+
+            if let Some(prev) = prev_rid {
+                let _ = s.conns.remove(&prev);
+            }
+
+            let _ = s.conns.insert(rid, Self::spawn_connector(addr, &self.config));
+
+            prev_rid
         })
+    }
+
+    fn leave(&self, rid: ReplicaId) {
+        let conn = with_write_lock(&self.state, |s: _| {
+            s.addr_map.remove(rid);
+            s.conns.remove(&rid)
+        });
+        drop(conn);
     }
 }
 

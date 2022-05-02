@@ -9,7 +9,8 @@ use std::ops::Not;
 pub trait Network<C>: Send + Sync + 'static {
     fn broadcast(&self, targets: VecSet<ReplicaId>, msg: Message<C>);
     fn send_one(&self, target: ReplicaId, msg: Message<C>);
-    fn register_peer(&self, rid: ReplicaId, addr: SocketAddr) -> Option<ReplicaId>;
+    fn join(&self, rid: ReplicaId, addr: SocketAddr) -> Option<ReplicaId>;
+    fn leave(&self, rid: ReplicaId);
 }
 
 pub fn broadcast_preaccept<C>(
