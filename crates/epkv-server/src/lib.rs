@@ -28,12 +28,14 @@ use epkv_rocks::log_db::LogDb;
 
 use epkv_utils::asc::Asc;
 use epkv_utils::atomic_flag::AtomicFlag;
+use epkv_utils::lock::with_mutex;
 
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use parking_lot::Mutex as SyncMutex;
 use tokio::net::TcpListener;
 use tokio::spawn;
 use tokio::sync::mpsc;
@@ -50,8 +52,16 @@ pub struct Server {
 
     cmd_tx: mpsc::Sender<Command>,
 
+    metrics: SyncMutex<Metrics>,
+
     is_waiting_shutdown: AtomicFlag,
     waitgroup: WaitGroup,
+}
+
+#[derive(Clone)]
+struct Metrics {
+    single_cmd_count: u64,
+    batched_cmd_count: u64,
 }
 
 impl Server {
@@ -89,9 +99,19 @@ impl Server {
         let (cmd_tx, cmd_rx) = mpsc::channel(config.batching.chan_size);
 
         let server = {
+            let metrics = SyncMutex::new(Metrics { single_cmd_count: 0, batched_cmd_count: 0 });
+
             let is_waiting_shutdown = AtomicFlag::new(false);
             let waitgroup = WaitGroup::new();
-            Arc::new(Server { replica, config, cmd_tx, is_waiting_shutdown, waitgroup })
+
+            Arc::new(Server {
+                replica,
+                config,
+                cmd_tx,
+                metrics,
+                is_waiting_shutdown,
+                waitgroup,
+            })
         };
 
         let mut bg_tasks = Vec::new();
@@ -271,11 +291,14 @@ impl Server {
     }
 
     async fn client_rpc_get_metrics(self: &Arc<Self>, _: cs::GetMetricsArgs) -> Result<cs::GetMetricsOutput> {
-        let m = self.replica.network().metrics();
+        let network = self.replica.network().metrics();
+        let server = with_mutex(&self.metrics, |m: _| m.clone());
 
         Ok(cs::GetMetricsOutput {
-            network_msg_total_size: m.msg_total_size,
-            network_msg_count: m.msg_count,
+            network_msg_total_size: network.msg_total_size,
+            network_msg_count: network.msg_count,
+            server_single_cmd_count: server.single_cmd_count,
+            server_batched_cmd_count: server.batched_cmd_count,
         })
     }
 }
@@ -307,6 +330,14 @@ impl Server {
                     Ok(cmd) => batch.push(cmd),
                     Err(_) => break,
                 }
+            }
+
+            {
+                let cnt = u64::try_from(batch.len()).unwrap();
+                with_mutex(&self.metrics, |m| {
+                    m.single_cmd_count = m.single_cmd_count.wrapping_add(cnt);
+                    m.batched_cmd_count = m.batched_cmd_count.wrapping_add(1);
+                });
             }
 
             let this = Arc::clone(&self);
