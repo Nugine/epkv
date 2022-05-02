@@ -4,15 +4,44 @@ use epkv_utils::utf8;
 use serde::Serialize;
 
 use std::net::SocketAddr;
+use std::time::Instant;
 
 use anyhow::Result;
 
 #[derive(Debug, clap::Subcommand)]
 pub enum ClientOpt {
     GetMetrics {
-        #[clap(long)]
-        server: SocketAddr,
+        #[clap(flatten)]
+        common: CommonArgs,
     },
+    Get {
+        #[clap(flatten)]
+        common: CommonArgs,
+
+        key: String,
+    },
+    Set {
+        #[clap(flatten)]
+        common: CommonArgs,
+
+        key: String,
+        value: String,
+    },
+    Del {
+        #[clap(flatten)]
+        common: CommonArgs,
+
+        key: String,
+    },
+}
+
+#[derive(Debug, clap::Args)]
+pub struct CommonArgs {
+    #[clap(long)]
+    pub server: SocketAddr,
+
+    #[clap(long)]
+    pub debug_time: bool,
 }
 
 fn default_rpc_client_config() -> RpcClientConfig {
@@ -24,17 +53,49 @@ fn default_rpc_client_config() -> RpcClientConfig {
 }
 
 pub async fn run(opt: ClientOpt) -> Result<()> {
-    let remote_addr = match opt {
-        ClientOpt::GetMetrics { server } => server,
+    let common = match opt {
+        ClientOpt::GetMetrics { ref common } => common,
+        ClientOpt::Get { ref common, .. } => common,
+        ClientOpt::Set { ref common, .. } => common,
+        ClientOpt::Del { ref common, .. } => common,
     };
-    let rpc_client_config = default_rpc_client_config();
-    let server = cs::Server::connect(remote_addr, &rpc_client_config).await?;
+
+    let server = {
+        let remote_addr = common.server;
+        let rpc_client_config = default_rpc_client_config();
+        cs::Server::connect(remote_addr, &rpc_client_config).await?
+    };
+
+    let t0 = common.debug_time.then(Instant::now);
 
     match opt {
         ClientOpt::GetMetrics { .. } => {
-            let output = server.get_metrics(cs::GetMetricsArgs {}).await?;
+            let args = cs::GetMetricsArgs {};
+            let output = server.get_metrics(args).await?;
             println!("{}", pretty_json(&output)?);
         }
+        ClientOpt::Get { key, .. } => {
+            let args = cs::GetArgs { key: key.into() };
+            let output = server.get(args).await?;
+            println!("{}", pretty_json(&output)?);
+        }
+        ClientOpt::Set { key, value, .. } => {
+            let args = cs::SetArgs { key: key.into(), value: value.into() };
+            let output = server.set(args).await?;
+            println!("{}", pretty_json(&output)?);
+        }
+        ClientOpt::Del { key, .. } => {
+            let args = cs::DelArgs { key: key.into() };
+            let output = server.del(args).await?;
+            println!("{}", pretty_json(&output)?);
+        }
+    }
+
+    let t1 = Instant::now();
+
+    if let Some(t0) = t0 {
+        let duration = t1 - t0;
+        eprintln!("time: {:?}", duration);
     }
 
     Ok(())
