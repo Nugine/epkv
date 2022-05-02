@@ -23,3 +23,11 @@ pub fn iter_mut_deref<'a, T: DerefMut + 'a>(
 ) -> impl Iterator<Item = &'a mut T::Target> {
     iter.into_iter().map(|t| &mut **t)
 }
+
+#[inline]
+pub fn filter_map_collect<T, U, C>(iter: impl IntoIterator<Item = T>, f: impl FnMut(T) -> Option<U>) -> C
+where
+    C: FromIterator<U>,
+{
+    iter.into_iter().filter_map(f).collect()
+}
