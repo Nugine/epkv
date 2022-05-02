@@ -15,7 +15,7 @@ default_us = 1_000
 enable_adaptive = true
 
 [replica.recover_timeout]
-default_us = 5_000     # 5 ms
+default_us = 500_000     # 500 ms
 enable_adaptive = true
 
 [replica.sync_limits]
