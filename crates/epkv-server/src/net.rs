@@ -18,7 +18,8 @@ use anyhow::Result;
 use bytes::Bytes;
 use futures_util::future::join_all;
 use futures_util::{SinkExt, StreamExt};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex as SyncMutex;
+use parking_lot::RwLock as SyncRwLock;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::net::{TcpListener, TcpStream};
@@ -71,10 +72,10 @@ struct State {
 }
 
 pub struct TcpNetwork<C> {
-    state: RwLock<State>,
+    state: SyncRwLock<State>,
     config: NetworkConfig,
 
-    metrics: Mutex<Metrics>,
+    metrics: SyncMutex<Metrics>,
 
     _marker: PhantomData<fn(C) -> C>,
 }
@@ -164,9 +165,9 @@ impl<C> TcpNetwork<C> {
     #[must_use]
     pub fn new(config: &NetworkConfig) -> Self {
         Self {
-            state: RwLock::new(State { conns: VecMap::new(), addr_map: AddrMap::new() }),
+            state: SyncRwLock::new(State { conns: VecMap::new(), addr_map: AddrMap::new() }),
             config: config.clone(),
-            metrics: Mutex::new(Metrics { msg_total_size: 0, msg_count: 0 }),
+            metrics: SyncMutex::new(Metrics { msg_total_size: 0, msg_count: 0 }),
             _marker: PhantomData,
         }
     }
