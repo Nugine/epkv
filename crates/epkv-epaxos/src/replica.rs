@@ -330,7 +330,7 @@ where
                 };
                 let t = {
                     let conf = &self.config.preaccept_timeout;
-                    conf.with(avg_rtt, |d| d / 2)
+                    conf.with(avg_rtt, |d| d * 2)
                 };
                 debug!(?avg_rtt, timeout=?t, "preaccept timeout");
 
