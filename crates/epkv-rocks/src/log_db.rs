@@ -113,7 +113,7 @@ impl LogDb {
             let log_key: &InstanceFieldKey = match try_from_bytes(iter.key().unwrap()) {
                 Ok(k) => k,
                 Err(_) => {
-                    debug!(?id, iter_key = ?iter.key());
+                    debug!(?id, iter_key = ?iter.key(), "not an instance field key");
                     return Ok(None);
                 }
             };
