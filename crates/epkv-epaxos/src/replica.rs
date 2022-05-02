@@ -117,7 +117,7 @@ where
 
         let state = {
             let peers_set: VecSet<_> = map_collect(&peers, |&(p, _)| p);
-            let peers = Peers::new(peers_set);
+            let peers = Peers::new(rid, peers_set);
 
             let lid_head =
                 Head::new(attr_bounds.max_lids.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO));

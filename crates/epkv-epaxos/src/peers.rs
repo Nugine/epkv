@@ -9,6 +9,7 @@ use std::time::Duration;
 use rand::prelude::SliceRandom;
 
 pub struct Peers {
+    rid: ReplicaId,
     peers: VecSet<ReplicaId>,
     rank: Vec<(u64, ReplicaId)>,
     avg: Avg,
@@ -59,10 +60,10 @@ fn sort_rank(rank: &mut [(u64, ReplicaId)]) {
 
 impl Peers {
     #[must_use]
-    pub fn new(peers: VecSet<ReplicaId>) -> Self {
+    pub fn new(rid: ReplicaId, peers: VecSet<ReplicaId>) -> Self {
         let mut rank: Vec<_> = copied_map_collect(peers.iter(), |peer| (u64::MAX, peer));
         sort_rank(&mut rank);
-        Self { peers, rank, avg: Avg { sum: 0, cnt: 0 } }
+        Self { rid, peers, rank, avg: Avg { sum: 0, cnt: 0 } }
     }
 
     #[must_use]
@@ -107,8 +108,11 @@ impl Peers {
 
     #[must_use]
     pub fn select(&self, quorum: usize, acc: &VecSet<ReplicaId>) -> SelectedPeers {
+        let mut acc = acc.clone();
+        let _ = acc.remove(&self.rid);
+
         let ans_acc = if acc.len() <= quorum {
-            acc.clone()
+            acc
         } else {
             let rng = &mut rand::thread_rng();
             let iter: _ = acc.as_slice().choose_multiple(rng, quorum);
@@ -116,13 +120,13 @@ impl Peers {
         };
 
         let mut ans_others = VecSet::new();
-        if acc.len() < quorum {
-            let need = quorum.wrapping_sub(acc.len());
+        if ans_acc.len() < quorum {
+            let need = quorum.wrapping_sub(ans_acc.len());
             for &(_, rid) in self.rank.iter() {
                 if ans_others.len() >= need {
                     break;
                 }
-                if acc.contains(&rid).not() {
+                if ans_acc.contains(&rid).not() {
                     let _ = ans_others.insert(rid);
                 }
             }
