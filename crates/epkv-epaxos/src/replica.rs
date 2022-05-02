@@ -780,6 +780,10 @@ where
             }
         }
 
+        {
+            self.spawn_execute(id, cmd, seq, deps)
+        }
+
         Ok(())
     }
 
