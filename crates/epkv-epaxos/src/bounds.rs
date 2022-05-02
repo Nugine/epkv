@@ -1,6 +1,7 @@
 use crate::id::{InstanceId, LocalInstanceId, ReplicaId, Seq};
 use crate::status::Status;
 
+use epkv_utils::iter::filter_map_collect;
 use epkv_utils::onemap::OneMap;
 use epkv_utils::vecmap::VecMap;
 
@@ -68,17 +69,26 @@ impl StatusBounds {
 
     #[must_use]
     pub fn known_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
-        self.0.iter().map(|&(r, ref m)| (r, LocalInstanceId::from(m.known.bound()))).collect()
+        filter_map_collect(self.0.iter(), |&(r, ref m)| {
+            let bound = m.known.bound();
+            (bound > 0).then(|| (r, LocalInstanceId::from(bound)))
+        })
     }
 
     #[must_use]
     pub fn committed_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
-        self.0.iter().map(|&(r, ref m)| (r, LocalInstanceId::from(m.committed.bound()))).collect()
+        filter_map_collect(self.0.iter(), |&(r, ref m)| {
+            let bound = m.committed.bound();
+            (bound > 0).then(|| (r, LocalInstanceId::from(bound)))
+        })
     }
 
     #[must_use]
     pub fn executed_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
-        self.0.iter().map(|&(r, ref m)| (r, LocalInstanceId::from(m.executed.bound()))).collect()
+        filter_map_collect(self.0.iter(), |&(r, ref m)| {
+            let bound = m.executed.bound();
+            (bound > 0).then(|| (r, LocalInstanceId::from(bound)))
+        })
     }
 }
 
