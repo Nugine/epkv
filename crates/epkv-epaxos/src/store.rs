@@ -37,6 +37,7 @@ pub trait LogStore<C>: Send + Sync + 'static {
     fn update_status(&mut self, id: InstanceId, status: Status) -> Self::UpdateStatusFuture<'_>;
 }
 
+#[derive(Debug)]
 pub enum UpdateMode {
     Full,
     Partial,

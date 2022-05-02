@@ -44,6 +44,8 @@ impl LogDb {
         ins: Instance<BatchedCommand>,
         mode: UpdateMode,
     ) -> Result<()> {
+        debug!(?id, ?mode, "saving instance");
+
         let needs_save_cmd = match mode {
             UpdateMode::Full => true,
             UpdateMode::Partial => false,
@@ -92,6 +94,8 @@ impl LogDb {
     pub fn load(self: &Arc<Self>, id: InstanceId) -> Result<Option<Instance<BatchedCommand>>> {
         // <https://github.com/facebook/rocksdb/wiki/Basic-Operations#iteration>
         // <https://github.com/facebook/rocksdb/wiki/Iterator>
+
+        debug!(?id, "loading instance");
 
         let mut iter = self.db.raw_iterator();
 
