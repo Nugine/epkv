@@ -42,7 +42,7 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::MutexGuard as AsyncMutexGuard;
 use tokio::time::sleep;
-use tracing::error;
+use tracing::{debug, error};
 
 pub struct Replica<C, L, D, N>
 where
@@ -1147,6 +1147,8 @@ where
     }
 
     pub async fn run_join(self: &Arc<Self>) -> Result<bool> {
+        debug!("run_join");
+
         let mut rx = {
             let mut guard = self.state.lock().await;
             let s = &mut *guard;
@@ -1208,6 +1210,8 @@ where
     }
 
     async fn handle_join(self: &Arc<Self>, msg: Join) -> Result<()> {
+        debug!("handle_join: {:?}", msg);
+
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
