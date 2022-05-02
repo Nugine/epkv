@@ -248,6 +248,8 @@ where
         cmd: Option<C>,
         acc: Acc,
     ) -> Result<()> {
+        debug!(?id, "phase_preaccept");
+
         let (mut rx, mut seq, mut deps, mut acc) = {
             let s = &mut *guard;
 
@@ -293,6 +295,8 @@ where
             drop(guard);
 
             {
+                debug!(?id, "broadcast preaccept");
+
                 clone!(deps, acc);
                 let sender = self.rid;
                 let epoch = self.epoch.load();
@@ -340,14 +344,18 @@ where
                             PreAcceptReply::Diff(ref msg) => assert_eq!(id, msg.id),
                         }
 
-                        let msg_epoch = match msg {
-                            PreAcceptReply::Ok(ref msg) => msg.epoch,
-                            PreAcceptReply::Diff(ref msg) => msg.epoch,
-                        };
+                        {
+                            let msg_epoch = match msg {
+                                PreAcceptReply::Ok(ref msg) => msg.epoch,
+                                PreAcceptReply::Diff(ref msg) => msg.epoch,
+                            };
 
-                        if msg_epoch < self.epoch.load() {
-                            continue;
+                            if msg_epoch < self.epoch.load() {
+                                continue;
+                            }
                         }
+
+                        debug!(?id, "received preaccept reply");
 
                         let mut guard = self.state.lock().await;
                         let s = &mut *guard;
@@ -545,6 +553,8 @@ where
         deps: Deps,
         acc: Acc,
     ) -> Result<()> {
+        debug!(?id, "phase_accept");
+
         let (mut rx, mut acc) = {
             let s = &mut *guard;
 
@@ -578,6 +588,8 @@ where
             drop(guard);
 
             {
+                debug!(?id, "broadcast accept");
+
                 clone!(acc);
                 let sender = self.rid;
                 let epoch = self.epoch.load();
@@ -609,6 +621,8 @@ where
                 if msg.epoch < self.epoch.load() {
                     continue;
                 }
+
+                debug!(?id, "received accept reply");
 
                 let mut guard = self.state.lock().await;
                 let s = &mut *guard;
@@ -720,6 +734,8 @@ where
         deps: Deps,
         acc: Acc,
     ) -> Result<()> {
+        debug!(?id, "phase_commit");
+
         let s = &mut *guard;
 
         let abal = pbal;
@@ -748,6 +764,8 @@ where
         cmd.notify_committed();
 
         {
+            debug!(?id, "broadcast commit");
+
             let sender = self.rid;
             let epoch = self.epoch.load();
             clone!(cmd, deps);
@@ -905,6 +923,8 @@ where
                 if msg_epoch < self.epoch.load() {
                     continue;
                 }
+
+                debug!(?id, "received prepare reply");
 
                 let mut guard = self.state.lock().await;
                 let s = &mut *guard;
