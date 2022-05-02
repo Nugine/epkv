@@ -7,8 +7,14 @@ use camino::{Utf8Path, Utf8PathBuf};
 use epkv_utils::config::read_config_file;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, clap::Args)]
+pub struct Opt {
+    #[clap(subcommand)]
+    cmd: Command,
+}
+
 #[derive(Debug, clap::Subcommand)]
-pub enum ClusterOpt {
+enum Command {
     Generate {
         #[clap(long)]
         config: Utf8PathBuf,
@@ -124,9 +130,9 @@ pub fn generate(config_path: &Utf8Path, target_dir: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-pub fn run(opt: ClusterOpt) -> Result<()> {
-    match opt {
-        ClusterOpt::Generate { config, target } => generate(&config, &target)?,
+pub fn run(opt: Opt) -> Result<()> {
+    match opt.cmd {
+        Command::Generate { config, target } => generate(&config, &target)?,
     };
     Ok(())
 }
