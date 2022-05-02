@@ -31,8 +31,8 @@ enable_acc = true
 inbound_chan_size = 4096
 outbound_chan_size = 256
 initial_reconnect_timeout_us = 10_000 # 10 ms
-max_reconnect_timeout_us = 1_000_000 # 1s
-max_frame_length = 16777216    # 16 MiB
+max_reconnect_timeout_us = 1_000_000  # 1s
+max_frame_length = 16777216           # 16 MiB
 
 [rpc_client]
 max_frame_length = 16777216 # 16 MiB
@@ -48,6 +48,6 @@ batch_initial_capacity = 64
 batch_max_size = 1024
 
 [interval]
-probe_rtt_interval_us = 1_000_000      # 1 s
+probe_rtt_interval_us = 10_000_000     # 10 s
 clear_key_map_interval_us = 10_000_000 # 10 s
 save_bounds_interval_us = 1_000_000    # 1 s
