@@ -14,6 +14,7 @@ pub struct Peers {
     avg: Avg,
 }
 
+#[derive(Debug)]
 pub struct SelectedPeers {
     pub acc: VecSet<ReplicaId>,
     pub others: VecSet<ReplicaId>,

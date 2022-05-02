@@ -164,7 +164,7 @@ where
         &self.network
     }
 
-    #[tracing::instrument(skip_all, fields(rid = ?self.rid))]
+    #[tracing::instrument(skip_all, fields(rid = ?self.rid, epoch = ?self.epoch.load()))]
     pub async fn handle_message(self: &Arc<Self>, msg: Message<C>) -> Result<()> {
         debug!(msg_variant_name = ?msg.variant_name());
 
@@ -295,7 +295,7 @@ where
             drop(guard);
 
             {
-                debug!(?id, "broadcast preaccept");
+                debug!(?id, ?selected_peers, "broadcast preaccept");
 
                 clone!(deps, acc);
                 let sender = self.rid;
@@ -588,7 +588,7 @@ where
             drop(guard);
 
             {
-                debug!(?id, "broadcast accept");
+                debug!(?id, ?selected_peers, "broadcast accept");
 
                 clone!(acc);
                 let sender = self.rid;
@@ -764,7 +764,7 @@ where
         cmd.notify_committed();
 
         {
-            debug!(?id, "broadcast commit");
+            debug!(?id, ?selected_peers, "broadcast commit");
 
             let sender = self.rid;
             let epoch = self.epoch.load();
