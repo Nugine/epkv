@@ -164,6 +164,7 @@ where
         &self.network
     }
 
+    #[tracing::instrument(skip_all, fields(rid = ?self.rid))]
     pub async fn handle_message(self: &Arc<Self>, msg: Message<C>) -> Result<()> {
         match msg {
             Message::PreAccept(msg) => {
@@ -1249,6 +1250,8 @@ where
     }
 
     pub async fn run_probe_rtt(&self) -> Result<()> {
+        debug!("run_probe_rtt");
+
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1263,8 +1266,9 @@ where
     }
 
     async fn handle_probe_rtt(self: &Arc<Self>, msg: ProbeRtt) -> Result<()> {
-        let target = msg.sender;
+        debug!(sender = ?msg.sender, "handle_probe_rtt");
         let sender = self.rid;
+        let target = msg.sender;
         let time = msg.time;
         self.network.send_one(target, Message::ProbeRttOk(ProbeRttOk { sender, time }));
         Ok(())
@@ -1281,6 +1285,8 @@ where
         s.peers.set_rtt(peer, rtt);
 
         drop(guard);
+
+        debug!(?peer, ?rtt, "handle_probe_rtt_ok");
 
         Ok(())
     }
