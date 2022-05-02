@@ -323,14 +323,16 @@ where
             let mut all_same = true;
 
             loop {
-                let t = {
+                let avg_rtt = {
                     let mut guard = self.state.lock().await;
                     let s = &mut *guard;
-                    let avg_rtt = s.peers.get_avg_rtt();
-                    drop(guard);
+                    s.peers.get_avg_rtt()
+                };
+                let t = {
                     let conf = &self.config.preaccept_timeout;
                     conf.with(avg_rtt, |d| d / 2)
                 };
+                debug!(?avg_rtt, timeout=?t, "preaccept timeout");
 
                 match recv_timeout(&mut rx, t).await {
                     Ok(Some(msg)) => {
