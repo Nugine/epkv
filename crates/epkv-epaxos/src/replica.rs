@@ -1512,6 +1512,26 @@ where
         Ok(())
     }
 
+    pub async fn run_broadcast_bounds(self: &Arc<Self>) -> Result<()> {
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+
+        let targets = s.peers.select_all();
+        let committed_up_to = s.log.committed_up_to();
+
+        drop(guard);
+
+        {
+            let sender = self.rid;
+            self.network.broadcast(
+                targets,
+                Message::PeerBounds(PeerBounds { sender, committed_up_to: Some(committed_up_to) }),
+            )
+        }
+
+        Ok(())
+    }
+
     async fn handle_peer_bounds(self: &Arc<Self>, msg: PeerBounds) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
