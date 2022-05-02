@@ -1254,14 +1254,14 @@ where
     }
 
     pub async fn run_probe_rtt(&self) -> Result<()> {
-        debug!("run_probe_rtt");
-
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
         let targets = s.peers.select_all();
 
         drop(guard);
+
+        debug!(?targets, "run_probe_rtt");
 
         let sender = self.rid;
         let time = LocalInstant::now();
