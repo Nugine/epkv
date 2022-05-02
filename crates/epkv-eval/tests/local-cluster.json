@@ -10,10 +10,12 @@
         "alpha": {
             "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
-                "listen_peer_addr": "127.0.0.1:8010",
-                "listen_client_addr": "127.0.0.1:8011",
-                "monitor_addr": "127.0.0.1:9000",
-                "public_peer_addr": "127.0.0.1:8010",
+                "server": {
+                    "listen_peer_addr": "127.0.0.1:8010",
+                    "listen_client_addr": "127.0.0.1:8011",
+                    "monitor_addr": "127.0.0.1:9000",
+                    "public_peer_addr": "127.0.0.1:8010"
+                },
                 "log_db": {
                     "path": "/tmp/epkv-cluster/servers/alpha/log_db"
                 },
@@ -25,10 +27,12 @@
         "beta": {
             "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
-                "listen_peer_addr": "127.0.0.1:8020",
-                "listen_client_addr": "127.0.0.1:8021",
-                "monitor_addr": "127.0.0.1:9000",
-                "public_peer_addr": "127.0.0.1:8020",
+                "server": {
+                    "listen_peer_addr": "127.0.0.1:8020",
+                    "listen_client_addr": "127.0.0.1:8021",
+                    "monitor_addr": "127.0.0.1:9000",
+                    "public_peer_addr": "127.0.0.1:8020"
+                },
                 "log_db": {
                     "path": "/tmp/epkv-cluster/servers/beta/log_db"
                 },
@@ -40,10 +44,12 @@
         "gamma": {
             "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
-                "listen_peer_addr": "127.0.0.1:8030",
-                "listen_client_addr": "127.0.0.1:8031",
-                "monitor_addr": "127.0.0.1:9000",
-                "public_peer_addr": "127.0.0.1:8030",
+                "server": {
+                    "listen_peer_addr": "127.0.0.1:8030",
+                    "listen_client_addr": "127.0.0.1:8031",
+                    "monitor_addr": "127.0.0.1:9000",
+                    "public_peer_addr": "127.0.0.1:8030"
+                },
                 "log_db": {
                     "path": "/tmp/epkv-cluster/servers/gamma/log_db"
                 },
@@ -55,10 +61,12 @@
         "delta": {
             "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
-                "listen_peer_addr": "127.0.0.1:8040",
-                "listen_client_addr": "127.0.0.1:8041",
-                "monitor_addr": "127.0.0.1:9000",
-                "public_peer_addr": "127.0.0.1:8040",
+                "server": {
+                    "listen_peer_addr": "127.0.0.1:8040",
+                    "listen_client_addr": "127.0.0.1:8041",
+                    "monitor_addr": "127.0.0.1:9000",
+                    "public_peer_addr": "127.0.0.1:8040"
+                },
                 "log_db": {
                     "path": "/tmp/epkv-cluster/servers/delta/log_db"
                 },
@@ -70,10 +78,12 @@
         "epsilon": {
             "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
-                "listen_peer_addr": "127.0.0.1:8050",
-                "listen_client_addr": "127.0.0.1:8051",
-                "monitor_addr": "127.0.0.1:9000",
-                "public_peer_addr": "127.0.0.1:8050",
+                "server": {
+                    "listen_peer_addr": "127.0.0.1:8050",
+                    "listen_client_addr": "127.0.0.1:8051",
+                    "monitor_addr": "127.0.0.1:9000",
+                    "public_peer_addr": "127.0.0.1:8050"
+                },
                 "log_db": {
                     "path": "/tmp/epkv-cluster/servers/epsilon/log_db"
                 },

@@ -58,14 +58,8 @@ impl MergeConfig {
                 ensure!(base.is_object());
                 let base = base.as_object_mut().unwrap();
                 for (key, value) in obj {
-                    match base.entry(key) {
-                        serde_json::map::Entry::Vacant(e) => {
-                            e.insert(value.clone());
-                        }
-                        serde_json::map::Entry::Occupied(mut e) => {
-                            Self::merge(e.get_mut(), value)?;
-                        }
-                    }
+                    ensure!(base.contains_key(key));
+                    Self::merge(base.get_mut(key).unwrap(), value)?;
                 }
             }
         };
@@ -91,8 +85,8 @@ impl Config {
 pub fn run(config_path: &Utf8Path, target_dir: &Utf8Path) -> Result<()> {
     fs::create_dir_all(target_dir)?;
 
-    let config: Config = read_config_file(config_path)
-        .with_context(|| format!("failed to read config file {config_path}"))?;
+    let config: Config =
+        read_config_file(config_path).with_context(|| format!("failed to read config file {config_path}"))?;
 
     println!("read  config: {}", config_path);
 
