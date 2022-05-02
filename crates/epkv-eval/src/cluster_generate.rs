@@ -26,7 +26,7 @@ impl MergeConfig {
             None => Cow::Borrowed(&self.base),
         };
         let mut config: serde_json::Value = read_config_file(&base_doc_path)
-            .with_context(|| format!("failed to read config file at {base_doc_path}"))?;
+            .with_context(|| format!("failed to read config file {base_doc_path}"))?;
 
         Self::merge(&mut config, &self.overwrite)?;
 
@@ -91,7 +91,9 @@ impl Config {
 pub fn run(config_path: &Utf8Path, target_dir: &Utf8Path) -> Result<()> {
     fs::create_dir_all(target_dir)?;
 
-    let config: Config = read_config_file(config_path)?;
+    let config: Config = read_config_file(config_path)
+        .with_context(|| format!("failed to read config file {config_path}"))?;
+
     println!("read  config: {}", config_path);
 
     let files = config.generate(config_path)?;

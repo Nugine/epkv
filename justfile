@@ -48,22 +48,24 @@ doc:
     cargo doc -p rocksdb --no-deps
     cargo doc --workspace --no-deps --open
 
-run-example-server: build
-    #!/bin/bash -ex
-    cd {{justfile_directory()}}
-    export RUST_LOG=epkv_server=debug,epkv_rocks=debug,epkv_epaxos=debug
-    ./target/release/epkv-server --config crates/epkv-server/tests/example-config.toml
-
-run-example-monitor: build
-    #!/bin/bash -ex
-    cd {{justfile_directory()}}
-    export RUST_LOG=epkv_monitor=debug
-    ./target/release/epkv-monitor --config crates/epkv-monitor/tests/example-config.toml
-
 generate-local-cluster: build
     #!/bin/bash -ex
     cd {{justfile_directory()}}
     export RUST_BACKTRACE=full
     ./target/release/epkv-eval cluster generate \
-        --config crates/epkv-eval/tests/example-cluster.json \
+        --config crates/epkv-eval/tests/local-cluster.json \
         --target /tmp/epkv-cluster/config
+
+local-server name: build
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+    export RUST_BACKTRACE=full
+    export RUST_LOG=epkv_server=debug,epkv_rocks=debug,epkv_epaxos=debug
+    ./target/release/epkv-server --config /tmp/epkv-cluster/config/{{name}}.json
+
+local-monitor: build
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+    export RUST_BACKTRACE=full
+    export RUST_LOG=epkv_monitor=debug
+    ./target/release/epkv-monitor --config /tmp/epkv-cluster/config/monitor.json

@@ -1,6 +1,6 @@
 {
     "monitor": {
-        "base": "../../epkv-monitor/tests/example-config.toml",
+        "base": "../../epkv-monitor/tests/local-monitor.toml",
         "overwrite": {
             "state_path": "/tmp/epkv-cluster/monitor/state",
             "listen_rpc_addr": "127.0.0.1:9000"
@@ -8,7 +8,7 @@
     },
     "servers": {
         "alpha": {
-            "base": "../../epkv-server/tests/example-config.toml",
+            "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
                 "listen_peer_addr": "127.0.0.1:8010",
                 "listen_client_addr": "127.0.0.1:8011",
@@ -23,7 +23,7 @@
             }
         },
         "beta": {
-            "base": "../../epkv-server/tests/example-config.toml",
+            "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
                 "listen_peer_addr": "127.0.0.1:8020",
                 "listen_client_addr": "127.0.0.1:8021",
@@ -38,7 +38,7 @@
             }
         },
         "gamma": {
-            "base": "../../epkv-server/tests/example-config.toml",
+            "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
                 "listen_peer_addr": "127.0.0.1:8030",
                 "listen_client_addr": "127.0.0.1:8031",
@@ -53,7 +53,7 @@
             }
         },
         "delta": {
-            "base": "../../epkv-server/tests/example-config.toml",
+            "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
                 "listen_peer_addr": "127.0.0.1:8040",
                 "listen_client_addr": "127.0.0.1:8041",
@@ -68,7 +68,7 @@
             }
         },
         "epsilon": {
-            "base": "../../epkv-server/tests/example-config.toml",
+            "base": "../../epkv-server/tests/local-server.toml",
             "overwrite": {
                 "listen_peer_addr": "127.0.0.1:8050",
                 "listen_client_addr": "127.0.0.1:8051",

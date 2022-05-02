@@ -12,8 +12,8 @@ fn tests_dir() -> Utf8PathBuf {
 }
 
 #[test]
-fn example_config() {
-    let example_config_path = tests_dir().join("example-config.toml");
-    let config: Config = read_config_file(&example_config_path).unwrap();
+fn verify_config() {
+    let path = tests_dir().join("local-server.toml");
+    let config: Config = read_config_file(&path).unwrap();
     println!("{:#?}", config);
 }
