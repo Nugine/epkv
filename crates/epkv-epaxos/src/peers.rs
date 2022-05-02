@@ -2,6 +2,7 @@ use crate::id::ReplicaId;
 
 use epkv_utils::iter::copied_map_collect;
 use epkv_utils::vecset::VecSet;
+use tracing::debug;
 
 use std::ops::Not;
 use std::time::Duration;
@@ -72,7 +73,7 @@ impl Peers {
     }
 
     pub fn add(&mut self, peer: ReplicaId) {
-        let is_new_peer = self.peers.insert(peer).is_some();
+        let is_new_peer = self.peers.insert(peer).is_none();
         if is_new_peer {
             self.rank.push((u64::MAX, peer))
         }
@@ -108,6 +109,8 @@ impl Peers {
 
     #[must_use]
     pub fn select(&self, quorum: usize, acc: &VecSet<ReplicaId>) -> SelectedPeers {
+        debug!(?quorum, rank=?self.rank, "select peers");
+
         let mut acc = acc.clone();
         let _ = acc.remove(&self.rid);
 
