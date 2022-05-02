@@ -1583,12 +1583,16 @@ where
     }
 
     async fn run_execute(self: &Arc<Self>, id: InstanceId) -> Result<()> {
+        debug!(?id, "run_execute");
+
         let _executing = match self.graph.executing(id) {
             Some(exec) => exec,
             None => return Ok(()),
         };
 
         let mut local_graph = LocalGraph::new();
+
+        debug!(?id, "wait graph");
 
         {
             let _row_guard = self.graph.lock_row(id.0).await;
@@ -1646,6 +1650,8 @@ where
                 }
             }
         }
+
+        debug!(?id, "tarjan scc");
 
         {
             let mut scc_list = local_graph.tarjan_scc(id);
@@ -1760,6 +1766,7 @@ where
             let s = &mut *guard;
             for &(id, _) in &scc {
                 s.log.retire_instance(id);
+                debug!(?id, "retire instance")
             }
         }
 
