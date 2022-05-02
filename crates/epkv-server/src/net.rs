@@ -9,7 +9,6 @@ use epkv_utils::lock::{with_mutex, with_read_lock, with_write_lock};
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
 
-use std::io;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -212,9 +211,7 @@ impl<C> TcpNetwork<C> {
         Connection { tx, task: Some(task) }
     }
 
-    pub async fn spawn_listener(addr: SocketAddr, config: &NetworkConfig) -> io::Result<Listener<C>> {
-        let listener = TcpListener::bind(addr).await?;
-
+    pub fn spawn_listener(listener: TcpListener, config: &NetworkConfig) -> Listener<C> {
         let chan_size = config.inbound_chan_size;
         let max_frame_length = config.max_frame_length;
 
@@ -252,7 +249,7 @@ impl<C> TcpNetwork<C> {
             }
         });
 
-        Ok(Listener { rx, task: Some(task), _marker: PhantomData })
+        Listener { rx, task: Some(task), _marker: PhantomData }
     }
 
     pub fn metrics(&self) -> Metrics {

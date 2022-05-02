@@ -33,7 +33,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use tokio::net::TcpListener;
 use tokio::spawn;
 use tokio::sync::mpsc;
@@ -98,9 +98,13 @@ impl Server {
 
         {
             let this = Arc::clone(&server);
-            let addr = this.config.server.listen_peer_addr;
-            let config = &this.config.network;
-            let listener = TcpNetwork::spawn_listener(addr, config).await?;
+
+            let listener = {
+                let addr = this.config.server.listen_peer_addr;
+                TcpListener::bind(addr).await.with_context(|| format!("failed to bind to {addr}"))?
+            };
+
+            let listener = TcpNetwork::spawn_listener(listener, &this.config.network);
             bg_tasks.push(spawn(this.serve_peer(listener)));
         }
 
