@@ -266,10 +266,13 @@ dependencies = [
  "anyhow",
  "camino",
  "clap",
+ "epkv-protocol",
  "epkv-server",
  "epkv-utils",
  "serde",
  "serde_json",
+ "simdutf8",
+ "tokio",
 ]
 
 [[package]]

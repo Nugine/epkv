@@ -8,6 +8,7 @@
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
 
+use epkv_eval::client::{self, ClientOpt};
 use epkv_eval::cluster::{self, ClusterOpt};
 
 use anyhow::Result;
@@ -17,12 +18,21 @@ use clap::StructOpt;
 enum Opt {
     #[clap(subcommand)]
     Cluster(ClusterOpt),
+
+    #[clap(subcommand)]
+    Client(ClientOpt),
 }
 
 fn main() -> Result<()> {
     let opt = Opt::parse();
+    run(opt)
+}
+
+#[tokio::main]
+async fn run(opt: Opt) -> Result<()> {
     match opt {
         Opt::Cluster(cluster_opt) => cluster::run(cluster_opt)?,
-    };
+        Opt::Client(client_opt) => client::run(client_opt).await?,
+    }
     Ok(())
 }

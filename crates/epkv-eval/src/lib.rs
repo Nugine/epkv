@@ -8,4 +8,5 @@
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
 
+pub mod client;
 pub mod cluster;
