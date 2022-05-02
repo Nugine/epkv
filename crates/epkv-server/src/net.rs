@@ -1,5 +1,6 @@
 use crate::config::NetworkConfig;
 
+use epkv_epaxos::addr_map::AddrMap;
 use epkv_epaxos::id::ReplicaId;
 use epkv_epaxos::msg::Message;
 use epkv_epaxos::net::Network;
@@ -64,8 +65,13 @@ impl<C> Drop for Listener<C> {
     }
 }
 
+struct State {
+    conns: VecMap<ReplicaId, Connection>,
+    addr_map: AddrMap,
+}
+
 pub struct TcpNetwork<C> {
-    conns: RwLock<VecMap<ReplicaId, Connection>>,
+    state: RwLock<State>,
     config: NetworkConfig,
 
     metrics: Mutex<Metrics>,
@@ -94,8 +100,8 @@ where
         let msg_bytes = codec::serialize(&msg).expect("message should be able to be serialized");
 
         let mut txs = Vec::with_capacity(targets.len());
-        with_read_lock(&self.conns, |conns: _| {
-            conns.apply(&targets, |conn| txs.push(conn.tx.clone()));
+        with_read_lock(&self.state, |s: _| {
+            s.conns.apply(&targets, |conn| txs.push(conn.tx.clone()));
         });
         {
             let cnt = u64::try_from(targets.len()).unwrap();
@@ -114,8 +120,8 @@ where
 
     fn send_one(&self, target: ReplicaId, msg: Message<C>) {
         let msg_bytes = codec::serialize(&msg).expect("message should be able to be serialized");
-        let tx: _ = with_read_lock(&self.conns, |conns: _| {
-            conns.get(&target).map(|conn| conn.tx.clone())
+        let tx: _ = with_read_lock(&self.state, |s: _| {
+            s.conns.get(&target).map(|conn| conn.tx.clone())
         });
         if let Some(tx) = tx {
             {
@@ -131,9 +137,10 @@ where
         }
     }
 
-    fn register_peer(&self, rid: ReplicaId, addr: SocketAddr) {
-        with_write_lock(&self.conns, |conns: _| {
-            let _ = conns.init_with(rid, || Self::spawn_connector(addr, &self.config));
+    fn register_peer(&self, rid: ReplicaId, addr: SocketAddr) -> Option<ReplicaId> {
+        with_write_lock(&self.state, |s: _| {
+            let _ = s.conns.init_with(rid, || Self::spawn_connector(addr, &self.config));
+            s.addr_map.update(rid, addr)
         })
     }
 }
@@ -142,7 +149,7 @@ impl<C> TcpNetwork<C> {
     #[must_use]
     pub fn new(config: &NetworkConfig) -> Self {
         Self {
-            conns: RwLock::new(VecMap::new()),
+            state: RwLock::new(State { conns: VecMap::new(), addr_map: AddrMap::new() }),
             config: config.clone(),
             metrics: Mutex::new(Metrics { msg_total_size: 0, msg_count: 0 }),
             _marker: PhantomData,

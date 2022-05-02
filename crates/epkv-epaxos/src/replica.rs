@@ -138,7 +138,7 @@ where
         let graph = Graph::new(status_bounds);
 
         for &(p, a) in &peers {
-            network.register_peer(p, a)
+            network.register_peer(p, a);
         }
 
         Ok(Arc::new(Self {
@@ -1216,14 +1216,18 @@ where
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
+        if let Some(prev) = self.network.register_peer(msg.sender, msg.addr) {
+            s.peers.remove(prev);
+        }
+
         s.peers.add(msg.sender);
+
         self.epoch.update_max(msg.epoch);
 
         drop(guard);
 
         {
             let target = msg.sender;
-            self.network.register_peer(target, msg.addr);
             self.network.send_one(target, Message::JoinOk(JoinOk { sender: self.rid }));
         }
 

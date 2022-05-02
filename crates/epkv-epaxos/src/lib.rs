@@ -11,6 +11,7 @@
 #![feature(generic_associated_types)]
 
 pub mod acc;
+pub mod addr_map;
 pub mod bounds;
 pub mod cmd;
 pub mod deps;

@@ -17,15 +17,13 @@ pub mod config;
 
 use self::config::Config;
 
+use epkv_epaxos::addr_map::AddrMap;
 use epkv_epaxos::id::{Epoch, Head, ReplicaId};
 use epkv_protocol::{rpc, sm};
 use epkv_utils::atomic_flag::AtomicFlag;
-use epkv_utils::vecmap::VecMap;
 
-use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
-use std::net::SocketAddr;
 use std::ops::Not;
 use std::sync::Arc;
 use std::time::Duration;
@@ -53,8 +51,7 @@ pub struct Monitor {
 struct State {
     rid_head: Head<ReplicaId>,
     epoch_head: Head<Epoch>,
-    addr_map: VecMap<ReplicaId, SocketAddr>,
-    addr_rev_map: HashMap<SocketAddr, ReplicaId>,
+    addr_map: AddrMap,
 }
 
 impl Default for State {
@@ -62,8 +59,7 @@ impl Default for State {
         Self {
             rid_head: Head::new(ReplicaId::ZERO),
             epoch_head: Head::new(Epoch::ZERO),
-            addr_map: VecMap::new(),
-            addr_rev_map: HashMap::new(),
+            addr_map: AddrMap::new(),
         }
     }
 }
@@ -210,15 +206,11 @@ impl Monitor {
         let rid = s.rid_head.gen_next();
         let epoch = s.epoch_head.gen_next();
 
-        let mut peers = s.addr_map.clone();
+        let mut peers = s.addr_map.map().clone();
 
-        let opt = s.addr_map.insert(rid, args.public_peer_addr);
-        assert!(opt.is_none());
-
-        let prev_rid = s.addr_rev_map.insert(args.public_peer_addr, rid);
+        let prev_rid = s.addr_map.update(rid, args.public_peer_addr);
 
         if let Some(prev_rid) = prev_rid {
-            let _ = s.addr_map.remove(&prev_rid);
             let _ = peers.remove(&prev_rid);
         }
 
