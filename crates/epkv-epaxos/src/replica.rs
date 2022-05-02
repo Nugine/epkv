@@ -1533,6 +1533,8 @@ where
     }
 
     async fn handle_peer_bounds(self: &Arc<Self>, msg: PeerBounds) -> Result<()> {
+        debug!(?msg, "handle_peer_bounds");
+
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
