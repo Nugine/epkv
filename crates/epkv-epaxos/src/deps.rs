@@ -84,3 +84,15 @@ impl Deps {
         self.as_inner().0.iter().copied().map(|(rid, lid)| InstanceId(rid, lid))
     }
 }
+
+impl FromIterator<(ReplicaId, LocalInstanceId)> for MutableDeps {
+    fn from_iter<T: IntoIterator<Item = (ReplicaId, LocalInstanceId)>>(iter: T) -> Self {
+        MutableDeps(VecMap::from_iter(iter))
+    }
+}
+
+impl FromIterator<(ReplicaId, LocalInstanceId)> for Deps {
+    fn from_iter<T: IntoIterator<Item = (ReplicaId, LocalInstanceId)>>(iter: T) -> Self {
+        Deps::from_mutable(MutableDeps(VecMap::from_iter(iter)))
+    }
+}
