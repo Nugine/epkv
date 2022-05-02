@@ -7,3 +7,5 @@
     clippy::must_use_candidate
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
+
+pub mod cluster_generate;

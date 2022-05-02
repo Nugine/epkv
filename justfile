@@ -59,3 +59,11 @@ run-example-monitor: build
     cd {{justfile_directory()}}
     export RUST_LOG=epkv_monitor=debug
     ./target/release/epkv-monitor --config crates/epkv-monitor/tests/example-config.toml
+
+generate-local-cluster: build
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+    export RUST_BACKTRACE=full
+    ./target/release/epkv-eval cluster generate \
+        --config crates/epkv-eval/tests/example-cluster.json \
+        --target /tmp/epkv-cluster/config
