@@ -82,7 +82,7 @@ pub async fn case1(
 
     let key = crate::random_bytes(key_size);
     let value = crate::random_bytes(value_size);
-    let args = move || cs::SetArgs { key: key.clone(), value: value.clone() };
+    let args = || cs::SetArgs { key: key.clone(), value: value.clone() };
 
     let t0 = Instant::now();
 
@@ -109,6 +109,9 @@ pub async fn case1(
             let server = cs::Server::connect(remote_addr, &rpc_client_config).await?;
             let metrics = server.get_metrics(cs::GetMetricsArgs {}).await?;
             map.insert(name.to_owned(), metrics);
+
+            let output = server.get(cs::GetArgs { key: key.clone() }).await?;
+            assert_eq!(output.value.unwrap(), value);
         }
         map
     };
