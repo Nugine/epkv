@@ -69,7 +69,7 @@ where
 
     network: N,
 
-    recovering: DashSet<InstanceId>,
+    recovering: Asc<DashSet<InstanceId>>,
 }
 
 struct State<C, L>
@@ -145,7 +145,7 @@ where
             network.join(p, a);
         }
 
-        let recovering = DashSet::new();
+        let recovering = Asc::new(DashSet::new());
 
         Ok(Arc::new(Self {
             rid,
@@ -861,7 +861,7 @@ where
     }
 
     async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
-        let _recovering = match IdGuard::new(&self.recovering, id) {
+        let _recovering = match IdGuard::new(Asc::clone(&self.recovering), id) {
             Some(guard) => guard,
             None => return Ok(()),
         };

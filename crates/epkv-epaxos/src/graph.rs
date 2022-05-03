@@ -31,7 +31,7 @@ use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
 pub struct Graph<C> {
     nodes: DashMap<InstanceId, Asc<InsNode<C>>>,
     status_bounds: Asc<SyncMutex<StatusBounds>>,
-    executing: DashSet<InstanceId>,
+    executing: Asc<DashSet<InstanceId>>,
     row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
     watermarks: DashMap<ReplicaId, Asc<WaterMark>>,
     subscribers: DashMap<InstanceId, Arc<Notify>>,
@@ -62,7 +62,7 @@ impl<C> Graph<C> {
     #[must_use]
     pub fn new(status_bounds: Asc<SyncMutex<StatusBounds>>) -> Self {
         let nodes = DashMap::new();
-        let executing = DashSet::new();
+        let executing = Asc::new(DashSet::new());
         let row_locks = DashMap::new();
         let watermarks = DashMap::new();
         let subscribers = DashMap::new();
@@ -151,8 +151,8 @@ impl<C> Graph<C> {
     }
 
     #[must_use]
-    pub fn executing(&self, id: InstanceId) -> Option<IdGuard<'_>> {
-        IdGuard::new(&self.executing, id)
+    pub fn executing(&self, id: InstanceId) -> Option<IdGuard> {
+        IdGuard::new(Asc::clone(&self.executing), id)
     }
 
     pub async fn lock_row(&self, rid: ReplicaId) -> RowGuard {
