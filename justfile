@@ -86,3 +86,7 @@ boot-local-cluster: build
     just local-server alpha >target/alpha.ansi 2>&1 &
     just local-server beta  >target/beta.ansi 2>&1 &
     just local-server gamma >target/gamma.ansi 2>&1 &
+
+killall:
+    killall epkv-server
+    killall epkv-monitor
