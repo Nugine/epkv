@@ -55,7 +55,7 @@ pub struct Server {
 
     metrics: SyncMutex<Metrics>,
 
-    msg_task_limit: Arc<Semaphore>,
+    propose_limit: Arc<Semaphore>,
 
     is_waiting_shutdown: AtomicFlag,
     waitgroup: WaitGroup,
@@ -104,7 +104,7 @@ impl Server {
         let server = {
             let metrics = SyncMutex::new(Metrics { single_cmd_count: 0, batched_cmd_count: 0 });
 
-            let msg_task_limit = Arc::new(Semaphore::new(config.server.msg_task_limit.numeric_cast()));
+            let propose_limit = Arc::new(Semaphore::new(config.server.propose_limit.numeric_cast()));
 
             let is_waiting_shutdown = AtomicFlag::new(false);
             let waitgroup = WaitGroup::new();
@@ -114,7 +114,7 @@ impl Server {
                 config,
                 cmd_tx,
                 metrics,
-                msg_task_limit,
+                propose_limit,
                 is_waiting_shutdown,
                 waitgroup,
             })
@@ -212,16 +212,11 @@ impl Server {
             match result {
                 Ok(msg) => {
                     let this = Arc::clone(&self);
-                    let task_permit = match this.msg_task_limit.clone().acquire_owned().await {
-                        Ok(permit) => permit,
-                        Err(_) => break,
-                    };
                     let working = self.waitgroup.working();
                     spawn(async move {
                         if let Err(err) = this.replica.handle_message(msg).await {
                             error!(?err, "handle_message");
                         }
-                        drop(task_permit);
                         drop(working);
                     });
                 }
@@ -319,9 +314,7 @@ impl Server {
             server_batched_cmd_count: server.batched_cmd_count,
         })
     }
-}
 
-impl Server {
     async fn cmd_batcher(self: Arc<Self>, mut rx: mpsc::Receiver<Command>) -> Result<()> {
         let initial_capacity = self.config.batching.batch_initial_capacity;
         let max_size = self.config.batching.batch_max_size;
@@ -359,11 +352,15 @@ impl Server {
             }
 
             let this = Arc::clone(&self);
+            let permit: _ = self.propose_limit.clone().acquire_owned().await.unwrap();
+            let working = self.waitgroup.working();
             spawn(async move {
                 let cmd = BatchedCommand::from_vec(batch);
                 if let Err(err) = this.handle_batched_command(cmd).await {
                     error!(?err, "handle batched command")
                 }
+                drop(working);
+                drop(permit);
             });
         }
 
@@ -373,9 +370,7 @@ impl Server {
     async fn handle_batched_command(self: &Arc<Self>, cmd: BatchedCommand) -> Result<()> {
         self.replica.run_propose(cmd).await
     }
-}
 
-impl Server {
     async fn interval_probe_rtt(self: Arc<Self>) -> Result<()> {
         let mut interval = {
             let duration = Duration::from_micros(self.config.interval.probe_rtt_interval_us);
