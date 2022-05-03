@@ -84,9 +84,11 @@ boot-local-cluster: build
     just generate-local-cluster
     just local-monitor >target/monitor.ansi 2>&1 &
     sleep 0.5s
-    just local-server alpha >target/alpha.ansi 2>&1 &
-    just local-server beta  >target/beta.ansi 2>&1 &
-    just local-server gamma >target/gamma.ansi 2>&1 &
+    just local-server alpha     >target/alpha.ansi      2>&1 &
+    just local-server beta      >target/beta.ansi       2>&1 &
+    just local-server gamma     >target/gamma.ansi      2>&1 &
+    just local-server delta     >target/delta.ansi      2>&1 &
+    just local-server epsilon   >target/epsilon.ansi    2>&1 &
 
 killall:
     killall epkv-server
