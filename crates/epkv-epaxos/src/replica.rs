@@ -786,7 +786,7 @@ where
         }
 
         {
-            self.spawn_execute(id, cmd, seq, deps)
+            self.spawn_execute(id, cmd, seq, deps, status)
         }
 
         Ok(())
@@ -822,9 +822,9 @@ where
             }
         };
 
-        let (status, exec) = match s.log.get_cached_ins(id) {
-            Some(ins) if ins.status > Status::Committed => (ins.status, false),
-            _ => (Status::Committed, true),
+        let status = match s.log.get_cached_ins(id) {
+            Some(ins) if ins.status > Status::Committed => ins.status,
+            _ => Status::Committed,
         };
 
         let seq = msg.seq;
@@ -843,9 +843,8 @@ where
 
         drop(guard);
 
-        if exec {
-            self.spawn_execute(id, cmd, seq, deps);
-        }
+        self.spawn_execute(id, cmd, seq, deps, status);
+
         Ok(())
     }
 
@@ -863,7 +862,8 @@ where
                     let cmd = ins.cmd.clone();
                     let seq = ins.seq;
                     let deps = ins.deps.clone();
-                    let _ = self.graph.init_node(id, cmd, seq, deps);
+                    let status = ins.status;
+                    let _ = self.graph.init_node(id, cmd, seq, deps, status);
                     return Ok(());
                 }
             }
@@ -1516,10 +1516,15 @@ where
                             UpdateMode::Partial
                         };
 
-                        let (cmd, seq, deps) = (ins.cmd.clone(), ins.seq, ins.deps.clone());
-                        s.log.save(id, ins, mode).await?;
+                        {
+                            let cmd = ins.cmd.clone();
+                            let seq = ins.seq;
+                            let deps = ins.deps.clone();
+                            let status = ins.status;
 
-                        self.spawn_execute(id, cmd, seq, deps);
+                            s.log.save(id, ins, mode).await?;
+                            self.spawn_execute(id, cmd, seq, deps, status);
+                        }
                     }
                 }
             }
@@ -1580,8 +1585,14 @@ where
         Ok(())
     }
 
-    fn spawn_execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps) {
-        let _ = self.graph.init_node(id, cmd, seq, deps);
+    fn spawn_execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps, status: Status) {
+        match Ord::cmp(&status, &Status::Committed) {
+            Ordering::Less => panic!("unexpected status: {:?}", status),
+            Ordering::Equal => {}
+            Ordering::Greater => return,
+        }
+
+        let _ = self.graph.init_node(id, cmd, seq, deps, status);
 
         let this = Arc::clone(self);
         spawn(async move {

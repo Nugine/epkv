@@ -5,6 +5,7 @@ use crate::id::LocalInstanceId;
 use crate::id::ReplicaId;
 use crate::id::Seq;
 use crate::status::ExecStatus;
+use crate::status::Status;
 
 use epkv_utils::asc::Asc;
 use epkv_utils::cmp::max_assign;
@@ -74,11 +75,15 @@ impl<C> Graph<C> {
         }
     }
 
-    pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps) {
-        let gen = || {
-            let status: _ = SyncMutex::new(ExecStatus::Committed);
-            Asc::new(InsNode { cmd, seq, deps, status })
+    pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps, status: Status) {
+        let exec_status = match status {
+            Status::Committed => ExecStatus::Committed,
+            Status::Issued => ExecStatus::Issued,
+            Status::Executed => ExecStatus::Executed,
+            _ => panic!("unexpected status: {:?}", status),
         };
+
+        let gen: _ = || Asc::new(InsNode { cmd, seq, deps, status: SyncMutex::new(exec_status) });
         self.nodes.entry(id).or_insert_with(gen);
 
         let notify = self.subscribers.get(&id).as_deref().cloned();
