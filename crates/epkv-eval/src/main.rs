@@ -8,6 +8,7 @@
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
 
+use epkv_eval::bench;
 use epkv_eval::client;
 use epkv_eval::cluster;
 
@@ -24,6 +25,7 @@ struct Opt {
 enum Command {
     Cluster(cluster::Opt),
     Client(client::Opt),
+    Bench(bench::Opt),
 }
 
 fn main() -> Result<()> {
@@ -36,6 +38,7 @@ async fn run(opt: Opt) -> Result<()> {
     match opt.cmd {
         Command::Cluster(cluster_opt) => cluster::run(cluster_opt)?,
         Command::Client(client_opt) => client::run(client_opt).await?,
+        Command::Bench(bench_opt) => bench::run(bench_opt).await?,
     }
     Ok(())
 }
