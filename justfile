@@ -83,6 +83,7 @@ boot-local-cluster: build
     rm -rf /tmp/epkv-cluster
     just generate-local-cluster
     just local-monitor >target/monitor.ansi 2>&1 &
+    sleep 0.5s
     just local-server alpha >target/alpha.ansi 2>&1 &
     just local-server beta  >target/beta.ansi 2>&1 &
     just local-server gamma >target/gamma.ansi 2>&1 &
