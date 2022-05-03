@@ -1624,6 +1624,10 @@ where
     }
 
     fn spawn_execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps, status: Status) {
+        if let Some((_, task)) = self.recovering.remove(&id) {
+            task.abort()
+        }
+
         match Ord::cmp(&status, &Status::Committed) {
             Ordering::Less => panic!("unexpected status: {:?}", status),
             Ordering::Equal => {}
