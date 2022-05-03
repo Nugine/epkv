@@ -4,6 +4,7 @@ use crate::id::InstanceId;
 use crate::id::LocalInstanceId;
 use crate::id::ReplicaId;
 use crate::id::Seq;
+use crate::id_guard::IdGuard;
 use crate::status::ExecStatus;
 use crate::status::Status;
 
@@ -150,8 +151,8 @@ impl<C> Graph<C> {
     }
 
     #[must_use]
-    pub fn executing(&self, id: InstanceId) -> Option<Executing<'_>> {
-        Executing::new(&self.executing, id)
+    pub fn executing(&self, id: InstanceId) -> Option<IdGuard<'_>> {
+        IdGuard::new(&self.executing, id)
     }
 
     pub async fn lock_row(&self, rid: ReplicaId) -> RowGuard {
@@ -167,24 +168,6 @@ impl<C> Graph<C> {
         });
         let gen = || Asc::new(WaterMark::new(bound.unwrap_or(0)));
         self.watermarks.entry(rid).or_insert_with(gen).clone()
-    }
-}
-
-pub struct Executing<'a> {
-    id_set: &'a DashSet<InstanceId>,
-    id: InstanceId,
-}
-
-impl<'a> Executing<'a> {
-    fn new(id_set: &'a DashSet<InstanceId>, id: InstanceId) -> Option<Self> {
-        let is_new = id_set.insert(id);
-        is_new.then(|| Self { id_set, id })
-    }
-}
-
-impl Drop for Executing<'_> {
-    fn drop(&mut self) {
-        self.id_set.remove(&self.id);
     }
 }
 
