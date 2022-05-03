@@ -191,7 +191,7 @@ impl DepsQueue {
 
 pub trait GraphId: Copy + Eq + Hash + fmt::Debug {}
 
-pub trait GraphNode: Clone {
+pub trait GraphNode: Clone + fmt::Debug {
     type Id: GraphId;
     fn deps_for_each(&self, f: impl FnMut(Self::Id));
 }
@@ -212,6 +212,11 @@ impl<I, N> LocalGraph<I, N>
 where
     I: GraphId,
 {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
     #[must_use]
     pub fn contains_node(&self, id: I) -> bool {
         self.nodes.contains_key(&id)
@@ -294,7 +299,7 @@ struct TarjanSccAttr {
 
 impl<'a, I, N> TarjanScc<'a, I, N>
 where
-    I: GraphId + fmt::Debug,
+    I: GraphId,
     N: GraphNode<Id = I>,
 {
     fn new(nodes: &'a FnvHashMap<I, N>) -> Self {
@@ -309,7 +314,10 @@ where
 
     /// <https://oi-wiki.org/graph/scc/#tarjan_1>
     fn run(&mut self, u: I) {
-        let node = &self.nodes[&u];
+        let node = self
+            .nodes
+            .get(&u)
+            .unwrap_or_else(|| panic!("cannot find node {:?} in local graph {:?}", u, self.nodes));
 
         let idx = self.cnt.wrapping_add(1);
         self.cnt = idx;
@@ -362,7 +370,7 @@ mod tests {
 
     use std::fmt;
 
-    #[derive(Clone)]
+    #[derive(Debug, Clone)]
     struct TestNode {
         deps: VecSet<u64>,
     }

@@ -1701,6 +1701,10 @@ where
             }
         }
 
+        if local_graph.is_empty() {
+            return Ok(()); // ins executed
+        }
+
         debug!(?id, ?local_graph, "tarjan scc");
 
         {
