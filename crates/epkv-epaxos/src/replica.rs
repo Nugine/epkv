@@ -1171,60 +1171,73 @@ where
 
         let epoch = self.epoch.load();
 
-        if let Some(pbal) = s.log.get_cached_pbal(id) {
-            if pbal >= msg.pbal {
-                drop(guard);
-
-                let target = msg.sender;
-                let sender = self.rid;
-                self.network.send_one(
-                    target,
-                    Message::PrepareNack(PrepareNack { sender, epoch, id, pbal }),
-                );
-                return Ok(());
+        let reply: Result<Message<C>> = async {
+            if let Some(pbal) = s.log.get_cached_pbal(id) {
+                if pbal >= msg.pbal {
+                    let sender = self.rid;
+                    return Ok(Message::PrepareNack(PrepareNack { sender, epoch, id, pbal }));
+                }
             }
+
+            let pbal = msg.pbal;
+
+            s.log.save_pbal(id, pbal).await?;
+
+            let ins: _ = match s.log.get_cached_ins(id) {
+                Some(ins) => ins,
+                None => {
+                    let sender = self.rid;
+                    return Ok(Message::PrepareUnchosen(PrepareUnchosen { sender, epoch, id }));
+                }
+            };
+
+            let cmd = if msg.known && ins.cmd.is_nop().not() {
+                None
+            } else {
+                Some(ins.cmd.clone())
+            };
+
+            let seq = ins.seq;
+            let deps = ins.deps.clone();
+            let abal = ins.abal;
+            let status = ins.status;
+            let acc = ins.acc.clone();
+
+            let sender = self.rid;
+            Ok(Message::PrepareOk(PrepareOk {
+                sender,
+                epoch,
+                id,
+                pbal,
+                cmd,
+                seq,
+                deps,
+                abal,
+                status,
+                acc,
+            }))
         }
+        .await;
 
-        let pbal = msg.pbal;
-
-        s.log.save_pbal(id, pbal).await?;
-
-        let ins: _ = match s.log.get_cached_ins(id) {
-            Some(ins) => ins,
-            None => {
-                drop(guard);
-
-                let target = msg.sender;
-                let sender = self.rid;
-                self.network.send_one(
-                    target,
-                    Message::PrepareUnchosen(PrepareUnchosen { sender, epoch, id }),
-                );
-                return Ok(());
-            }
-        };
-
-        let cmd = if msg.known && ins.cmd.is_nop().not() {
-            None
-        } else {
-            Some(ins.cmd.clone())
-        };
-
-        let seq = ins.seq;
-        let deps = ins.deps.clone();
-        let abal = ins.abal;
-        let status = ins.status;
-        let acc = ins.acc.clone();
-
-        drop(guard);
+        let reply = reply?;
 
         let target = msg.sender;
-        let sender = self.rid;
-        self.network.send_one(
-            target,
-            Message::PrepareOk(PrepareOk { sender, epoch, id, pbal, cmd, seq, deps, abal, status, acc }),
-        );
+        if target == self.rid {
+            self.spawn_handle_message(reply);
+        } else {
+            self.network.send_one(target, reply)
+        }
+
         Ok(())
+    }
+
+    fn spawn_handle_message(self: &Arc<Self>, msg: Message<C>) {
+        let this = Arc::clone(self);
+        spawn(async move {
+            if let Err(err) = this.handle_message(msg).await {
+                error!(?err)
+            }
+        });
     }
 
     pub async fn run_join(self: &Arc<Self>) -> Result<bool> {
