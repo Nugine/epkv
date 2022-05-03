@@ -28,6 +28,7 @@ use epkv_rocks::log_db::LogDb;
 
 use epkv_utils::asc::Asc;
 use epkv_utils::atomic_flag::AtomicFlag;
+use epkv_utils::cast::NumericCast;
 use epkv_utils::lock::with_mutex;
 
 use std::future::Future;
@@ -338,7 +339,7 @@ impl Server {
             }
 
             {
-                let cnt = u64::try_from(batch.len()).unwrap();
+                let cnt: u64 = batch.len().numeric_cast();
                 with_mutex(&self.metrics, |m| {
                     m.single_cmd_count = m.single_cmd_count.wrapping_add(cnt);
                     m.batched_cmd_count = m.batched_cmd_count.wrapping_add(1);

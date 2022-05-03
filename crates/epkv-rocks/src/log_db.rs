@@ -382,6 +382,7 @@ mod tests {
     use epkv_epaxos::id::{Ballot, InstanceId, ReplicaId, Round};
     use epkv_epaxos::status::Status;
 
+    use epkv_utils::cast::NumericCast;
     use epkv_utils::codec;
     use epkv_utils::vecset::VecSet;
 
@@ -417,7 +418,7 @@ mod tests {
         let pos: usize = {
             let mut value_buf = io::Cursor::new(buf.as_mut_slice());
             codec::serialize_into(&mut value_buf, &input_pbal).unwrap();
-            value_buf.position().try_into().unwrap()
+            value_buf.position().numeric_cast()
         };
         let value = &buf[..pos];
 

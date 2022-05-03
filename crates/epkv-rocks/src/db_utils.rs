@@ -1,3 +1,4 @@
+use epkv_utils::cast::NumericCast;
 use epkv_utils::codec;
 
 use std::io;
@@ -36,7 +37,7 @@ where
     let pos: usize = {
         let mut cursor = io::Cursor::new(buf.as_mut_slice());
         codec::serialize_into(&mut cursor, &value)?;
-        cursor.position().try_into().unwrap()
+        cursor.position().numeric_cast()
     };
     db.put(key, &buf[..pos])?;
     Ok(())

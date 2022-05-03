@@ -5,6 +5,7 @@ use epkv_epaxos::id::ReplicaId;
 use epkv_epaxos::msg::Message;
 use epkv_epaxos::net::Network;
 
+use epkv_utils::cast::NumericCast;
 use epkv_utils::codec::{self, bytes_sink, bytes_stream};
 use epkv_utils::lock::{with_mutex, with_read_lock, with_write_lock};
 use epkv_utils::vecmap::VecMap;
@@ -105,8 +106,8 @@ where
             s.conns.apply(&targets, |conn| txs.push(conn.tx.clone()));
         });
         {
-            let cnt = u64::try_from(targets.len()).unwrap();
-            let single_size = u64::try_from(msg_bytes.len()).unwrap();
+            let cnt: u64 = targets.len().numeric_cast();
+            let single_size: u64 = msg_bytes.len().numeric_cast();
             let total_size = single_size.wrapping_mul(cnt);
             with_mutex(&self.metrics, |metrics| {
                 metrics.msg_total_size = metrics.msg_total_size.wrapping_add(total_size);
@@ -126,7 +127,7 @@ where
         });
         if let Some(tx) = tx {
             {
-                let single_size = u64::try_from(msg_bytes.len()).unwrap();
+                let single_size: u64 = msg_bytes.len().numeric_cast();
                 with_mutex(&self.metrics, |metrics| {
                     metrics.msg_total_size = metrics.msg_total_size.wrapping_add(single_size);
                     metrics.msg_count = metrics.msg_count.wrapping_add(1);

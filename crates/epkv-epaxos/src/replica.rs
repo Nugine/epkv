@@ -15,6 +15,7 @@ use crate::status::{ExecStatus, Status};
 use crate::store::{DataStore, LogStore, UpdateMode};
 
 use epkv_utils::asc::Asc;
+use epkv_utils::cast::NumericCast;
 use epkv_utils::chan::recv_timeout;
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
@@ -1367,7 +1368,7 @@ where
         };
 
         let conf = &self.config.sync_limits;
-        let limit: usize = conf.max_instance_num.try_into().expect("usize overflow");
+        let limit: usize = conf.max_instance_num.numeric_cast();
 
         for &(rid, lower) in msg.known_up_to.iter() {
             let higher = match local_known_up_to.get(&rid) {
@@ -1428,7 +1429,7 @@ where
                 let lower: _ = peer_bounds.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO);
 
                 let conf = &self.config.sync_limits;
-                let limit: usize = conf.max_instance_num.try_into().expect("usize overflow");
+                let limit: usize = conf.max_instance_num.numeric_cast();
 
                 let mut instances: _ = <Vec<(InstanceId, Instance<C>)>>::new();
 

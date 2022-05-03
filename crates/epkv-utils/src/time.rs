@@ -1,3 +1,5 @@
+use crate::cast::NumericCast;
+
 use std::time::{Duration, Instant};
 
 use once_cell::sync::Lazy;
@@ -20,7 +22,7 @@ impl LocalInstant {
     pub fn now() -> Self {
         let anchor = *ANCHOR;
         let duration = Instant::now().duration_since(anchor);
-        Self(duration.as_nanos().try_into().unwrap())
+        Self(duration.as_nanos().numeric_cast())
     }
 
     #[inline]

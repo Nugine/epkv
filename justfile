@@ -20,7 +20,7 @@ build:
 
 miri:
     MIRIFLAGS=-Zmiri-backtrace=full \
-    cargo miri test -p epkv-utils -- --nocapture --test-threads=1 \
+    cargo miri test -p epkv-utils -- --test-threads=1 \
         --skip watermark \
         --skip flag_group \
         --skip stepper
