@@ -74,7 +74,7 @@ impl DataStore<BatchedCommand> for Arc<DataDb> {
         let task = move || {
             let result = this.batched_execute(cmd);
             notify.notify_executed();
-            debug!(?id, "cmd has been executed");
+            debug!(?id, "cmd executed");
             result
         };
         async move { tokio::task::spawn_blocking(task).await.unwrap() }
