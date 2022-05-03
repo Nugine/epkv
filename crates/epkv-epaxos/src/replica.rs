@@ -439,8 +439,10 @@ where
                         let acc = Acc::from_mutable(acc);
 
                         if is_fast_path {
+                            debug!(?id, "fast path");
                             return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
                         } else {
+                            debug!(?id, "slow path");
                             return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
                         }
                     }
@@ -450,15 +452,17 @@ where
             }
 
             {
-                debug!("preaccept timeout: goto slow path");
-
                 let mut guard = self.state.lock().await;
                 let s = &mut *guard;
 
                 let cluster_size = s.peers.cluster_size();
                 if received.len() < cluster_size / 2 {
+                    debug!(?id, "preaccept timeout: not enough replies");
+                    self.spawn_recover_immediately(id);
                     return Ok(());
                 }
+
+                debug!(?id, "preaccept timeout: goto slow path");
 
                 s.log.load(id).await?;
                 let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
@@ -1077,6 +1081,15 @@ where
         }
 
         Ok(())
+    }
+
+    fn spawn_recover_immediately(self: &Arc<Self>, id: InstanceId) {
+        let this = Arc::clone(self);
+        spawn(async move {
+            if let Err(err) = this.run_recover(id).await {
+                error!(?id, ?err);
+            }
+        });
     }
 
     #[allow(clippy::float_arithmetic)]
