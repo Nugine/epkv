@@ -15,6 +15,9 @@ use epkv_eval::cluster;
 use anyhow::Result;
 use clap::StructOpt;
 
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 #[derive(Debug, clap::Parser)]
 struct Opt {
     #[clap(subcommand)]
