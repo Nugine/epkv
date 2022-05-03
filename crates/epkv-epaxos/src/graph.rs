@@ -321,6 +321,8 @@ where
 
     /// <https://oi-wiki.org/graph/scc/#tarjan_1>
     fn run(&mut self, u: I) {
+        let node = &self.nodes[&u];
+
         let idx = self.cnt.wrapping_add(1);
         self.cnt = idx;
 
@@ -328,9 +330,11 @@ where
 
         self.stack.push(u);
 
-        let node = self.nodes.get(&u).unwrap_or_else(|| panic!("cannot find node {u:?}"));
-
         node.deps_for_each(|v| {
+            if self.nodes.contains_key(&v).not() {
+                return; // the node is omitted
+            }
+
             if self.attr.contains_key(&v).not() {
                 self.run(v);
                 let low_v: _ = self.attr[&v].low;
@@ -470,5 +474,17 @@ mod tests {
 
         let ans: _ = graph.tarjan_scc(805);
         assert_scc(&ans, &[&[701, 702, 703, 801, 802, 803], &[704, 804], &[805]]);
+    }
+
+    #[test]
+    fn omitted_node() {
+        let mut graph = build_graph(&[
+            (202, 201), //
+            (301, 202), //
+        ]);
+        graph.nodes.remove(&201);
+
+        let ans: _ = graph.tarjan_scc(301);
+        assert_scc(&ans, &[&[202], &[301]]);
     }
 }
