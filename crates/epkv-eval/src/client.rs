@@ -1,12 +1,13 @@
 use epkv_protocol::cs;
 use epkv_protocol::rpc::RpcClientConfig;
+use epkv_utils::display::display_bytes;
 use epkv_utils::utf8;
-use serde::Serialize;
 
 use std::net::SocketAddr;
 use std::time::Instant;
 
 use anyhow::Result;
+use serde::Serialize;
 
 #[derive(Debug, clap::Args)]
 pub struct Opt {
@@ -54,17 +55,20 @@ pub async fn run(opt: Opt) -> Result<()> {
         Command::Get { key, .. } => {
             let args = cs::GetArgs { key: key.into() };
             let output = server.get(args).await?;
-            println!("{}", pretty_json(&output)?);
+            match output.value {
+                Some(val) => println!("{}", display_bytes(&*val)),
+                None => {}
+            }
         }
         Command::Set { key, value, .. } => {
             let args = cs::SetArgs { key: key.into(), value: value.into() };
             let output = server.set(args).await?;
-            println!("{}", pretty_json(&output)?);
+            let cs::SetOutput {} = output;
         }
         Command::Del { key, .. } => {
             let args = cs::DelArgs { key: key.into() };
             let output = server.del(args).await?;
-            println!("{}", pretty_json(&output)?);
+            let cs::DelOutput {} = output;
         }
     }
 

@@ -28,6 +28,7 @@ pub mod chan;
 pub mod cmp;
 pub mod codec;
 pub mod config;
+pub mod display;
 pub mod flag_group;
 pub mod iter;
 pub mod lock;
