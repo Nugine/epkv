@@ -27,6 +27,7 @@ pub struct ServerConfig {
     pub listen_client_addr: SocketAddr,
     pub monitor_addr: SocketAddr,
     pub public_peer_addr: SocketAddr,
+    pub msg_task_limit: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
