@@ -6,7 +6,6 @@ use crate::deps::Deps;
 use crate::exec::ExecNotify;
 use crate::graph::{DepsQueue, Graph, InsNode, LocalGraph};
 use crate::id::*;
-use crate::id_guard::IdGuard;
 use crate::ins::Instance;
 use crate::log::Log;
 use crate::msg::*;
@@ -35,7 +34,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{ensure, Result};
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use futures_util::future::join_all;
 use parking_lot::Mutex as SyncMutex;
 use rand::Rng;
@@ -43,6 +42,7 @@ use tokio::spawn;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::MutexGuard as AsyncMutexGuard;
+use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tracing::{debug, error};
 
@@ -69,7 +69,7 @@ where
 
     network: N,
 
-    recovering: Asc<DashSet<InstanceId>>,
+    recovering: DashMap<InstanceId, JoinHandle<()>>,
 }
 
 struct State<C, L>
@@ -145,7 +145,7 @@ where
             network.join(p, a);
         }
 
-        let recovering = Asc::new(DashSet::new());
+        let recovering = DashMap::new();
 
         Ok(Arc::new(Self {
             rid,
@@ -861,11 +861,6 @@ where
     }
 
     async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
-        let _recovering = match IdGuard::new(Asc::clone(&self.recovering), id) {
-            Some(guard) => guard,
-            None => return Ok(()),
-        };
-
         debug!(?id, "run_recover");
 
         let mut rx = {
@@ -1096,11 +1091,15 @@ where
 
     fn spawn_recover_immediately(self: &Arc<Self>, id: InstanceId) {
         let this = Arc::clone(self);
-        spawn(async move {
+        let task = spawn(async move {
             if let Err(err) = this.run_recover(id).await {
                 error!(?id, ?err);
             }
+            this.recovering.remove(&id);
         });
+        if let Some(prev) = self.recovering.insert(id, task) {
+            prev.abort();
+        }
     }
 
     #[allow(clippy::float_arithmetic)]
@@ -1111,13 +1110,18 @@ where
             let delta = Duration::from_secs_f64(d.as_secs_f64() * rate);
             Duration::from_micros(conf.default_us) + delta
         });
-        let this = Arc::clone(self);
-        spawn(async move {
-            sleep(duration).await;
-            if let Err(err) = this.run_recover(id).await {
-                error!(?id, ?err);
-            }
-        });
+
+        if let dashmap::mapref::entry::Entry::Vacant(e) = self.recovering.entry(id) {
+            let this = Arc::clone(self);
+            let task = spawn(async move {
+                sleep(duration).await;
+                if let Err(err) = this.run_recover(id).await {
+                    error!(?id, ?err);
+                }
+                this.recovering.remove(&id);
+            });
+            e.insert(task);
+        }
     }
 
     #[allow(clippy::float_arithmetic)]
@@ -1127,13 +1131,17 @@ where
             let rate: f64 = rand::thread_rng().gen_range(1.0..4.0);
             Duration::from_secs_f64(d.as_secs_f64() * rate)
         });
-        let this = Arc::clone(self);
-        spawn(async move {
-            sleep(duration).await;
-            if let Err(err) = this.run_recover(id).await {
-                error!(?id, ?err);
-            }
-        });
+        if let dashmap::mapref::entry::Entry::Vacant(e) = self.recovering.entry(id) {
+            let this = Arc::clone(self);
+            let task = spawn(async move {
+                sleep(duration).await;
+                if let Err(err) = this.run_recover(id).await {
+                    error!(?id, ?err);
+                }
+                this.recovering.remove(&id);
+            });
+            e.insert(task);
+        }
     }
 
     async fn handle_prepare(self: &Arc<Self>, msg: Prepare) -> Result<()> {
