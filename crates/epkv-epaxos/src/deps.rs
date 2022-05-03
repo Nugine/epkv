@@ -4,6 +4,7 @@ use epkv_utils::asc::Asc;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
 
+use std::fmt;
 use std::hash::Hash;
 
 use once_cell::sync::Lazy;
@@ -28,7 +29,7 @@ impl MutableDeps {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Deps(Asc<MutableDeps>);
 
 impl Deps {
@@ -94,5 +95,13 @@ impl FromIterator<(ReplicaId, LocalInstanceId)> for MutableDeps {
 impl FromIterator<(ReplicaId, LocalInstanceId)> for Deps {
     fn from_iter<T: IntoIterator<Item = (ReplicaId, LocalInstanceId)>>(iter: T) -> Self {
         Deps::from_mutable(MutableDeps(VecMap::from_iter(iter)))
+    }
+}
+
+impl fmt::Debug for Deps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let vecmap: _ = &self.as_inner().0;
+        let entries: _ = vecmap.iter().copied().map(|(r, l): _| InstanceId(r, l));
+        f.debug_set().entries(entries).finish()
     }
 }
