@@ -73,13 +73,11 @@ pub async fn case1(
         ensure!(cmd_count % batch_size == 0);
     }
 
-    let (server_name, server) = {
+    let server = {
         let first = config.servers.iter().next().unwrap();
-        let server_name = first.0.as_str();
-        let client_addr = SocketAddr::from((first.1.ip, first.1.client_port));
+        let remote_addr = SocketAddr::from((first.1.ip, first.1.client_port));
         let rpc_client_config = crate::default_rpc_client_config();
-        let server = cs::Server::connect(client_addr, &rpc_client_config).await?;
-        (server_name, server)
+        cs::Server::connect(remote_addr, &rpc_client_config).await?
     };
 
     let key = crate::random_bytes(key_size);
@@ -98,16 +96,27 @@ pub async fn case1(
 
     let t1 = Instant::now();
 
+    drop(server);
+
     #[allow(clippy::float_arithmetic)]
     let time_ms = (t1 - t0).as_secs_f64() * 1000.0;
 
-    let metrics = server.get_metrics(cs::GetMetricsArgs {}).await?;
+    let cluster_metrics = {
+        let rpc_client_config = crate::default_rpc_client_config();
+        let mut map = BTreeMap::new();
+        for (name, c) in &config.servers {
+            let remote_addr = SocketAddr::from((c.ip, c.client_port));
+            let server = cs::Server::connect(remote_addr, &rpc_client_config).await?;
+            let metrics = server.get_metrics(cs::GetMetricsArgs {}).await?;
+            map.insert(name.to_owned(), metrics);
+        }
+        map
+    };
 
     {
         let result = json!({
-            "server_name": server_name,
-            "metrics": metrics,
             "time_ms": time_ms,
+            "cluster_metrics": cluster_metrics,
         });
 
         let result_path = target_dir.join("case1.json");
