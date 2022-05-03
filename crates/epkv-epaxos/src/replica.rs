@@ -238,6 +238,8 @@ where
         let pbal = Ballot(Round::ZERO, self.rid);
         let acc = Acc::from_mutable(MutableAcc::with_capacity(1));
 
+        debug!(?id, "run_propose");
+
         self.phase_preaccept(guard, id, pbal, Some(cmd), acc).await
     }
 
