@@ -1,5 +1,6 @@
 #![deny(clippy::missing_inline_in_public_items, clippy::missing_const_for_fn)]
 
+use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
@@ -16,13 +17,13 @@ pub struct Seq(u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Epoch(u64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct InstanceId(pub ReplicaId, pub LocalInstanceId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Round(u64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Ballot(pub Round, pub ReplicaId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -153,6 +154,20 @@ impl LocalInstanceId {
 
         assert!(end.0 != u64::MAX);
         Iter { i: start.0, end: end.0 }
+    }
+}
+
+impl fmt::Debug for InstanceId {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("InstanceId").field(&self.0.raw_value()).field(&self.1.raw_value()).finish()
+    }
+}
+
+impl fmt::Debug for Ballot {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Ballot").field(&self.0.raw_value()).field(&self.1.raw_value()).finish()
     }
 }
 
