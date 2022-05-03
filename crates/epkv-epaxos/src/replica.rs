@@ -249,6 +249,7 @@ where
         self.phase_preaccept(guard, id, pbal, Some(cmd), acc).await
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn phase_preaccept(
         self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, L>>,
@@ -257,7 +258,7 @@ where
         cmd: Option<C>,
         acc: Acc,
     ) -> Result<()> {
-        debug!(?id, "phase_preaccept");
+        debug!("phase_preaccept");
 
         let (mut rx, mut seq, mut deps, mut acc) = {
             let s = &mut *guard;
@@ -304,7 +305,7 @@ where
             drop(guard);
 
             {
-                debug!(?id, ?selected_peers, "broadcast preaccept");
+                debug!(?selected_peers, "broadcast preaccept");
 
                 clone!(deps, acc);
                 let sender = self.rid;
@@ -366,7 +367,7 @@ where
                             }
                         }
 
-                        debug!(?id, "received preaccept reply");
+                        debug!("received preaccept reply");
 
                         let mut guard = self.state.lock().await;
                         let s = &mut *guard;
@@ -445,10 +446,10 @@ where
                         let acc = Acc::from_mutable(acc);
 
                         if is_fast_path {
-                            debug!(?id, "fast path");
+                            debug!("fast path");
                             return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
                         } else {
-                            debug!(?id, "slow path");
+                            debug!("slow path");
                             return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
                         }
                     }
@@ -463,12 +464,12 @@ where
 
                 let cluster_size = s.peers.cluster_size();
                 if received.len() < cluster_size / 2 {
-                    debug!(?id, "preaccept timeout: not enough replies");
+                    debug!("preaccept timeout: not enough replies");
                     self.spawn_recover_immediately(id);
                     return Ok(());
                 }
 
-                debug!(?id, "preaccept timeout: goto slow path");
+                debug!("preaccept timeout: goto slow path");
 
                 s.log.load(id).await?;
                 let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
@@ -560,6 +561,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn phase_accept(
         self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, L>>,
@@ -570,7 +572,7 @@ where
         deps: Deps,
         acc: Acc,
     ) -> Result<()> {
-        debug!(?id, "phase_accept");
+        debug!("phase_accept");
 
         let (mut rx, mut acc) = {
             let s = &mut *guard;
@@ -605,7 +607,7 @@ where
             drop(guard);
 
             {
-                debug!(?id, ?selected_peers, "broadcast accept");
+                debug!(?selected_peers, "broadcast accept");
 
                 clone!(acc);
                 let sender = self.rid;
@@ -639,7 +641,7 @@ where
                     continue;
                 }
 
-                debug!(?id, "received accept reply");
+                debug!("received accept reply");
 
                 let mut guard = self.state.lock().await;
                 let s = &mut *guard;
@@ -741,6 +743,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn phase_commit(
         self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, L>>,
@@ -751,7 +754,7 @@ where
         deps: Deps,
         acc: Acc,
     ) -> Result<()> {
-        debug!(?id, "phase_commit");
+        debug!("phase_commit");
 
         let s = &mut *guard;
 
@@ -781,7 +784,7 @@ where
         cmd.notify_committed();
 
         {
-            debug!(?id, ?selected_peers, "broadcast commit");
+            debug!(?selected_peers, "broadcast commit");
 
             let sender = self.rid;
             let epoch = self.epoch.load();
@@ -860,9 +863,10 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
         loop {
-            debug!(?id, "run_recover");
+            debug!("run_recover");
 
             let mut rx = {
                 let mut guard = self.state.lock().await;
@@ -949,7 +953,7 @@ where
                         continue;
                     }
 
-                    debug!(?id, "received prepare reply");
+                    debug!("received prepare reply");
 
                     let mut guard = self.state.lock().await;
                     let s = &mut *guard;
@@ -1651,8 +1655,9 @@ where
         });
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn run_execute(self: &Arc<Self>, id: InstanceId) -> Result<()> {
-        debug!(?id, "run_execute");
+        debug!("run_execute");
 
         let _executing = match self.graph.executing(id) {
             Some(exec) => exec,
@@ -1661,7 +1666,7 @@ where
 
         let mut local_graph = LocalGraph::new();
 
-        debug!(?id, "wait graph");
+        debug!("wait graph");
 
         {
             let _row_guard = self.graph.lock_row(id.0).await;
@@ -1724,7 +1729,7 @@ where
             return Ok(()); // ins executed
         }
 
-        debug!(?id, ?local_graph, "tarjan scc");
+        debug!(?local_graph, "tarjan scc");
 
         {
             let mut scc_list = local_graph.tarjan_scc(id);

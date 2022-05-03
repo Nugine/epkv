@@ -38,13 +38,14 @@ impl LogDb {
         Ok(Arc::new(Self { db }))
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id, mode = ?mode))]
     pub fn save(
         self: &Arc<Self>,
         id: InstanceId,
         ins: Instance<BatchedCommand>,
         mode: UpdateMode,
     ) -> Result<()> {
-        debug!(?id, ?mode, "saving instance");
+        debug!("saving instance");
 
         let needs_save_cmd = match mode {
             UpdateMode::Full => true,
@@ -91,11 +92,12 @@ impl LogDb {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?id))]
     pub fn load(self: &Arc<Self>, id: InstanceId) -> Result<Option<Instance<BatchedCommand>>> {
         // <https://github.com/facebook/rocksdb/wiki/Basic-Operations#iteration>
         // <https://github.com/facebook/rocksdb/wiki/Iterator>
 
-        debug!(?id, "loading instance");
+        debug!("loading instance");
 
         let mut iter = self.db.raw_iterator();
 
@@ -106,14 +108,14 @@ impl LogDb {
 
             if iter.valid().not() {
                 iter.status()?;
-                debug!(?id, "not found");
+                debug!("not found");
                 return Ok(None);
             }
 
             let log_key: &InstanceFieldKey = match try_from_bytes(iter.key().unwrap()) {
                 Ok(k) => k,
                 Err(_) => {
-                    debug!(?id, iter_key = ?iter.key(), "not an instance field key");
+                    debug!(iter_key = ?iter.key(), "not an instance field key");
                     return Ok(None);
                 }
             };
