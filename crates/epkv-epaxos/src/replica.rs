@@ -935,7 +935,7 @@ where
                 let mut tuples: Vec<(ReplicaId, Seq, Deps, Status, Acc)> = Vec::new();
 
                 // adaptive?
-                let timeout = Duration::from_millis(self.config.recover_timeout.default_us);
+                let timeout = Duration::from_micros(self.config.recover_timeout.default_us);
 
                 while let Ok(Some(msg)) = recv_timeout(&mut rx, timeout).await {
                     let msg = match PrepareReply::convert(msg) {
@@ -953,7 +953,7 @@ where
                         continue;
                     }
 
-                    debug!("received prepare reply");
+                    debug!(received_len = ?received.len(), "receive new prepare reply");
 
                     let mut guard = self.state.lock().await;
                     let s = &mut *guard;
@@ -1094,7 +1094,7 @@ where
 
             {
                 // adaptive?
-                let timeout = Duration::from_millis(self.config.recover_timeout.default_us);
+                let timeout = Duration::from_micros(self.config.recover_timeout.default_us);
                 sleep(timeout).await
             }
         }
@@ -1268,7 +1268,7 @@ where
         };
 
         {
-            let join_timeout = Duration::from_millis(self.config.join_timeout.default_us);
+            let join_timeout = Duration::from_micros(self.config.join_timeout.default_us);
 
             let mut received = VecSet::new();
             while let Ok(Some(msg)) = recv_timeout(&mut rx, join_timeout).await {
