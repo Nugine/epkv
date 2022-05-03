@@ -16,7 +16,7 @@ fmt:
     cargo sort -w > /dev/null
 
 build:
-    mold -run cargo build --release --offline
+    cargo build --release --offline
 
 miri:
     MIRIFLAGS=-Zmiri-backtrace=full \
@@ -26,7 +26,7 @@ miri:
         --skip stepper
 
 test:
-    mold -run cargo test --release --offline
+    cargo test --release --offline
 
 check: fmt
     cargo check
