@@ -114,6 +114,8 @@ pub async fn case1(
 
         let content = crate::pretty_json(&result)?;
 
+        println!("{}", content);
+
         fs::write(&result_path, content)
             .with_context(|| format!("failed to write result file {result_path}"))?;
     }
