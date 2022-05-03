@@ -10,7 +10,11 @@ bytes = { version = "1.1.0", features = ["serde"] }
 camino = { version = "1.0.7", features = ["serde"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-utils = { path = "../epkv-utils" }
-rocksdb = { version = "0.18.0", features = ["jemalloc"] }
 serde = { version = "1.0.137", features = ["derive"] }
 tokio = { version = "1.18.0", features = ["full"] }
 tracing = "0.1.34"
+
+[dependencies.rocksdb]
+git = "https://github.com/rust-rocksdb/rust-rocksdb.git"
+rev = "59434f93ed91e4252d8ff64bfd28b4f3203572a4"
+features = ["jemalloc"]
