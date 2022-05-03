@@ -6,6 +6,7 @@ use crate::deps::Deps;
 use crate::exec::ExecNotify;
 use crate::graph::{DepsQueue, Graph, InsNode, LocalGraph};
 use crate::id::*;
+use crate::id_guard::IdGuard;
 use crate::ins::Instance;
 use crate::log::Log;
 use crate::msg::*;
@@ -34,7 +35,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{ensure, Result};
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use futures_util::future::join_all;
 use parking_lot::Mutex as SyncMutex;
 use rand::Rng;
@@ -67,6 +68,8 @@ where
     data_store: D,
 
     network: N,
+
+    recovering: DashSet<InstanceId>,
 }
 
 struct State<C, L>
@@ -142,6 +145,8 @@ where
             network.join(p, a);
         }
 
+        let recovering = DashSet::new();
+
         Ok(Arc::new(Self {
             rid,
             public_peer_addr,
@@ -154,6 +159,7 @@ where
             graph,
             data_store,
             network,
+            recovering,
         }))
     }
 
@@ -855,6 +861,11 @@ where
     }
 
     async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
+        let _recovering = match IdGuard::new(&self.recovering, id) {
+            Some(guard) => guard,
+            None => return Ok(()),
+        };
+
         debug!(?id, "run_recover");
 
         let mut rx = {
