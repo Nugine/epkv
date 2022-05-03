@@ -1554,8 +1554,12 @@ where
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
-        let targets = s.peers.select_all();
         let committed_up_to = s.log.committed_up_to();
+        if committed_up_to.is_empty() {
+            return Ok(());
+        }
+
+        let targets = s.peers.select_all();
 
         drop(guard);
 
