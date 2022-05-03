@@ -264,11 +264,14 @@ name = "epkv-eval"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
+ "bytes",
  "camino",
  "clap",
  "epkv-protocol",
  "epkv-server",
  "epkv-utils",
+ "futures-util",
+ "rand",
  "serde",
  "serde_json",
  "simdutf8",

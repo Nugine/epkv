@@ -1,13 +1,10 @@
 use epkv_protocol::cs;
-use epkv_protocol::rpc::RpcClientConfig;
 use epkv_utils::display::display_bytes;
-use epkv_utils::utf8;
 
 use std::net::SocketAddr;
 use std::time::Instant;
 
 use anyhow::Result;
-use serde::Serialize;
 
 #[derive(Debug, clap::Args)]
 pub struct Opt {
@@ -29,18 +26,10 @@ pub enum Command {
     Del { key: String },
 }
 
-fn default_rpc_client_config() -> RpcClientConfig {
-    RpcClientConfig {
-        max_frame_length: 16777216, // 16 MiB
-        op_chan_size: 1024,
-        forward_chan_size: 1024,
-    }
-}
-
 pub async fn run(opt: Opt) -> Result<()> {
     let server = {
         let remote_addr = opt.server;
-        let rpc_client_config = default_rpc_client_config();
+        let rpc_client_config = crate::default_rpc_client_config();
         cs::Server::connect(remote_addr, &rpc_client_config).await?
     };
 
@@ -50,7 +39,7 @@ pub async fn run(opt: Opt) -> Result<()> {
         Command::GetMetrics { .. } => {
             let args = cs::GetMetricsArgs {};
             let output = server.get_metrics(args).await?;
-            println!("{}", pretty_json(&output)?);
+            println!("{}", crate::pretty_json(&output)?);
         }
         Command::Get { key, .. } => {
             let args = cs::GetArgs { key: key.into() };
@@ -80,13 +69,4 @@ pub async fn run(opt: Opt) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn pretty_json<T: Serialize>(value: &T) -> Result<String> {
-    let mut buf = Vec::new();
-    let formatter = serde_json::ser::PrettyFormatter::with_indent("    ".as_ref());
-    let mut serializer: _ = serde_json::Serializer::with_formatter(&mut buf, formatter.clone());
-    value.serialize(&mut serializer)?;
-    let ans = utf8::vec_to_string(buf)?;
-    Ok(ans)
 }
