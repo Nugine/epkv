@@ -335,7 +335,7 @@ where
                     let conf = &self.config.preaccept_timeout;
                     conf.with(avg_rtt, |d| d + d / 2)
                 };
-                debug!(?avg_rtt, timeout=?t, "preaccept timeout");
+                debug!(?avg_rtt, timeout=?t, "calc preaccept timeout");
 
                 match recv_timeout(&mut rx, t).await {
                     Ok(Some(msg)) => {
@@ -450,6 +450,8 @@ where
             }
 
             {
+                debug!("preaccept timeout: goto slow path");
+
                 let mut guard = self.state.lock().await;
                 let s = &mut *guard;
 
