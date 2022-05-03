@@ -76,3 +76,13 @@ eval *ARGS:
     export RUST_BACKTRACE=full
     export RUST_LOG=epkv_eval=debug,epkv_protocol=debug
     ./target/release/epkv-eval {{ARGS}}
+
+boot-local-cluster: build
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+    rm -rf /tmp/epkv-cluster
+    just generate-local-cluster
+    just local-monitor >target/monitor.ansi 2>&1 &
+    just local-server alpha >target/alpha.ansi 2>&1 &
+    just local-server beta  >target/beta.ansi 2>&1 &
+    just local-server gamma >target/gamma.ansi 2>&1 &
