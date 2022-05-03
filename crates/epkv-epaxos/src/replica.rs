@@ -861,232 +861,239 @@ where
     }
 
     async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
-        debug!(?id, "run_recover");
+        loop {
+            debug!(?id, "run_recover");
 
-        let mut rx = {
-            let mut guard = self.state.lock().await;
-            let s = &mut *guard;
-
-            s.log.load(id).await?;
-
-            if let Some(ins) = s.log.get_cached_ins(id) {
-                if ins.status >= Status::Committed {
-                    let cmd = ins.cmd.clone();
-                    let seq = ins.seq;
-                    let deps = ins.deps.clone();
-                    let status = ins.status;
-                    let _ = self.graph.init_node(id, cmd, seq, deps, status);
-                    return Ok(());
-                }
-            }
-
-            let pbal = match s.log.get_cached_pbal(id) {
-                Some(Ballot(rnd, _)) => Ballot(rnd.add_one(), self.rid),
-                None => Ballot(Round::ZERO, self.rid),
-            };
-
-            let known = matches!(s.log.get_cached_ins(id), Some(ins) if ins.cmd.is_nop().not());
-
-            let mut targets = s.peers.select_all();
-
-            let rx = {
-                let (tx, rx) = mpsc::channel(targets.len());
-                self.propose_tx.insert(id, tx);
-                rx
-            };
-
-            let avg_rtt = s.peers.get_avg_rtt();
-
-            drop(guard);
-
-            let _ = targets.insert(self.rid);
-
-            {
-                let sender = self.rid;
-                let epoch = self.epoch.load();
-                self.network.broadcast(
-                    targets,
-                    Message::Prepare(Prepare { sender, epoch, id, pbal, known }),
-                );
-
-                let this = Arc::clone(self);
-                spawn(async move {
-                    if let Err(err) = this.handle_prepare(Prepare { sender, epoch, id, pbal, known }).await {
-                        error!(?id, ?err)
-                    }
-                });
-            }
-
-            self.spawn_recover_timeout(id, avg_rtt);
-
-            rx
-        };
-
-        {
-            let mut received: VecSet<ReplicaId> = VecSet::new();
-
-            let mut max_abal: Option<Ballot> = None;
-            let mut cmd: Option<C> = None;
-
-            // (sender, seq, deps, status, acc)
-            let mut tuples: Vec<(ReplicaId, Seq, Deps, Status, Acc)> = Vec::new();
-
-            while let Some(msg) = rx.recv().await {
-                let msg = match PrepareReply::convert(msg) {
-                    Some(m) => m,
-                    None => continue,
-                };
-
-                let msg_epoch = match msg {
-                    PrepareReply::Ok(ref msg) => msg.epoch,
-                    PrepareReply::Nack(ref msg) => msg.epoch,
-                    PrepareReply::Unchosen(ref msg) => msg.epoch,
-                };
-
-                if msg_epoch < self.epoch.load() {
-                    continue;
-                }
-
-                debug!(?id, "received prepare reply");
-
+            let mut rx = {
                 let mut guard = self.state.lock().await;
                 let s = &mut *guard;
 
-                match msg {
-                    PrepareReply::Ok(ref msg) => assert_eq!(id, msg.id),
-                    PrepareReply::Nack(ref msg) => assert_eq!(id, msg.id),
-                    PrepareReply::Unchosen(ref msg) => assert_eq!(id, msg.id),
-                };
-
                 s.log.load(id).await?;
-                if let PrepareReply::Ok(ref msg) = msg {
-                    if s.log.should_ignore_pbal(id, msg.pbal) {
-                        continue;
-                    }
-                }
 
-                match msg {
-                    PrepareReply::Unchosen(msg) => {
-                        let _ = received.insert(msg.sender);
-                    }
-                    PrepareReply::Nack(msg) => {
-                        s.log.save_pbal(id, msg.pbal).await?;
-
-                        let avg_rtt = s.peers.get_avg_rtt();
-
-                        let _ = self.propose_tx.remove(&id);
-
-                        drop(guard);
-
-                        self.spawn_nack_recover_timeout(id, avg_rtt);
+                if let Some(ins) = s.log.get_cached_ins(id) {
+                    if ins.status >= Status::Committed {
+                        let cmd = ins.cmd.clone();
+                        let seq = ins.seq;
+                        let deps = ins.deps.clone();
+                        let status = ins.status;
+                        let _ = self.graph.init_node(id, cmd, seq, deps, status);
                         return Ok(());
                     }
-                    PrepareReply::Ok(msg) => {
-                        let _ = received.insert(msg.sender);
+                }
 
-                        let is_max_abal = match max_abal {
-                            Some(ref mut max_abal) => match Ord::cmp(&msg.abal, max_abal) {
-                                Ordering::Less => false,
-                                Ordering::Equal => true,
-                                Ordering::Greater => {
-                                    *max_abal = msg.abal;
-                                    cmd = None;
-                                    tuples.clear();
-                                    true
-                                }
-                            },
-                            None => {
-                                max_abal = Some(msg.abal);
-                                true
-                            }
-                        };
-                        if is_max_abal.not() {
+                let pbal = match s.log.get_cached_pbal(id) {
+                    Some(Ballot(rnd, _)) => Ballot(rnd.add_one(), self.rid),
+                    None => Ballot(Round::ZERO, self.rid),
+                };
+
+                let known = matches!(s.log.get_cached_ins(id), Some(ins) if ins.cmd.is_nop().not());
+
+                let mut targets = s.peers.select_all();
+
+                let rx = {
+                    let (tx, rx) = mpsc::channel(targets.len());
+                    self.propose_tx.insert(id, tx);
+                    rx
+                };
+
+                drop(guard);
+
+                let _ = targets.insert(self.rid);
+
+                {
+                    let sender = self.rid;
+                    let epoch = self.epoch.load();
+                    self.network.broadcast(
+                        targets,
+                        Message::Prepare(Prepare { sender, epoch, id, pbal, known }),
+                    );
+
+                    let this = Arc::clone(self);
+                    spawn(async move {
+                        if let Err(err) =
+                            this.handle_prepare(Prepare { sender, epoch, id, pbal, known }).await
+                        {
+                            error!(?id, ?err)
+                        }
+                    });
+                }
+
+                rx
+            };
+
+            {
+                let mut received: VecSet<ReplicaId> = VecSet::new();
+
+                let mut max_abal: Option<Ballot> = None;
+                let mut cmd: Option<C> = None;
+
+                // (sender, seq, deps, status, acc)
+                let mut tuples: Vec<(ReplicaId, Seq, Deps, Status, Acc)> = Vec::new();
+
+                // adaptive?
+                let timeout = Duration::from_millis(self.config.recover_timeout.default_us);
+
+                while let Ok(Some(msg)) = recv_timeout(&mut rx, timeout).await {
+                    let msg = match PrepareReply::convert(msg) {
+                        Some(m) => m,
+                        None => continue,
+                    };
+
+                    let msg_epoch = match msg {
+                        PrepareReply::Ok(ref msg) => msg.epoch,
+                        PrepareReply::Nack(ref msg) => msg.epoch,
+                        PrepareReply::Unchosen(ref msg) => msg.epoch,
+                    };
+
+                    if msg_epoch < self.epoch.load() {
+                        continue;
+                    }
+
+                    debug!(?id, "received prepare reply");
+
+                    let mut guard = self.state.lock().await;
+                    let s = &mut *guard;
+
+                    match msg {
+                        PrepareReply::Ok(ref msg) => assert_eq!(id, msg.id),
+                        PrepareReply::Nack(ref msg) => assert_eq!(id, msg.id),
+                        PrepareReply::Unchosen(ref msg) => assert_eq!(id, msg.id),
+                    };
+
+                    s.log.load(id).await?;
+                    if let PrepareReply::Ok(ref msg) = msg {
+                        if s.log.should_ignore_pbal(id, msg.pbal) {
                             continue;
                         }
-                        cmd = msg.cmd;
-                        tuples.push((msg.sender, msg.seq, msg.deps, msg.status, msg.acc));
                     }
-                }
 
-                let cluster_size = s.peers.cluster_size();
-                if received.len() <= cluster_size / 2 {
-                    continue;
-                }
+                    match msg {
+                        PrepareReply::Unchosen(msg) => {
+                            let _ = received.insert(msg.sender);
+                        }
+                        PrepareReply::Nack(msg) => {
+                            s.log.save_pbal(id, msg.pbal).await?;
 
-                let max_abal = match max_abal {
-                    Some(b) => b,
-                    None => continue,
-                };
+                            let avg_rtt = s.peers.get_avg_rtt();
 
-                let _ = self.propose_tx.remove(&id);
+                            let _ = self.propose_tx.remove(&id);
 
-                let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
+                            drop(guard);
 
-                let acc = {
-                    let mut acc = match s.log.get_cached_ins(id) {
-                        Some(ins) => MutableAcc::clone(ins.acc.as_ref()),
-                        None => MutableAcc::default(),
-                    };
-                    for (_, _, _, _, a) in tuples.iter() {
-                        acc.union(a.as_ref());
-                    }
-                    Acc::from_mutable(acc)
-                };
+                            self.spawn_nack_recover_timeout(id, avg_rtt);
+                            return Ok(());
+                        }
+                        PrepareReply::Ok(msg) => {
+                            let _ = received.insert(msg.sender);
 
-                for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
-                    if status >= Status::Committed {
-                        let deps = mem::take(deps);
-                        return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
-                    } else if status == Status::Accepted {
-                        let deps = mem::take(deps);
-                        return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
-                    }
-                }
-
-                tuples.retain(|t| t.3 == Status::PreAccepted);
-
-                let enable_accept = max_abal.0 == Round::ZERO
-                    && tuples.len() >= cluster_size / 2
-                    && tuples.iter().all(|t| t.0 != id.0);
-
-                if enable_accept {
-                    #[allow(clippy::mutable_key_type)]
-                    let mut buckets: HashMap<(Seq, &mut Deps), usize> = HashMap::new();
-                    for &mut (_, seq, ref mut deps, _, _) in tuples.iter_mut() {
-                        let cnt = buckets.entry((seq, deps)).or_default();
-                        *cnt = cnt.wrapping_add(1);
-                    }
-                    let mut max_cnt_attr = None;
-                    let mut max_cnt = 0;
-                    for (attr, cnt) in buckets {
-                        if cnt > max_cnt {
-                            max_cnt_attr = Some(attr);
-                            max_cnt = cnt;
+                            let is_max_abal = match max_abal {
+                                Some(ref mut max_abal) => match Ord::cmp(&msg.abal, max_abal) {
+                                    Ordering::Less => false,
+                                    Ordering::Equal => true,
+                                    Ordering::Greater => {
+                                        *max_abal = msg.abal;
+                                        cmd = None;
+                                        tuples.clear();
+                                        true
+                                    }
+                                },
+                                None => {
+                                    max_abal = Some(msg.abal);
+                                    true
+                                }
+                            };
+                            if is_max_abal.not() {
+                                continue;
+                            }
+                            cmd = msg.cmd;
+                            tuples.push((msg.sender, msg.seq, msg.deps, msg.status, msg.acc));
                         }
                     }
-                    if max_cnt >= cluster_size / 2 {
-                        if let Some(attr) = max_cnt_attr {
-                            let seq = attr.0;
-                            let deps = mem::take(attr.1);
+
+                    let cluster_size = s.peers.cluster_size();
+                    if received.len() <= cluster_size / 2 {
+                        continue;
+                    }
+
+                    let max_abal = match max_abal {
+                        Some(b) => b,
+                        None => continue,
+                    };
+
+                    let _ = self.propose_tx.remove(&id);
+
+                    let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
+
+                    let acc = {
+                        let mut acc = match s.log.get_cached_ins(id) {
+                            Some(ins) => MutableAcc::clone(ins.acc.as_ref()),
+                            None => MutableAcc::default(),
+                        };
+                        for (_, _, _, _, a) in tuples.iter() {
+                            acc.union(a.as_ref());
+                        }
+                        Acc::from_mutable(acc)
+                    };
+
+                    for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
+                        if status >= Status::Committed {
+                            let deps = mem::take(deps);
+                            return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+                        } else if status == Status::Accepted {
+                            let deps = mem::take(deps);
                             return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
                         }
                     }
-                }
 
-                if tuples.is_empty().not() {
+                    tuples.retain(|t| t.3 == Status::PreAccepted);
+
+                    let enable_accept = max_abal.0 == Round::ZERO
+                        && tuples.len() >= cluster_size / 2
+                        && tuples.iter().all(|t| t.0 != id.0);
+
+                    if enable_accept {
+                        #[allow(clippy::mutable_key_type)]
+                        let mut buckets: HashMap<(Seq, &mut Deps), usize> = HashMap::new();
+                        for &mut (_, seq, ref mut deps, _, _) in tuples.iter_mut() {
+                            let cnt = buckets.entry((seq, deps)).or_default();
+                            *cnt = cnt.wrapping_add(1);
+                        }
+                        let mut max_cnt_attr = None;
+                        let mut max_cnt = 0;
+                        for (attr, cnt) in buckets {
+                            if cnt > max_cnt {
+                                max_cnt_attr = Some(attr);
+                                max_cnt = cnt;
+                            }
+                        }
+                        if max_cnt >= cluster_size / 2 {
+                            if let Some(attr) = max_cnt_attr {
+                                let seq = attr.0;
+                                let deps = mem::take(attr.1);
+                                return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                            }
+                        }
+                    }
+
+                    if tuples.is_empty().not() {
+                        return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
+                    }
+
+                    let (cmd, acc) = match s.log.get_cached_ins(id) {
+                        Some(_) => (None, acc),
+                        None => (Some(C::create_nop()), Acc::default()),
+                    };
+
                     return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
                 }
+            }
 
-                let (cmd, acc) = match s.log.get_cached_ins(id) {
-                    Some(_) => (None, acc),
-                    None => (Some(C::create_nop()), Acc::default()),
-                };
-
-                return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
+            {
+                // adaptive?
+                let timeout = Duration::from_millis(self.config.recover_timeout.default_us);
+                sleep(timeout).await
             }
         }
-
-        Ok(())
     }
 
     fn spawn_recover_immediately(self: &Arc<Self>, id: InstanceId) {
