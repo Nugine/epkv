@@ -298,6 +298,7 @@ dependencies = [
  "simdutf8",
  "tikv-jemallocator",
  "tokio",
+ "wgp",
 ]
 
 [[package]]

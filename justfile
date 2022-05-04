@@ -48,12 +48,12 @@ doc:
     cargo doc -p rocksdb --no-deps
     cargo doc --workspace --no-deps --open
 
-generate-local-cluster: build
+generate-local-cluster which: build
     #!/bin/bash -ex
     cd {{justfile_directory()}}
     export RUST_BACKTRACE=full
     ./target/release/epkv-eval cluster generate \
-        --config crates/epkv-eval/tests/local-cluster.json \
+        --config crates/epkv-eval/tests/local-cluster-{{which}}.json \
         --target /tmp/epkv-cluster/config
 
 local-server name: build
@@ -79,12 +79,12 @@ eval *ARGS:
     export RUST_LOG=epkv_eval=debug,epkv_protocol=debug
     ./target/release/epkv-eval {{ARGS}}
 
-boot-local-cluster: build
+boot-local-cluster which: build
     #!/bin/bash -ex
     cd {{justfile_directory()}}
     
     rm -rf /tmp/epkv-cluster
-    just generate-local-cluster
+    just generate-local-cluster {{which}}
 
     mkdir -p target/local-cluster/log
 
@@ -93,8 +93,10 @@ boot-local-cluster: build
     just local-server alpha     >target/local-cluster/log/alpha.ansi      2>&1 &
     just local-server beta      >target/local-cluster/log/beta.ansi       2>&1 &
     just local-server gamma     >target/local-cluster/log/gamma.ansi      2>&1 &
+    if [ "{{which}}" == "5" ]; then
     just local-server delta     >target/local-cluster/log/delta.ansi      2>&1 &
     just local-server epsilon   >target/local-cluster/log/epsilon.ansi    2>&1 &
+    fi
     sleep 1s
     ps -ef | rg 'epkv'
 
@@ -102,13 +104,13 @@ killall:
     killall epkv-server
     killall epkv-monitor
 
-bench-local-case1 key_size value_size cmd_count batch_size:
+bench-local-case1 which key_size value_size cmd_count batch_size:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
     
     mkdir -p target/local-cluster/bench
     TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
-    CONFIG=crates/epkv-eval/tests/local-bench.json
+    CONFIG=crates/epkv-eval/tests/local-bench-{{which}}.json
     OUTPUT=target/local-cluster/bench/$TIME-case1.json
 
     ./target/release/epkv-eval bench \
@@ -120,13 +122,13 @@ bench-local-case1 key_size value_size cmd_count batch_size:
             --cmd-count {{cmd_count}} \
             --batch-size {{batch_size}}
 
-bench-local-case2 key_size value_size cmd_count batch_size:
+bench-local-case2 which key_size value_size cmd_count batch_size:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
 
     mkdir -p target/local-cluster/bench
     TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
-    CONFIG=crates/epkv-eval/tests/local-bench.json
+    CONFIG=crates/epkv-eval/tests/local-bench-{{which}}.json
     OUTPUT=target/local-cluster/bench/$TIME-case2.json
 
     ./target/release/epkv-eval bench \
@@ -138,13 +140,13 @@ bench-local-case2 key_size value_size cmd_count batch_size:
             --cmd-count {{cmd_count}} \
             --batch-size {{batch_size}}
 
-bench-local-case3 value_size cmd_count batch_size conflict_rate:
+bench-local-case3 which value_size cmd_count conflict_rate:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
 
     mkdir -p target/local-cluster/bench
     TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
-    CONFIG=crates/epkv-eval/tests/local-bench.json
+    CONFIG=crates/epkv-eval/tests/local-bench-{{which}}.json
     OUTPUT=target/local-cluster/bench/$TIME-case3.json
 
     ./target/release/epkv-eval bench \
@@ -153,5 +155,4 @@ bench-local-case3 value_size cmd_count batch_size conflict_rate:
         case3 \
             --value-size {{value_size}} \
             --cmd-count {{cmd_count}} \
-            --batch-size {{batch_size}} \
             --conflict-rate {{conflict_rate}}

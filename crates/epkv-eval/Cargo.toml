@@ -19,3 +19,4 @@ serde_json = "1.0.80"
 simdutf8 = "0.1.4"
 tikv-jemallocator = "0.4.3"
 tokio = { version = "1.18.0", features = ["full"] }
+wgp = "0.2.0"

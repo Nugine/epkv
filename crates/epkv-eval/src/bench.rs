@@ -1,11 +1,8 @@
-use bytes::Bytes;
-use crossbeam_queue::ArrayQueue;
 use epkv_protocol::cs;
 use epkv_utils::asc::Asc;
 use epkv_utils::cast::NumericCast;
 use epkv_utils::clone;
 use epkv_utils::config::read_config_file;
-use rand::Rng;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -14,12 +11,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use anyhow::{ensure, Context, Result};
+use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
+use crossbeam_queue::ArrayQueue;
 use futures_util::future::join_all;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::spawn;
-use tokio::task::JoinHandle;
+use wgp::WaitGroup;
 
 #[derive(Debug, clap::Args)]
 pub struct Opt {
@@ -90,8 +90,6 @@ pub struct Case3 {
     value_size: usize,
     #[clap(long)]
     cmd_count: usize,
-    #[clap(long)]
-    batch_size: usize,
     #[clap(long)]
     conflict_rate: usize,
 }
@@ -292,7 +290,6 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
     #[allow(clippy::integer_arithmetic)]
     {
         ensure!(args.cmd_count % config.servers.len() == 0);
-        ensure!(args.cmd_count % (config.servers.len() * args.batch_size) == 0);
         ensure!((0..=100).contains(&args.conflict_rate));
     }
 
@@ -301,7 +298,7 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
         let mut servers = Vec::new();
         for (_, remote_addr) in config.iter_remote_addr() {
             let server = cs::Server::connect(remote_addr, &rpc_client_config).await?;
-            servers.push(server);
+            servers.push(Asc::new(server));
         }
         servers
     };
@@ -312,62 +309,53 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
 
     let latency_us_queue: _ = Asc::new(ArrayQueue::<u64>::new(args.cmd_count));
 
-    let mut tasks: Vec<JoinHandle<Result<()>>> = Vec::with_capacity(servers.len());
+    let wg = WaitGroup::new();
 
     let cluster_metrics_before = get_cluster_metrics(config).await?;
 
     let t0 = Instant::now();
 
+    let mut tasks = Vec::with_capacity(args.cmd_count);
+
     for server in servers {
-        let cmd_count = args.cmd_count.wrapping_div(config.servers.len());
-        let batch_size = args.batch_size;
+        let server_cmd_count = args.cmd_count.wrapping_div(config.servers.len());
         let rate = args.conflict_rate;
 
-        clone!(unique_key_gen, value, latency_us_queue);
-
-        let task = spawn(async move {
-            for _ in 0..(cmd_count.wrapping_div(batch_size)) {
-                let futures: _ = (0..batch_size).map(|_| {
-                    let key = if rate == 0 {
-                        unique_key_gen.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
-                    } else if rate == 100 {
-                        common_key
-                    } else {
-                        let magic: usize = rand::thread_rng().gen_range(0..100);
-                        if magic < rate {
-                            common_key
-                        } else {
-                            unique_key_gen.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
-                        }
-                    };
-
-                    let key = Bytes::copy_from_slice(&key.to_be_bytes());
-                    let value = value.clone();
-
-                    let server = &server;
-                    let latency_us_queue = &*latency_us_queue;
-
-                    let t0 = Instant::now();
-                    async move {
-                        server.set(cs::SetArgs { key, value }).await?;
-                        let t1 = Instant::now();
-                        latency_us_queue.push((t1 - t0).as_micros().numeric_cast()).unwrap();
-                        <Result<()>>::Ok(())
-                    }
-                });
-                let results: _ = join_all(futures).await;
-                for result in results {
-                    result?;
+        for _ in 0..server_cmd_count {
+            let key = if rate == 0 {
+                unique_key_gen.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
+            } else if rate == 100 {
+                common_key
+            } else {
+                let magic: usize = rand::thread_rng().gen_range(0..100);
+                if magic < rate {
+                    common_key
+                } else {
+                    unique_key_gen.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
                 }
-            }
+            };
 
-            Ok(())
+            let key = Bytes::copy_from_slice(&key.to_be_bytes());
+            let value = value.clone();
+            clone!(server);
+            tasks.push((server, key, value));
+        }
+    }
+
+    for (server, key, value) in tasks {
+        clone!(latency_us_queue);
+        let working = wg.working();
+
+        spawn(async move {
+            let t0 = Instant::now();
+            server.set(cs::SetArgs { key, value }).await.unwrap();
+            let t1 = Instant::now();
+            latency_us_queue.push((t1 - t0).as_micros().numeric_cast()).unwrap();
+            drop(working);
         });
-        tasks.push(task);
     }
-    for task in tasks {
-        task.await?.unwrap();
-    }
+
+    wg.wait_owned().await;
 
     let t1 = Instant::now();
 

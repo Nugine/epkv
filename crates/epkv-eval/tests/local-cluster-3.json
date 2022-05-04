@@ -1,0 +1,62 @@
+{
+    "monitor": {
+        "base": "../../epkv-monitor/tests/local-monitor.toml",
+        "overwrite": {
+            "state_path": "/tmp/epkv-cluster/monitor/state",
+            "listen_rpc_addr": "127.0.0.1:9000"
+        }
+    },
+    "servers": {
+        "alpha": {
+            "base": "../../epkv-server/tests/local-server.toml",
+            "overwrite": {
+                "server": {
+                    "listen_peer_addr": "127.0.0.1:8010",
+                    "listen_client_addr": "127.0.0.1:8011",
+                    "monitor_addr": "127.0.0.1:9000",
+                    "public_peer_addr": "127.0.0.1:8010"
+                },
+                "log_db": {
+                    "path": "/tmp/epkv-cluster/servers/alpha/log_db"
+                },
+                "data_db": {
+                    "path": "/tmp/epkv-cluster/servers/alpha/data_db"
+                }
+            }
+        },
+        "beta": {
+            "base": "../../epkv-server/tests/local-server.toml",
+            "overwrite": {
+                "server": {
+                    "listen_peer_addr": "127.0.0.1:8020",
+                    "listen_client_addr": "127.0.0.1:8021",
+                    "monitor_addr": "127.0.0.1:9000",
+                    "public_peer_addr": "127.0.0.1:8020"
+                },
+                "log_db": {
+                    "path": "/tmp/epkv-cluster/servers/beta/log_db"
+                },
+                "data_db": {
+                    "path": "/tmp/epkv-cluster/servers/beta/data_db"
+                }
+            }
+        },
+        "gamma": {
+            "base": "../../epkv-server/tests/local-server.toml",
+            "overwrite": {
+                "server": {
+                    "listen_peer_addr": "127.0.0.1:8030",
+                    "listen_client_addr": "127.0.0.1:8031",
+                    "monitor_addr": "127.0.0.1:9000",
+                    "public_peer_addr": "127.0.0.1:8030"
+                },
+                "log_db": {
+                    "path": "/tmp/epkv-cluster/servers/gamma/log_db"
+                },
+                "data_db": {
+                    "path": "/tmp/epkv-cluster/servers/gamma/data_db"
+                }
+            }
+        }
+    }
+}
