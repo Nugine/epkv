@@ -2,6 +2,6 @@
 members = ["crates/*"]
 
 [profile.release]
-# lto = "fat"
-# strip = "debuginfo"
-debug = 1
+lto = "fat"
+strip = "debuginfo"
+# debug = 1

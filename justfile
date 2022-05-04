@@ -59,8 +59,10 @@ generate-local-cluster: build
 local-server name: build
     #!/bin/bash -ex
     cd {{justfile_directory()}}
-    export RUST_BACKTRACE=full
-    export RUST_LOG=epkv_server=debug,epkv_rocks=debug,epkv_epaxos=debug,epkv_protocol=debug
+    if [ -z "$EPKV_BENCHING" ]; then
+        export RUST_BACKTRACE=full
+        export RUST_LOG=epkv_server=debug,epkv_rocks=debug,epkv_epaxos=debug,epkv_protocol=debug
+    fi
     ./target/release/epkv-server --config /tmp/epkv-cluster/config/{{name}}.json
 
 local-monitor: build
@@ -80,6 +82,7 @@ eval *ARGS:
 boot-local-cluster: build
     #!/bin/bash -ex
     cd {{justfile_directory()}}
+    # export EPKV_BENCHING=1
     rm -rf /tmp/epkv-cluster
     just generate-local-cluster
     just local-monitor >target/monitor.ansi 2>&1 &
