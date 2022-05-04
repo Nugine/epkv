@@ -306,12 +306,15 @@ impl Server {
     async fn client_rpc_get_metrics(self: &Arc<Self>, _: cs::GetMetricsArgs) -> Result<cs::GetMetricsOutput> {
         let network = self.replica.network().metrics();
         let server = with_mutex(&self.metrics, |m: _| m.clone());
+        let replica = self.replica.metrics();
 
         Ok(cs::GetMetricsOutput {
             network_msg_total_size: network.msg_total_size,
             network_msg_count: network.msg_count,
             server_single_cmd_count: server.single_cmd_count,
             server_batched_cmd_count: server.batched_cmd_count,
+            replica_preaccept_fast_path: replica.preaccept_fast_path,
+            replica_preaccept_slow_path: replica.preaccept_slow_path,
         })
     }
 
