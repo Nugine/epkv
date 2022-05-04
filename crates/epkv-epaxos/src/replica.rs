@@ -1709,13 +1709,13 @@ where
             None => return Ok(()),
         };
 
-        let _row_guard = self.graph.lock_row(id.0).await;
-
         let mut local_graph = LocalGraph::new();
 
         debug!("wait graph");
 
         {
+            let _row_guard = self.graph.lock_row(id.0).await;
+
             let mut q = DepsQueue::from_single(id);
 
             while let Some(id) = q.pop() {
@@ -1770,16 +1770,21 @@ where
             }
         }
 
-        if local_graph.is_empty() {
+        let local_graph_nodes_count = local_graph.nodes_count();
+        debug!(local_graph_nodes_count, "tarjan scc");
+
+        if local_graph_nodes_count == 0 {
             return Ok(()); // ins executed
-        }
-
-        {
-            let local_graph_nodes_count = local_graph.nodes_count();
-            debug!(local_graph_nodes_count, "tarjan scc");
-        }
-
-        {
+        } else if local_graph_nodes_count == 1 {
+            // common case
+            let node = local_graph.get_node(id).cloned().unwrap();
+            let this = Arc::clone(self);
+            spawn(async move {
+                if let Err(err) = this.run_execute_single_node(id, node).await {
+                    error!(?err);
+                }
+            });
+        } else {
             let mut scc_list = local_graph.tarjan_scc(id);
             for scc in &mut scc_list {
                 scc.sort_by_key(|&(InstanceId(rid, lid), ref node): _| (node.seq, lid, rid));
@@ -1820,6 +1825,51 @@ where
                 });
             }
         }
+        Ok(())
+    }
+
+    async fn run_execute_single_node(self: &Arc<Self>, id: InstanceId, node: Asc<InsNode<C>>) -> Result<()> {
+        let notify = Asc::new(ExecNotify::new());
+        {
+            clone!(notify);
+            let cmd = node.cmd.clone();
+            self.data_store.issue(id, cmd, notify).await?;
+        }
+        notify.wait_issued().await;
+
+        let prev_status = {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+            let status = notify.status();
+            s.log.update_status(id, status).await?;
+            match status {
+                Status::Issued => *node.status.lock() = ExecStatus::Issued,
+                Status::Executed => *node.status.lock() = ExecStatus::Executed,
+                _ => {}
+            }
+            status
+        };
+        notify.wait_executed().await;
+
+        if prev_status < Status::Executed {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+            s.log.update_status(id, Status::Executed).await?;
+            *node.status.lock() = ExecStatus::Executed;
+        }
+
+        self.graph.retire_node(id);
+        if let Some((_, task)) = self.recovering.remove(&id) {
+            task.abort()
+        }
+
+        {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+            s.log.retire_instance(id);
+            debug!(?id, "retire instance");
+        }
+
         Ok(())
     }
 

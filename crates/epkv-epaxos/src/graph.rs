@@ -213,11 +213,6 @@ where
     I: GraphId,
 {
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
-    }
-
-    #[must_use]
     pub fn nodes_count(&self) -> usize {
         self.nodes.len()
     }
@@ -229,6 +224,10 @@ where
 
     pub fn add_node(&mut self, id: I, node: N) {
         self.nodes.entry(id).or_insert(node);
+    }
+
+    pub fn get_node(&self, id: I) -> Option<&N> {
+        self.nodes.get(&id)
     }
 
     #[must_use]
