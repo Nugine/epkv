@@ -101,6 +101,8 @@ pub async fn case1(
     let value = crate::random_bytes(value_size);
     let args = || cs::SetArgs { key: key.clone(), value: value.clone() };
 
+    let cluster_metrics_before = get_cluster_metrics(config).await?;
+
     let t0 = Instant::now();
 
     for _ in 0..(cmd_count.wrapping_div(batch_size)) {
@@ -118,25 +120,18 @@ pub async fn case1(
     #[allow(clippy::float_arithmetic)]
     let time_ms = (t1 - t0).as_secs_f64() * 1000.0;
 
-    let cluster_metrics = {
-        let rpc_client_config = crate::default_rpc_client_config();
-        let mut map = BTreeMap::new();
-        for (name, c) in &config.servers {
-            let remote_addr = SocketAddr::from((c.ip, c.client_port));
-            let server = cs::Server::connect(remote_addr, &rpc_client_config).await?;
-            let metrics = server.get_metrics(cs::GetMetricsArgs {}).await?;
-            map.insert(name.to_owned(), metrics);
-
-            let output = server.get(cs::GetArgs { key: key.clone() }).await?;
-            assert_eq!(output.value.unwrap(), value);
-        }
-        map
-    };
+    let cluster_metrics_after = get_cluster_metrics(config).await?;
 
     {
+        let diff = diff_cluster_metrics(&cluster_metrics_before, &cluster_metrics_after)?;
+
         let result = json!({
             "time_ms": time_ms,
-            "cluster_metrics": cluster_metrics,
+            "cluster_metrics": {
+                "before": cluster_metrics_before,
+                "after": cluster_metrics_after,
+            },
+            "diff": diff,
         });
 
         let result_path = target_dir.join("case1.json");
@@ -177,6 +172,8 @@ pub async fn case2(
 
     server.set(cs::SetArgs { key: key.clone(), value: value.clone() }).await?;
 
+    let cluster_metrics_before = get_cluster_metrics(config).await?;
+
     let t0 = Instant::now();
 
     for _ in 0..(cmd_count.wrapping_div(batch_size)) {
@@ -194,25 +191,18 @@ pub async fn case2(
     #[allow(clippy::float_arithmetic)]
     let time_ms = (t1 - t0).as_secs_f64() * 1000.0;
 
-    let cluster_metrics = {
-        let rpc_client_config = crate::default_rpc_client_config();
-        let mut map = BTreeMap::new();
-        for (name, c) in &config.servers {
-            let remote_addr = SocketAddr::from((c.ip, c.client_port));
-            let server = cs::Server::connect(remote_addr, &rpc_client_config).await?;
-            let metrics = server.get_metrics(cs::GetMetricsArgs {}).await?;
-            map.insert(name.to_owned(), metrics);
-
-            let output = server.get(cs::GetArgs { key: key.clone() }).await?;
-            assert_eq!(output.value.unwrap(), value);
-        }
-        map
-    };
+    let cluster_metrics_after = get_cluster_metrics(config).await?;
 
     {
+        let diff = diff_cluster_metrics(&cluster_metrics_before, &cluster_metrics_after)?;
+
         let result = json!({
             "time_ms": time_ms,
-            "cluster_metrics": cluster_metrics,
+            "cluster_metrics": {
+                "before": cluster_metrics_before,
+                "after": cluster_metrics_after,
+            },
+            "diff": diff
         });
 
         let result_path = target_dir.join("case2.json");
@@ -226,4 +216,53 @@ pub async fn case2(
     }
 
     Ok(())
+}
+
+async fn get_cluster_metrics(config: &Config) -> Result<BTreeMap<String, cs::GetMetricsOutput>> {
+    let rpc_client_config = crate::default_rpc_client_config();
+    let mut map = BTreeMap::new();
+    for (name, c) in &config.servers {
+        let remote_addr = SocketAddr::from((c.ip, c.client_port));
+        let server = cs::Server::connect(remote_addr, &rpc_client_config).await?;
+        let metrics = server.get_metrics(cs::GetMetricsArgs {}).await?;
+        map.insert(name.to_owned(), metrics);
+    }
+    Ok(map)
+}
+
+#[allow(clippy::integer_arithmetic, clippy::float_arithmetic, clippy::as_conversions)]
+fn diff_cluster_metrics(
+    before: &BTreeMap<String, cs::GetMetricsOutput>,
+    after: &BTreeMap<String, cs::GetMetricsOutput>,
+) -> Result<serde_json::Value> {
+    let mut msg_count = 0;
+    let mut msg_total_size = 0;
+    let mut batched_cmd_count = 0;
+    let mut single_cmd_count = 0;
+
+    for (name, rhs) in after {
+        let lhs = &before[name];
+        msg_count += rhs.network_msg_count - lhs.network_msg_count;
+        msg_total_size += rhs.network_msg_total_size - lhs.network_msg_total_size;
+        batched_cmd_count += rhs.server_batched_cmd_count - lhs.server_batched_cmd_count;
+        single_cmd_count += rhs.server_single_cmd_count - lhs.server_single_cmd_count;
+    }
+
+    let avg_transmission_per_single_cmd = msg_total_size as f64 / single_cmd_count as f64;
+    let avg_transmission_per_batched_cmd = msg_total_size as f64 / batched_cmd_count as f64;
+    let avg_transmission_per_msg = msg_total_size as f64 / msg_count as f64;
+    let avg_msg_count_per_single_cmd = msg_count as f64 / single_cmd_count as f64;
+    let avg_msg_count_per_batched_cmd = msg_count as f64 / batched_cmd_count as f64;
+
+    Ok(json!({
+        "msg_count": msg_count,
+        "msg_total_size": msg_total_size,
+        "batched_cmd_count": batched_cmd_count,
+        "single_cmd_count": single_cmd_count,
+        "avg_transmission_per_single_cmd": avg_transmission_per_single_cmd,
+        "avg_transmission_per_batched_cmd": avg_transmission_per_batched_cmd,
+        "avg_transmission_per_msg": avg_transmission_per_msg,
+        "avg_msg_count_per_single_cmd": avg_msg_count_per_single_cmd,
+        "avg_msg_count_per_batched_cmd": avg_msg_count_per_batched_cmd,
+    }))
 }

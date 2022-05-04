@@ -89,7 +89,35 @@ boot-local-cluster: build
     just local-server gamma     >target/gamma.ansi      2>&1 &
     just local-server delta     >target/delta.ansi      2>&1 &
     just local-server epsilon   >target/epsilon.ansi    2>&1 &
+    sleep 1s
+    ps -ef | rg 'epkv'
 
 killall:
     killall epkv-server
     killall epkv-monitor
+
+bench-local-case1 key_size value_size cmd_count batch_size:
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+    TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
+    ./target/release/epkv-eval bench \
+        --config crates/epkv-eval/tests/local-bench.json \
+        --target target/$TIME \
+        case1 \
+            --key-size {{key_size}}  \
+            --value-size {{value_size}} \
+            --cmd-count {{cmd_count}} \
+            --batch-size {{batch_size}}
+
+bench-local-case2 key_size value_size cmd_count batch_size:
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+    TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
+    ./target/release/epkv-eval bench \
+        --config crates/epkv-eval/tests/local-bench.json \
+        --target target/$TIME \
+        case2 \
+            --key-size {{key_size}}  \
+            --value-size {{value_size}} \
+            --cmd-count {{cmd_count}} \
+            --batch-size {{batch_size}}
