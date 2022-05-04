@@ -21,6 +21,7 @@ use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::flag_group::FlagGroup;
 use epkv_utils::iter::{iter_mut_deref, map_collect};
+use epkv_utils::lock::with_mutex;
 use epkv_utils::time::LocalInstant;
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
@@ -70,6 +71,8 @@ where
     network: N,
 
     recovering: DashMap<InstanceId, JoinHandle<()>>,
+
+    metrics: SyncMutex<Metrics>,
 }
 
 struct State<C, L>
@@ -86,6 +89,12 @@ where
     lid_head: Head<LocalInstanceId>,
 
     sync_id_head: Head<SyncId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Metrics {
+    pub preaccept_fast_path: u64,
+    pub preaccept_slow_path: u64,
 }
 
 pub struct ReplicaMeta {
@@ -147,6 +156,8 @@ where
 
         let recovering = DashMap::new();
 
+        let metrics = SyncMutex::new(Metrics { preaccept_fast_path: 0, preaccept_slow_path: 0 });
+
         Ok(Arc::new(Self {
             rid,
             public_peer_addr,
@@ -160,15 +171,23 @@ where
             data_store,
             network,
             recovering,
+            metrics,
         }))
     }
 
+    #[inline]
     pub fn config(&self) -> &ReplicaConfig {
         &self.config
     }
 
+    #[inline]
     pub fn network(&self) -> &N {
         &self.network
+    }
+
+    #[inline]
+    pub fn metrics(&self) -> Metrics {
+        with_mutex(&self.metrics, |m| m.clone())
     }
 
     #[tracing::instrument(skip_all, fields(rid = ?self.rid, epoch = ?self.epoch.load()))]
@@ -446,6 +465,14 @@ where
                         let deps = Deps::from_mutable(deps);
                         let acc = Acc::from_mutable(acc);
 
+                        with_mutex(&self.metrics, |m| {
+                            if is_fast_path {
+                                m.preaccept_fast_path = m.preaccept_fast_path.wrapping_add(1);
+                            } else {
+                                m.preaccept_slow_path = m.preaccept_slow_path.wrapping_add(1);
+                            }
+                        });
+
                         if is_fast_path {
                             debug!("fast path");
                             return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
@@ -480,6 +507,10 @@ where
                 let cmd = None;
                 let deps = Deps::from_mutable(deps);
                 let acc = Acc::from_mutable(acc);
+
+                with_mutex(&self.metrics, |m| {
+                    m.preaccept_slow_path = m.preaccept_slow_path.wrapping_add(1);
+                });
 
                 self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
             }
