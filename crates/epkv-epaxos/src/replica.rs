@@ -1058,6 +1058,8 @@ where
 
                     let _ = self.propose_tx.remove(&id);
 
+                    debug!("recover succeeded");
+
                     let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
 
                     let acc = {
