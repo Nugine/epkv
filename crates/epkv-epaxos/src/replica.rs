@@ -1850,6 +1850,9 @@ where
 
         for &(id, _) in &scc {
             self.graph.retire_node(id);
+            if let Some((_, task)) = self.recovering.remove(&id) {
+                task.abort()
+            }
         }
 
         {
@@ -1857,7 +1860,7 @@ where
             let s = &mut *guard;
             for &(id, _) in &scc {
                 s.log.retire_instance(id);
-                debug!(?id, "retire instance")
+                debug!(?id, "retire instance");
             }
         }
 
