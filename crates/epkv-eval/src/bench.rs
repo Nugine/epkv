@@ -26,26 +26,9 @@ pub struct Opt {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
-    Case1 {
-        #[clap(long)]
-        key_size: usize,
-        #[clap(long)]
-        value_size: usize,
-        #[clap(long)]
-        cmd_count: usize,
-        #[clap(long)]
-        batch_size: usize,
-    },
-    Case2 {
-        #[clap(long)]
-        key_size: usize,
-        #[clap(long)]
-        value_size: usize,
-        #[clap(long)]
-        cmd_count: usize,
-        #[clap(long)]
-        batch_size: usize,
-    },
+    Case1(Case1),
+    Case2(Case2),
+    Case3(Case3),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,6 +51,44 @@ impl Config {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, clap::Args)]
+pub struct Case1 {
+    #[clap(long)]
+    key_size: usize,
+    #[clap(long)]
+    value_size: usize,
+    #[clap(long)]
+    cmd_count: usize,
+    #[clap(long)]
+    batch_size: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, clap::Args)]
+pub struct Case2 {
+    #[clap(long)]
+    key_size: usize,
+    #[clap(long)]
+    value_size: usize,
+    #[clap(long)]
+    cmd_count: usize,
+    #[clap(long)]
+    batch_size: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, clap::Args)]
+pub struct Case3 {
+    #[clap(long)]
+    key_size: usize,
+    #[clap(long)]
+    value_size: usize,
+    #[clap(long)]
+    cmd_count: usize,
+    #[clap(long)]
+    batch_size: usize,
+    #[clap(long)]
+    conflict_rate: usize,
+}
+
 pub async fn run(opt: Opt) -> Result<()> {
     let config: Config = read_config_file(&opt.config)
         .with_context(|| format!("failed to read config file {}", opt.config))?;
@@ -77,12 +98,9 @@ pub async fn run(opt: Opt) -> Result<()> {
     }
 
     let result = match opt.cmd {
-        Command::Case1 { key_size, value_size, cmd_count, batch_size } => {
-            case1(&config, key_size, value_size, cmd_count, batch_size).await?
-        }
-        Command::Case2 { key_size, value_size, cmd_count, batch_size } => {
-            case2(&config, key_size, value_size, cmd_count, batch_size).await?
-        }
+        Command::Case1(args) => case1(&config, args).await?,
+        Command::Case2(args) => case2(&config, args).await?,
+        Command::Case3(args) => case3(&config, args).await?,
     };
 
     save_result(&opt.output, &result)?;
@@ -90,16 +108,10 @@ pub async fn run(opt: Opt) -> Result<()> {
     Ok(())
 }
 
-pub async fn case1(
-    config: &Config,
-    key_size: usize,
-    value_size: usize,
-    cmd_count: usize,
-    batch_size: usize,
-) -> Result<serde_json::Value> {
+pub async fn case1(config: &Config, args: Case1) -> Result<serde_json::Value> {
     #[allow(clippy::integer_arithmetic)]
     {
-        ensure!(cmd_count % batch_size == 0);
+        ensure!(args.cmd_count % args.batch_size == 0);
     }
 
     let server = {
@@ -109,16 +121,16 @@ pub async fn case1(
         cs::Server::connect(remote_addr, &rpc_client_config).await?
     };
 
-    let key = crate::random_bytes(key_size);
-    let value = crate::random_bytes(value_size);
-    let args = || cs::SetArgs { key: key.clone(), value: value.clone() };
+    let key = crate::random_bytes(args.key_size);
+    let value = crate::random_bytes(args.value_size);
 
     let cluster_metrics_before = get_cluster_metrics(config).await?;
 
     let t0 = Instant::now();
 
-    for _ in 0..(cmd_count.wrapping_div(batch_size)) {
-        let futures: _ = (0..batch_size).map(|_| server.set(args()));
+    for _ in 0..(args.cmd_count.wrapping_div(args.batch_size)) {
+        let set_args = || cs::SetArgs { key: key.clone(), value: value.clone() };
+        let futures: _ = (0..args.batch_size).map(|_| server.set(set_args()));
         let results: _ = join_all(futures).await;
         for result in results {
             result?;
@@ -137,12 +149,7 @@ pub async fn case1(
     let diff = diff_cluster_metrics(&cluster_metrics_before, &cluster_metrics_after)?;
 
     let result = json!({
-        "args": {
-            "key_size": key_size,
-            "value_size": value_size,
-            "cmd_count": cmd_count,
-            "batch_size": batch_size,
-        },
+        "args": args,
         "time_ms": time_ms,
         "cluster_metrics": {
             "before": cluster_metrics_before,
@@ -154,16 +161,10 @@ pub async fn case1(
     Ok(result)
 }
 
-pub async fn case2(
-    config: &Config,
-    key_size: usize,
-    value_size: usize,
-    cmd_count: usize,
-    batch_size: usize,
-) -> Result<serde_json::Value> {
+pub async fn case2(config: &Config, args: Case2) -> Result<serde_json::Value> {
     #[allow(clippy::integer_arithmetic)]
     {
-        ensure!(cmd_count % batch_size == 0);
+        ensure!(args.cmd_count % args.batch_size == 0);
     }
 
     let server = {
@@ -173,8 +174,8 @@ pub async fn case2(
         cs::Server::connect(remote_addr, &rpc_client_config).await?
     };
 
-    let key = crate::random_bytes(key_size);
-    let value = crate::random_bytes(value_size);
+    let key = crate::random_bytes(args.key_size);
+    let value = crate::random_bytes(args.value_size);
 
     server.set(cs::SetArgs { key: key.clone(), value: value.clone() }).await?;
 
@@ -182,8 +183,8 @@ pub async fn case2(
 
     let t0 = Instant::now();
 
-    for _ in 0..(cmd_count.wrapping_div(batch_size)) {
-        let futures: _ = (0..batch_size).map(|_| server.get(cs::GetArgs { key: key.clone() }));
+    for _ in 0..(args.cmd_count.wrapping_div(args.batch_size)) {
+        let futures: _ = (0..args.batch_size).map(|_| server.get(cs::GetArgs { key: key.clone() }));
         let results: _ = join_all(futures).await;
         for result in results {
             result?;
@@ -202,12 +203,7 @@ pub async fn case2(
     let diff = diff_cluster_metrics(&cluster_metrics_before, &cluster_metrics_after)?;
 
     let result = json!({
-        "args": {
-            "key_size": key_size,
-            "value_size": value_size,
-            "cmd_count": cmd_count,
-            "batch_size": batch_size,
-        },
+        "args": args,
         "time_ms": time_ms,
         "cluster_metrics": {
             "before": cluster_metrics_before,
@@ -283,4 +279,14 @@ fn save_result(output: &Utf8Path, value: &serde_json::Value) -> Result<()> {
     fs::write(output, content).with_context(|| format!("failed to write result file {output}"))?;
 
     Ok(())
+}
+
+pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
+    #[allow(clippy::integer_arithmetic)]
+    {
+        ensure!(args.cmd_count % config.servers.len() == 0);
+        ensure!((0..=100).contains(&args.conflict_rate));
+    }
+
+    todo!()
 }
