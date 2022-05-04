@@ -59,6 +59,15 @@ pub struct RemoteServerConfig {
     pub client_port: u16,
 }
 
+impl Config {
+    fn iter_remote_addr(&self) -> impl Iterator<Item = (String, SocketAddr)> + '_ {
+        self.servers.iter().map(|(name, c)| {
+            let remote_addr = SocketAddr::from((c.ip, c.client_port));
+            (name.to_owned(), remote_addr)
+        })
+    }
+}
+
 pub async fn run(opt: Opt) -> Result<()> {
     let config: Config = read_config_file(&opt.config)
         .with_context(|| format!("failed to read config file {}", opt.config))?;
@@ -213,11 +222,10 @@ pub async fn case2(
 async fn get_cluster_metrics(config: &Config) -> Result<BTreeMap<String, cs::GetMetricsOutput>> {
     let rpc_client_config = crate::default_rpc_client_config();
     let mut map = BTreeMap::new();
-    for (name, c) in &config.servers {
-        let remote_addr = SocketAddr::from((c.ip, c.client_port));
+    for (name, remote_addr) in config.iter_remote_addr() {
         let server = cs::Server::connect(remote_addr, &rpc_client_config).await?;
         let metrics = server.get_metrics(cs::GetMetricsArgs {}).await?;
-        map.insert(name.to_owned(), metrics);
+        map.insert(name, metrics);
     }
     Ok(map)
 }
