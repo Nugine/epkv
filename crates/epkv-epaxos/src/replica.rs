@@ -1760,7 +1760,7 @@ where
                 let wm = self.graph.watermark(rid);
 
                 {
-                    let start = LocalInstanceId::from(wm.level()).add_one();
+                    let start = LocalInstanceId::from(wm.level().saturating_add(1));
                     let end = lid.sub_one();
 
                     if start <= end {
