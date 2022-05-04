@@ -67,26 +67,27 @@ pub async fn run(opt: Opt) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    match opt.cmd {
+    let result = match opt.cmd {
         Command::Case1 { key_size, value_size, cmd_count, batch_size } => {
-            case1(&config, &opt.output, key_size, value_size, cmd_count, batch_size).await?
+            case1(&config, key_size, value_size, cmd_count, batch_size).await?
         }
         Command::Case2 { key_size, value_size, cmd_count, batch_size } => {
-            case2(&config, &opt.output, key_size, value_size, cmd_count, batch_size).await?
+            case2(&config, key_size, value_size, cmd_count, batch_size).await?
         }
-    }
+    };
+
+    save_result(&opt.output, &result)?;
 
     Ok(())
 }
 
 pub async fn case1(
     config: &Config,
-    output: &Utf8Path,
     key_size: usize,
     value_size: usize,
     cmd_count: usize,
     batch_size: usize,
-) -> Result<()> {
+) -> Result<serde_json::Value> {
     #[allow(clippy::integer_arithmetic)]
     {
         ensure!(cmd_count % batch_size == 0);
@@ -141,19 +142,16 @@ pub async fn case1(
         "diff": diff,
     });
 
-    save_result(output, &result)?;
-
-    Ok(())
+    Ok(result)
 }
 
 pub async fn case2(
     config: &Config,
-    output: &Utf8Path,
     key_size: usize,
     value_size: usize,
     cmd_count: usize,
     batch_size: usize,
-) -> Result<()> {
+) -> Result<serde_json::Value> {
     #[allow(clippy::integer_arithmetic)]
     {
         ensure!(cmd_count % batch_size == 0);
@@ -209,9 +207,7 @@ pub async fn case2(
         "diff": diff
     });
 
-    save_result(output, &result)?;
-
-    Ok(())
+    Ok(result)
 }
 
 async fn get_cluster_metrics(config: &Config) -> Result<BTreeMap<String, cs::GetMetricsOutput>> {
