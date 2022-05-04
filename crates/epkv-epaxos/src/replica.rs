@@ -332,18 +332,19 @@ where
             let mut received: VecSet<ReplicaId> = VecSet::new();
             let mut all_same = true;
 
-            loop {
-                let avg_rtt = {
-                    let mut guard = self.state.lock().await;
-                    let s = &mut *guard;
-                    s.peers.get_avg_rtt()
-                };
-                let t = {
-                    let conf = &self.config.preaccept_timeout;
-                    conf.with(avg_rtt, |d| d * 2)
-                };
-                debug!(?avg_rtt, timeout=?t, "calc preaccept timeout");
+            let avg_rtt = {
+                let mut guard = self.state.lock().await;
+                let s = &mut *guard;
+                s.peers.get_avg_rtt()
+            };
+            let t = {
+                let conf = &self.config.preaccept_timeout;
+                let default = Duration::from_micros(conf.default_us);
+                conf.with(avg_rtt, |d| d * 2 + default)
+            };
+            debug!(?avg_rtt, timeout=?t, "calc preaccept timeout");
 
+            loop {
                 match recv_timeout(&mut rx, t).await {
                     Ok(Some(msg)) => {
                         let msg = match PreAcceptReply::convert(msg) {
