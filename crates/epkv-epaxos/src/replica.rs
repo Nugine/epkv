@@ -95,6 +95,7 @@ where
 pub struct Metrics {
     pub preaccept_fast_path: u64,
     pub preaccept_slow_path: u64,
+    pub recover_nop_count: u64,
 }
 
 pub struct ReplicaMeta {
@@ -156,7 +157,11 @@ where
 
         let recovering = DashMap::new();
 
-        let metrics = SyncMutex::new(Metrics { preaccept_fast_path: 0, preaccept_slow_path: 0 });
+        let metrics = SyncMutex::new(Metrics {
+            preaccept_fast_path: 0,
+            preaccept_slow_path: 0,
+            recover_nop_count: 0,
+        });
 
         Ok(Arc::new(Self {
             rid,
@@ -1119,7 +1124,12 @@ where
 
                     let (cmd, acc) = match s.log.get_cached_ins(id) {
                         Some(_) => (None, acc),
-                        None => (Some(C::create_nop()), Acc::default()),
+                        None => {
+                            with_mutex(&self.metrics, |m| {
+                                m.recover_nop_count = m.recover_nop_count.wrapping_add(1);
+                            });
+                            (Some(C::create_nop()), Acc::default())
+                        }
                     };
 
                     return self.phase_preaccept(guard, id, pbal, cmd, acc).await;

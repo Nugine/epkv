@@ -64,6 +64,7 @@ pub struct GetMetricsOutput {
     pub server_batched_cmd_count: u64,
     pub replica_preaccept_fast_path: u64,
     pub replica_preaccept_slow_path: u64,
+    pub replica_recover_nop_count: u64,
 }
 
 pub struct Server {

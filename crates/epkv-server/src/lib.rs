@@ -315,6 +315,7 @@ impl Server {
             server_batched_cmd_count: server.batched_cmd_count,
             replica_preaccept_fast_path: replica.preaccept_fast_path,
             replica_preaccept_slow_path: replica.preaccept_slow_path,
+            replica_recover_nop_count: replica.recover_nop_count,
         })
     }
 

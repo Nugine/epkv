@@ -242,6 +242,7 @@ fn diff_cluster_metrics(
     let mut single_cmd_count = 0;
     let mut preaccept_fast_path = 0;
     let mut preaccept_slow_path = 0;
+    let mut recover_nop_count = 0;
 
     for (name, rhs) in after {
         let lhs = &before[name];
@@ -251,6 +252,7 @@ fn diff_cluster_metrics(
         single_cmd_count += rhs.server_single_cmd_count - lhs.server_single_cmd_count;
         preaccept_fast_path += rhs.replica_preaccept_fast_path - lhs.replica_preaccept_fast_path;
         preaccept_slow_path += rhs.replica_preaccept_slow_path - lhs.replica_preaccept_slow_path;
+        recover_nop_count += rhs.replica_recover_nop_count - lhs.replica_recover_nop_count;
     }
 
     let avg_transmission_per_single_cmd = msg_total_size as f64 / single_cmd_count as f64;
@@ -266,6 +268,7 @@ fn diff_cluster_metrics(
         "single_cmd_count": single_cmd_count,
         "preaccept_fast_path": preaccept_fast_path,
         "preaccept_slow_path": preaccept_slow_path,
+        "recover_nop_count": recover_nop_count,
         "avg": {
             "avg_transmission_per_single_cmd": avg_transmission_per_single_cmd,
             "avg_transmission_per_batched_cmd": avg_transmission_per_batched_cmd,
