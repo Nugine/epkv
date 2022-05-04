@@ -218,6 +218,11 @@ where
     }
 
     #[must_use]
+    pub fn nodes_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    #[must_use]
     pub fn contains_node(&self, id: I) -> bool {
         self.nodes.contains_key(&id)
     }

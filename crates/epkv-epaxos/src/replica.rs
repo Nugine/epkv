@@ -1709,13 +1709,13 @@ where
             None => return Ok(()),
         };
 
+        let _row_guard = self.graph.lock_row(id.0).await;
+
         let mut local_graph = LocalGraph::new();
 
         debug!("wait graph");
 
         {
-            let _row_guard = self.graph.lock_row(id.0).await;
-
             let mut q = DepsQueue::from_single(id);
 
             while let Some(id) = q.pop() {
@@ -1774,7 +1774,10 @@ where
             return Ok(()); // ins executed
         }
 
-        debug!(?local_graph, "tarjan scc");
+        {
+            let local_graph_nodes_count = local_graph.nodes_count();
+            debug!(local_graph_nodes_count, "tarjan scc");
+        }
 
         {
             let mut scc_list = local_graph.tarjan_scc(id);
