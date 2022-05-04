@@ -235,6 +235,8 @@ fn diff_cluster_metrics(
     let mut msg_total_size = 0;
     let mut batched_cmd_count = 0;
     let mut single_cmd_count = 0;
+    let mut preaccept_fast_path = 0;
+    let mut preaccept_slow_path = 0;
 
     for (name, rhs) in after {
         let lhs = &before[name];
@@ -242,6 +244,8 @@ fn diff_cluster_metrics(
         msg_total_size += rhs.network_msg_total_size - lhs.network_msg_total_size;
         batched_cmd_count += rhs.server_batched_cmd_count - lhs.server_batched_cmd_count;
         single_cmd_count += rhs.server_single_cmd_count - lhs.server_single_cmd_count;
+        preaccept_fast_path += rhs.replica_preaccept_fast_path - lhs.replica_preaccept_fast_path;
+        preaccept_slow_path += rhs.replica_preaccept_slow_path - lhs.replica_preaccept_slow_path;
     }
 
     let avg_transmission_per_single_cmd = msg_total_size as f64 / single_cmd_count as f64;
@@ -255,11 +259,15 @@ fn diff_cluster_metrics(
         "msg_total_size": msg_total_size,
         "batched_cmd_count": batched_cmd_count,
         "single_cmd_count": single_cmd_count,
-        "avg_transmission_per_single_cmd": avg_transmission_per_single_cmd,
-        "avg_transmission_per_batched_cmd": avg_transmission_per_batched_cmd,
-        "avg_transmission_per_msg": avg_transmission_per_msg,
-        "avg_msg_count_per_single_cmd": avg_msg_count_per_single_cmd,
-        "avg_msg_count_per_batched_cmd": avg_msg_count_per_batched_cmd,
+        "preaccept_fast_path": preaccept_fast_path,
+        "preaccept_slow_path": preaccept_slow_path,
+        "avg": {
+            "avg_transmission_per_single_cmd": avg_transmission_per_single_cmd,
+            "avg_transmission_per_batched_cmd": avg_transmission_per_batched_cmd,
+            "avg_transmission_per_msg": avg_transmission_per_msg,
+            "avg_msg_count_per_single_cmd": avg_msg_count_per_single_cmd,
+            "avg_msg_count_per_batched_cmd": avg_msg_count_per_batched_cmd,
+        }
     }))
 }
 
