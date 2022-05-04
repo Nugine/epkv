@@ -124,24 +124,24 @@ pub async fn case1(
 
     let cluster_metrics_after = get_cluster_metrics(config).await?;
 
-    {
-        let diff = diff_cluster_metrics(&cluster_metrics_before, &cluster_metrics_after)?;
+    let diff = diff_cluster_metrics(&cluster_metrics_before, &cluster_metrics_after)?;
 
-        let result = json!({
-            "time_ms": time_ms,
-            "cluster_metrics": {
-                "before": cluster_metrics_before,
-                "after": cluster_metrics_after,
-            },
-            "diff": diff,
-        });
+    let result = json!({
+        "args": {
+            "key_size": key_size,
+            "value_size": value_size,
+            "cmd_count": cmd_count,
+            "batch_size": batch_size,
+        },
+        "time_ms": time_ms,
+        "cluster_metrics": {
+            "before": cluster_metrics_before,
+            "after": cluster_metrics_after,
+        },
+        "diff": diff,
+    });
 
-        let content = crate::pretty_json(&result)?;
-
-        println!("{}", content);
-
-        fs::write(output, content).with_context(|| format!("failed to write result file {output}"))?;
-    }
+    save_result(output, &result)?;
 
     Ok(())
 }
@@ -192,24 +192,24 @@ pub async fn case2(
 
     let cluster_metrics_after = get_cluster_metrics(config).await?;
 
-    {
-        let diff = diff_cluster_metrics(&cluster_metrics_before, &cluster_metrics_after)?;
+    let diff = diff_cluster_metrics(&cluster_metrics_before, &cluster_metrics_after)?;
 
-        let result = json!({
-            "time_ms": time_ms,
-            "cluster_metrics": {
-                "before": cluster_metrics_before,
-                "after": cluster_metrics_after,
-            },
-            "diff": diff
-        });
+    let result = json!({
+        "args": {
+            "key_size": key_size,
+            "value_size": value_size,
+            "cmd_count": cmd_count,
+            "batch_size": batch_size,
+        },
+        "time_ms": time_ms,
+        "cluster_metrics": {
+            "before": cluster_metrics_before,
+            "after": cluster_metrics_after,
+        },
+        "diff": diff
+    });
 
-        let content = crate::pretty_json(&result)?;
-
-        println!("{}", content);
-
-        fs::write(output, content).with_context(|| format!("failed to write result file {output}"))?;
-    }
+    save_result(output, &result)?;
 
     Ok(())
 }
@@ -261,4 +261,14 @@ fn diff_cluster_metrics(
         "avg_msg_count_per_single_cmd": avg_msg_count_per_single_cmd,
         "avg_msg_count_per_batched_cmd": avg_msg_count_per_batched_cmd,
     }))
+}
+
+fn save_result(output: &Utf8Path, value: &serde_json::Value) -> Result<()> {
+    let content = crate::pretty_json(&value)?;
+
+    println!("{}", content);
+
+    fs::write(output, content).with_context(|| format!("failed to write result file {output}"))?;
+
+    Ok(())
 }
