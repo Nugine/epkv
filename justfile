@@ -82,16 +82,19 @@ eval *ARGS:
 boot-local-cluster: build
     #!/bin/bash -ex
     cd {{justfile_directory()}}
-    # export EPKV_BENCHING=1
+    
     rm -rf /tmp/epkv-cluster
     just generate-local-cluster
-    just local-monitor >target/monitor.ansi 2>&1 &
+
+    mkdir -p target/local-cluster/log
+
+    just local-monitor          >target/local-cluster/log/monitor.ansi    2>&1 &
     sleep 0.5s
-    just local-server alpha     >target/alpha.ansi      2>&1 &
-    just local-server beta      >target/beta.ansi       2>&1 &
-    just local-server gamma     >target/gamma.ansi      2>&1 &
-    just local-server delta     >target/delta.ansi      2>&1 &
-    just local-server epsilon   >target/epsilon.ansi    2>&1 &
+    just local-server alpha     >target/local-cluster/log/alpha.ansi      2>&1 &
+    just local-server beta      >target/local-cluster/log/beta.ansi       2>&1 &
+    just local-server gamma     >target/local-cluster/log/gamma.ansi      2>&1 &
+    just local-server delta     >target/local-cluster/log/delta.ansi      2>&1 &
+    just local-server epsilon   >target/local-cluster/log/epsilon.ansi    2>&1 &
     sleep 1s
     ps -ef | rg 'epkv'
 
@@ -102,10 +105,15 @@ killall:
 bench-local-case1 key_size value_size cmd_count batch_size:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
+    
+    mkdir -p target/local-cluster/bench
     TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
+    CONFIG=crates/epkv-eval/tests/local-bench.json
+    OUTPUT=target/local-cluster/bench/$TIME-case1.json
+
     ./target/release/epkv-eval bench \
-        --config crates/epkv-eval/tests/local-bench.json \
-        --target target/$TIME \
+        --config $CONFIG \
+        --output $OUTPUT \
         case1 \
             --key-size {{key_size}}  \
             --value-size {{value_size}} \
@@ -115,10 +123,15 @@ bench-local-case1 key_size value_size cmd_count batch_size:
 bench-local-case2 key_size value_size cmd_count batch_size:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
+
+    mkdir -p target/local-cluster/bench
     TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
+    CONFIG=crates/epkv-eval/tests/local-bench.json
+    OUTPUT=target/local-cluster/bench/$TIME-case2.json
+
     ./target/release/epkv-eval bench \
-        --config crates/epkv-eval/tests/local-bench.json \
-        --target target/$TIME \
+        --config $CONFIG \
+        --output $OUTPUT \
         case2 \
             --key-size {{key_size}}  \
             --value-size {{value_size}} \

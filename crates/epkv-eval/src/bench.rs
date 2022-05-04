@@ -18,7 +18,7 @@ pub struct Opt {
     config: Utf8PathBuf,
 
     #[clap(long)]
-    target: Utf8PathBuf,
+    output: Utf8PathBuf,
 
     #[clap(subcommand)]
     cmd: Command,
@@ -63,14 +63,16 @@ pub async fn run(opt: Opt) -> Result<()> {
     let config: Config = read_config_file(&opt.config)
         .with_context(|| format!("failed to read config file {}", opt.config))?;
 
-    fs::create_dir_all(&opt.target)?;
+    if let Some(parent) = opt.output.parent() {
+        fs::create_dir_all(parent)?;
+    }
 
     match opt.cmd {
         Command::Case1 { key_size, value_size, cmd_count, batch_size } => {
-            case1(&config, &opt.target, key_size, value_size, cmd_count, batch_size).await?
+            case1(&config, &opt.output, key_size, value_size, cmd_count, batch_size).await?
         }
         Command::Case2 { key_size, value_size, cmd_count, batch_size } => {
-            case2(&config, &opt.target, key_size, value_size, cmd_count, batch_size).await?
+            case2(&config, &opt.output, key_size, value_size, cmd_count, batch_size).await?
         }
     }
 
@@ -79,7 +81,7 @@ pub async fn run(opt: Opt) -> Result<()> {
 
 pub async fn case1(
     config: &Config,
-    target_dir: &Utf8Path,
+    output: &Utf8Path,
     key_size: usize,
     value_size: usize,
     cmd_count: usize,
@@ -134,14 +136,11 @@ pub async fn case1(
             "diff": diff,
         });
 
-        let result_path = target_dir.join("case1.json");
-
         let content = crate::pretty_json(&result)?;
 
         println!("{}", content);
 
-        fs::write(&result_path, content)
-            .with_context(|| format!("failed to write result file {result_path}"))?;
+        fs::write(output, content).with_context(|| format!("failed to write result file {output}"))?;
     }
 
     Ok(())
@@ -149,7 +148,7 @@ pub async fn case1(
 
 pub async fn case2(
     config: &Config,
-    target_dir: &Utf8Path,
+    output: &Utf8Path,
     key_size: usize,
     value_size: usize,
     cmd_count: usize,
@@ -205,14 +204,11 @@ pub async fn case2(
             "diff": diff
         });
 
-        let result_path = target_dir.join("case2.json");
-
         let content = crate::pretty_json(&result)?;
 
         println!("{}", content);
 
-        fs::write(&result_path, content)
-            .with_context(|| format!("failed to write result file {result_path}"))?;
+        fs::write(output, content).with_context(|| format!("failed to write result file {output}"))?;
     }
 
     Ok(())
