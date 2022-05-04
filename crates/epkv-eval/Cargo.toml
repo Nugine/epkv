@@ -8,6 +8,7 @@ anyhow = { version = "1.0.57", features = ["backtrace"] }
 bytes = "1.1.0"
 camino = { version = "1.0.7", features = ["serde1"] }
 clap = { version = "3.1.14", features = ["derive"] }
+crossbeam-queue = "0.3.5"
 epkv-protocol = { path = "../epkv-protocol" }
 epkv-server = { path = "../epkv-server" }
 epkv-utils = { path = "../epkv-utils" }

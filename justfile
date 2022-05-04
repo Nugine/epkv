@@ -137,3 +137,21 @@ bench-local-case2 key_size value_size cmd_count batch_size:
             --value-size {{value_size}} \
             --cmd-count {{cmd_count}} \
             --batch-size {{batch_size}}
+
+bench-local-case3 value_size cmd_count batch_size conflict_rate:
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+
+    mkdir -p target/local-cluster/bench
+    TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
+    CONFIG=crates/epkv-eval/tests/local-bench.json
+    OUTPUT=target/local-cluster/bench/$TIME-case3.json
+
+    ./target/release/epkv-eval bench \
+        --config $CONFIG \
+        --output $OUTPUT \
+        case3 \
+            --value-size {{value_size}} \
+            --cmd-count {{cmd_count}} \
+            --batch-size {{batch_size}} \
+            --conflict-rate {{conflict_rate}}

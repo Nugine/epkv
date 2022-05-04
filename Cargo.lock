@@ -231,6 +231,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-queue"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f25d8400f4a7a5778f0e4e52384a48cbd9b5c495d110786187fc750075277a2"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-utils"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bf124c720b7686e3c2663cf54062ab0f68a88af2fb6a030e87e30bf721fcb38"
+dependencies = [
+ "cfg-if",
+ "lazy_static",
+]
+
+[[package]]
 name = "dashmap"
 version = "5.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -267,6 +287,7 @@ dependencies = [
  "bytes",
  "camino",
  "clap",
+ "crossbeam-queue",
  "epkv-protocol",
  "epkv-server",
  "epkv-utils",
