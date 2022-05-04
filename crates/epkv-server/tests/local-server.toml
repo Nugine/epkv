@@ -12,11 +12,11 @@ path = "/tmp/epkv-server/log_db"
 path = "/tmp/epkv-server/data_db"
 
 [replica.preaccept_timeout]
-default_us = 1_000
+default_us = 100_000   # 100 ms
 enable_adaptive = true
 
 [replica.recover_timeout]
-default_us = 500_000     # 500 ms
+default_us = 1_000_000 # 1s
 enable_adaptive = true
 
 [replica.sync_limits]
@@ -49,7 +49,7 @@ batch_initial_capacity = 64
 batch_max_size = 4096
 
 [interval]
-probe_rtt_interval_us = 10_000_000     # 10 s
-clear_key_map_interval_us = 10_000_000 # 10 s
-save_bounds_interval_us = 1_000_000    # 1 s
+probe_rtt_interval_us = 10_000_000        # 10 s
+clear_key_map_interval_us = 10_000_000    # 10 s
+save_bounds_interval_us = 1_000_000       # 1 s
 broadcast_bounds_interval_us = 10_000_000 # 10 s
