@@ -397,6 +397,9 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
         })
     };
 
+    #[allow(clippy::float_arithmetic, clippy::as_conversions)]
+    let estimated_qps = args.cmd_count as f64 / time_ms * 1000.0;
+
     let result = json!({
         "args": args,
         "time_ms": time_ms,
@@ -406,6 +409,7 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
         },
         "diff": diff,
         "latency": latency,
+        "estimated_qps": estimated_qps,
     });
 
     Ok(result)
