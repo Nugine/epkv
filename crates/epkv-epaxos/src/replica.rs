@@ -96,6 +96,7 @@ pub struct Metrics {
     pub preaccept_fast_path: u64,
     pub preaccept_slow_path: u64,
     pub recover_nop_count: u64,
+    pub recover_success_count: u64,
 }
 
 pub struct ReplicaMeta {
@@ -161,6 +162,7 @@ where
             preaccept_fast_path: 0,
             preaccept_slow_path: 0,
             recover_nop_count: 0,
+            recover_success_count: 0,
         });
 
         Ok(Arc::new(Self {
@@ -1063,9 +1065,12 @@ where
 
                     let _ = self.propose_tx.remove(&id);
 
-                    debug!("recover succeeded");
-
                     let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
+
+                    debug!(?pbal, "recover succeeded");
+                    with_mutex(&self.metrics, |m| {
+                        m.recover_success_count = m.recover_success_count.wrapping_add(1);
+                    });
 
                     let acc = {
                         let mut acc = match s.log.get_cached_ins(id) {

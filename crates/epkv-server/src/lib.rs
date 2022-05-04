@@ -316,6 +316,7 @@ impl Server {
             replica_preaccept_fast_path: replica.preaccept_fast_path,
             replica_preaccept_slow_path: replica.preaccept_slow_path,
             replica_recover_nop_count: replica.recover_nop_count,
+            replica_recover_success_count: replica.recover_success_count,
         })
     }
 
