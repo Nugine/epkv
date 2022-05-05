@@ -524,6 +524,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?msg.id))]
     async fn handle_preaccept(self: &Arc<Self>, msg: PreAccept<C>) -> Result<()> {
         if msg.epoch < self.epoch.load() {
             return Ok(());
@@ -728,6 +729,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?msg.id))]
     async fn handle_accept(self: &Arc<Self>, msg: Accept<C>) -> Result<()> {
         if msg.epoch < self.epoch.load() {
             return Ok(());
@@ -846,6 +848,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?msg.id))]
     async fn handle_commit(self: &Arc<Self>, msg: Commit<C>) -> Result<()> {
         if msg.epoch < self.epoch.load() {
             return Ok(());
@@ -1204,6 +1207,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip_all, fields(id = ?msg.id))]
     async fn handle_prepare(self: &Arc<Self>, msg: Prepare) -> Result<()> {
         if msg.epoch < self.epoch.load() {
             return Ok(());
@@ -1352,9 +1356,8 @@ where
         Ok(false)
     }
 
+    #[tracing::instrument(skip_all, fields(?msg))]
     async fn handle_join(self: &Arc<Self>, msg: Join) -> Result<()> {
-        debug!("handle_join: {:?}", msg);
-
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -1384,6 +1387,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(?msg))]
     async fn handle_leave(self: &Arc<Self>, msg: Leave) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
