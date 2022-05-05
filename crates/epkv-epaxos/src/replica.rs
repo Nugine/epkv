@@ -565,6 +565,8 @@ where
             return Ok(());
         }
 
+        debug!(seq=?msg.seq, deps=?msg.deps);
+
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
@@ -627,7 +629,9 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(?id))]
     async fn resume_propose(self: &Arc<Self>, id: InstanceId, msg: Message<C>) -> Result<()> {
+        debug!(reply_variant_name=?msg.variant_name());
         let tx = self.propose_tx.get(&id).as_deref().cloned();
         if let Some(tx) = tx {
             let _ = tx.send(msg).await;
