@@ -395,19 +395,21 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
     #[allow(clippy::integer_arithmetic, clippy::float_arithmetic, clippy::as_conversions)]
     let latency = {
         let min = latency_us.first().copied().unwrap();
-        let q1 = latency_us[args.cmd_count / 4];
-        let q2 = latency_us[args.cmd_count / 2];
-        let q3 = latency_us[args.cmd_count * 3 / 4];
-        let max = latency_us.last().copied().unwrap();
+        let p25 = latency_us[args.cmd_count / 4];
+        let p50 = latency_us[args.cmd_count / 2];
+        let p75 = latency_us[args.cmd_count * 3 / 4];
         let p99 = latency_us[args.cmd_count * 99 / 100];
+        let p999 = latency_us[args.cmd_count * 999 / 1000];
+        let max = latency_us.last().copied().unwrap();
 
         json!({
             "min": min as f64 / 1000.0, // ms
-            "q1": q1 as f64 / 1000.0, // ms
-            "q2": q2 as f64 / 1000.0, // ms
-            "q3": q3 as f64 / 1000.0, // ms
-            "max": max as f64 / 1000.0, // ms
+            "p25": p25 as f64 / 1000.0, // ms
+            "p50": p50 as f64 / 1000.0, // ms
+            "p75": p75 as f64 / 1000.0, // ms
             "p99": p99 as f64 / 1000.0, // ms
+            "p999": p999 as f64 / 1000.0, // ms
+            "max": max as f64 / 1000.0, // ms
         })
     };
 
