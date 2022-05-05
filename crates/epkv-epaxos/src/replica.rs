@@ -500,7 +500,6 @@ where
                 let cluster_size = s.peers.cluster_size();
                 if received.len() < cluster_size / 2 {
                     debug!("preaccept timeout: not enough replies");
-                    self.spawn_recover_immediately(id);
                     return Ok(());
                 }
 
@@ -1152,18 +1151,18 @@ where
         }
     }
 
-    fn spawn_recover_immediately(self: &Arc<Self>, id: InstanceId) {
-        let this = Arc::clone(self);
-        let task = spawn(async move {
-            if let Err(err) = this.run_recover(id).await {
-                error!(?id, ?err);
-            }
-            this.recovering.remove(&id);
-        });
-        if let Some(prev) = self.recovering.insert(id, task) {
-            prev.abort();
-        }
-    }
+    // fn spawn_recover_immediately(self: &Arc<Self>, id: InstanceId) {
+    //     let this = Arc::clone(self);
+    //     let task = spawn(async move {
+    //         if let Err(err) = this.run_recover(id).await {
+    //             error!(?id, ?err);
+    //         }
+    //         this.recovering.remove(&id);
+    //     });
+    //     if let Some(prev) = self.recovering.insert(id, task) {
+    //         prev.abort();
+    //     }
+    // }
 
     #[allow(clippy::float_arithmetic)]
     fn spawn_recover_timeout(self: &Arc<Self>, id: InstanceId, avg_rtt: Option<Duration>) {
