@@ -375,9 +375,7 @@ where
                 }
             }
 
-            if pbal.0 == Round::ZERO {
-                self.spawn_recover_timeout(id, avg_rtt);
-            }
+            self.spawn_recover_timeout(id, avg_rtt);
 
             (rx, seq, deps.into_mutable(), acc.into_mutable(), targets)
         };
@@ -680,6 +678,8 @@ where
                 rx
             };
 
+            let avg_rtt = s.peers.get_avg_rtt();
+
             drop(guard);
 
             {
@@ -698,6 +698,8 @@ where
                     self.network.broadcast(targets, Message::Accept(msg));
                 }
             }
+
+            self.spawn_recover_timeout(id, avg_rtt);
 
             (rx, acc.into_mutable())
         };
