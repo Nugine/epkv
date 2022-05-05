@@ -218,6 +218,7 @@ where
             if countdown == 0 {
                 let this = Arc::clone(self);
                 spawn(async move {
+                    debug!("probe_rtt_countdown");
                     if let Err(err) = this.run_probe_rtt().await {
                         error!(?err)
                     }
