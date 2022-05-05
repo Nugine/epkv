@@ -63,7 +63,8 @@ impl DataDb {
         Ok(())
     }
 
-    pub fn batched_execute(self: &Arc<Self>, cmd: BatchedCommand) -> Result<()> {
+    #[tracing::instrument(skip_all, fields(id = ?id))]
+    pub fn batched_execute(self: &Arc<Self>, id: InstanceId, cmd: BatchedCommand) -> Result<()> {
         let single_cmd_count: u64 = cmd.as_slice().len().numeric_cast();
         for cmd in cmd.as_slice() {
             let cmd = cmd.as_ref();
@@ -77,6 +78,7 @@ impl DataDb {
             m.executed_single_cmd_count = m.executed_single_cmd_count.wrapping_add(single_cmd_count);
             m.executed_batched_cmd_count = m.executed_batched_cmd_count.wrapping_add(1)
         });
+        debug!("cmd executed");
         Ok(())
     }
 
@@ -92,9 +94,8 @@ impl DataStore<BatchedCommand> for Arc<DataDb> {
     fn issue(&self, id: InstanceId, cmd: BatchedCommand, notify: Asc<ExecNotify>) -> Self::Future<'_> {
         let this = Arc::clone(self);
         let task = move || {
-            let result = this.batched_execute(cmd);
+            let result = this.batched_execute(id, cmd);
             notify.notify_executed();
-            debug!(?id, "cmd executed");
             result
         };
         async move { tokio::task::spawn_blocking(task).await.unwrap() }
