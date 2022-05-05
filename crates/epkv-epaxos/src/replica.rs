@@ -1772,7 +1772,8 @@ where
         debug!("wait graph");
 
         {
-            let _row_guard = self.graph.lock_row(id.0).await;
+            let row_guard = self.graph.lock_row(id.0).await;
+            debug!("lock row {:?}", id.0);
 
             let mut q = DepsQueue::from_single(id);
 
@@ -1819,6 +1820,7 @@ where
                     }
                 }
 
+                debug!("bfs waiting watermark rid = {:?}, lid = {:?}", rid, lid);
                 wm.until(lid.raw_value()).wait().await;
 
                 for d in node.deps.elements() {
@@ -1828,6 +1830,9 @@ where
                     q.push(d);
                 }
             }
+
+            drop(row_guard);
+            debug!("unlock row {:?}", id.0);
         }
 
         let local_graph_nodes_count = local_graph.nodes_count();
@@ -1918,17 +1923,7 @@ where
             *node.status.lock() = ExecStatus::Executed;
         }
 
-        self.graph.retire_node(id);
-        if let Some((_, task)) = self.recovering.remove(&id) {
-            task.abort()
-        }
-
-        {
-            let mut guard = self.state.lock().await;
-            let s = &mut *guard;
-            s.log.retire_instance(id);
-            debug!(?id, "retire instance");
-        }
+        self.retire_executed_instances(std::iter::once(id)).await;
 
         Ok(())
     }
@@ -1993,23 +1988,24 @@ where
             }
         }
 
-        for &(id, _) in &scc {
+        self.retire_executed_instances(scc.iter().map(|&(id, _)| id)).await;
+
+        Ok(())
+    }
+
+    async fn retire_executed_instances(&self, iter: impl Iterator<Item = InstanceId> + Clone) {
+        for id in iter.clone() {
             self.graph.retire_node(id);
             if let Some((_, task)) = self.recovering.remove(&id) {
                 task.abort()
             }
         }
-
-        {
-            let mut guard = self.state.lock().await;
-            let s = &mut *guard;
-            for &(id, _) in &scc {
-                s.log.retire_instance(id);
-                debug!(?id, "retire instance");
-            }
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+        for id in iter {
+            s.log.retire_instance(id);
+            debug!(?id, "retire instance");
         }
-
-        Ok(())
     }
 
     pub async fn run_clear_key_map(self: &Arc<Self>) {
