@@ -29,12 +29,16 @@ use tokio::sync::Notify;
 use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
 
 pub struct Graph<C> {
-    nodes: DashMap<InstanceId, Asc<InsNode<C>>>,
+    nodes: DashMap<InstanceId, Node<C>>,
     status_bounds: Asc<SyncMutex<StatusBounds>>,
     executing: Asc<DashSet<InstanceId>>,
     row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
     watermarks: DashMap<ReplicaId, Asc<WaterMark>>,
-    subscribers: DashMap<InstanceId, Arc<Notify>>,
+}
+
+enum Node<C> {
+    InGraph(Asc<InsNode<C>>),
+    Waiting(Asc<Notify>),
 }
 
 pub struct InsNode<C> {
@@ -65,15 +69,7 @@ impl<C> Graph<C> {
         let executing = Asc::new(DashSet::new());
         let row_locks = DashMap::new();
         let watermarks = DashMap::new();
-        let subscribers = DashMap::new();
-        Self {
-            nodes,
-            status_bounds,
-            executing,
-            row_locks,
-            watermarks,
-            subscribers,
-        }
+        Self { nodes, status_bounds, executing, row_locks, watermarks }
     }
 
     pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps, status: Status) {
@@ -85,11 +81,17 @@ impl<C> Graph<C> {
         };
 
         let gen: _ = || Asc::new(InsNode { cmd, seq, deps, status: SyncMutex::new(exec_status) });
-        self.nodes.entry(id).or_insert_with(gen);
-
-        let notify = self.subscribers.get(&id).as_deref().cloned();
-        if let Some(n) = notify {
-            n.notify_waiters()
+        match self.nodes.entry(id) {
+            dashmap::mapref::entry::Entry::Occupied(mut e) => match e.get_mut() {
+                Node::InGraph(_) => {}
+                Node::Waiting(n) => {
+                    n.notify_waiters();
+                    e.insert(Node::InGraph(gen()));
+                }
+            },
+            dashmap::mapref::entry::Entry::Vacant(e) => {
+                e.insert(Node::InGraph(gen()));
+            }
         }
 
         {
@@ -108,25 +110,29 @@ impl<C> Graph<C> {
     }
 
     pub async fn wait_node(&self, id: InstanceId) -> Option<Asc<InsNode<C>>> {
-        if let Some(node) = self.nodes.get(&id).as_deref().cloned() {
-            let _ = self.subscribers.remove(&id);
-            return Some(node);
-        }
         if self.is_executed(id) {
             return None;
         }
 
-        let gen = || Arc::new(Notify::new());
-        let n = self.subscribers.entry(id).or_insert_with(gen).clone();
+        let n = match self.nodes.entry(id) {
+            dashmap::mapref::entry::Entry::Occupied(e) => match e.get() {
+                Node::InGraph(node) => return Some(Asc::clone(node)),
+                Node::Waiting(notify) => Asc::clone(notify),
+            },
+            dashmap::mapref::entry::Entry::Vacant(e) => {
+                let notify = Asc::new(Notify::new());
+                e.insert(Node::Waiting(Asc::clone(&notify)));
+                notify
+            }
+        };
 
         loop {
             n.notified().await;
-            if let Some(node) = self.nodes.get(&id).as_deref().cloned() {
-                let _ = self.subscribers.remove(&id);
-                return Some(node);
-            }
             if self.is_executed(id) {
                 return None;
+            }
+            if let Some(Node::InGraph(node)) = self.nodes.get(&id).as_deref() {
+                return Some(Asc::clone(node));
             }
         }
     }
@@ -144,8 +150,7 @@ impl<C> Graph<C> {
     }
 
     pub fn retire_node(&self, id: InstanceId) {
-        let _ = self.nodes.remove(&id);
-        if let Some((_, n)) = self.subscribers.remove(&id) {
+        if let Some((_, Node::Waiting(n))) = self.nodes.remove(&id) {
             n.notify_waiters()
         }
     }
