@@ -78,7 +78,7 @@ impl DataDb {
             m.executed_single_cmd_count = m.executed_single_cmd_count.wrapping_add(single_cmd_count);
             m.executed_batched_cmd_count = m.executed_batched_cmd_count.wrapping_add(1)
         });
-        debug!("cmd executed");
+        debug!(?id, "cmd executed");
         Ok(())
     }
 
@@ -92,6 +92,7 @@ type IssueFuture = impl Future<Output = Result<()>> + Send + 'static;
 impl DataStore<BatchedCommand> for Arc<DataDb> {
     type Future<'a> = IssueFuture;
     fn issue(&self, id: InstanceId, cmd: BatchedCommand, notify: Asc<ExecNotify>) -> Self::Future<'_> {
+        debug!(?id, "issuing cmd");
         let this = Arc::clone(self);
         let task = move || {
             let result = this.batched_execute(id, cmd);
