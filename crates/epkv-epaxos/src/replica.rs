@@ -28,13 +28,13 @@ use epkv_utils::vecset::VecSet;
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::mem;
 use std::net::SocketAddr;
 use std::ops::Not;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::*;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{mem, ops};
 
 use anyhow::{ensure, Result};
 use dashmap::DashMap;
@@ -303,6 +303,11 @@ where
         self.phase_preaccept(guard, id, pbal, Some(cmd), acc).await
     }
 
+    fn random_time(duration: Duration, rate_range: ops::Range<f64>) -> Duration {
+        let rate: f64 = rand::thread_rng().gen_range(rate_range);
+        duration.mul_f64(rate)
+    }
+
     #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn phase_preaccept(
         self: &Arc<Self>,
@@ -390,11 +395,12 @@ where
                 let s = &mut *guard;
                 s.peers.get_avg_rtt()
             };
-            let t = {
-                let conf = &self.config.preaccept_timeout;
-                let default = Duration::from_micros(conf.default_us);
-                conf.with(avg_rtt, |d| d * 2 + default)
-            };
+            let conf = &self.config.preaccept_timeout;
+            let t = conf.with(avg_rtt, |d| {
+                let base = Self::random_time(Duration::from_micros(conf.default_us), 0.5..1.5);
+                let delta = Self::random_time(d, 2.0..5.0);
+                base + delta
+            });
             debug!(?avg_rtt, timeout=?t, "calc preaccept timeout");
 
             loop {
@@ -1187,7 +1193,8 @@ where
 
             {
                 // adaptive?
-                let timeout = Duration::from_micros(self.config.recover_timeout.default_us);
+                let base = Duration::from_micros(self.config.recover_timeout.default_us);
+                let timeout = Self::random_time(base, 0.5..1.5);
                 sleep(timeout).await
             }
         }
@@ -1210,9 +1217,9 @@ where
     fn spawn_recover_timeout(self: &Arc<Self>, id: InstanceId, avg_rtt: Option<Duration>) {
         let conf = &self.config.recover_timeout;
         let duration = conf.with(avg_rtt, |d| {
-            let rate: f64 = rand::thread_rng().gen_range(4.0..6.0);
-            let delta = Duration::from_secs_f64(d.as_secs_f64() * rate);
-            Duration::from_micros(conf.default_us) + delta
+            let base = Self::random_time(Duration::from_micros(conf.default_us), 0.5..1.5);
+            let delta = Self::random_time(d, 4.0..6.0);
+            base + delta
         });
 
         if let dashmap::mapref::entry::Entry::Vacant(e) = self.recovering.entry(id) {
