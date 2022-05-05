@@ -501,7 +501,6 @@ where
                         };
 
                         let cmd = None;
-                        let _ = self.propose_tx.remove(&id);
 
                         let deps = Deps::from_mutable(deps);
                         let acc = Acc::from_mutable(acc);
@@ -543,6 +542,8 @@ where
 
                     s.peers.set_inf_rtt(&no_reply_targets);
 
+                    let _ = self.propose_tx.remove(&id);
+
                     return Ok(());
                 }
 
@@ -550,8 +551,6 @@ where
 
                 s.log.load(id).await?;
                 let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
-
-                let _ = self.propose_tx.remove(&id);
 
                 let cmd = None;
                 let deps = Deps::from_mutable(deps);
@@ -773,13 +772,13 @@ where
                     continue;
                 }
 
-                let _ = self.propose_tx.remove(&id);
-
                 let cmd = None;
                 let acc = Acc::from_mutable(acc);
                 return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
             }
         }
+
+        let _ = self.propose_tx.remove(&id);
 
         Ok(())
     }
@@ -1124,8 +1123,6 @@ where
                         Some(b) => b,
                         None => continue,
                     };
-
-                    let _ = self.propose_tx.remove(&id);
 
                     let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
 
