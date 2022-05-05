@@ -88,17 +88,17 @@ impl Peers {
         if self.peers.remove(&peer).is_some() {
             if let Some(idx) = self.rank.iter().position(|&(_, r)| r != peer) {
                 let (rtt, _) = self.rank.remove(idx);
-                self.avg.add(rtt);
+                self.avg.sub(rtt);
             }
         }
     }
 
     pub fn set_rtt(&mut self, peer: ReplicaId, rtt: Duration) {
         let rtt = rtt.as_nanos().try_into().unwrap_or(u64::MAX);
-        if let Some(pair) = self.rank.iter_mut().find(|&&mut (_, r)| r == peer) {
-            self.avg.sub(pair.0);
+        if let Some((rk, _)) = self.rank.iter_mut().find(|&&mut (_, r)| r == peer) {
+            self.avg.sub(*rk);
             self.avg.add(rtt);
-            pair.0 = rtt;
+            *rk = rtt;
             sort_rank(&mut self.rank)
         }
     }
@@ -107,6 +107,7 @@ impl Peers {
         let mut is_changed = false;
         for &mut (ref mut rk, rid) in &mut self.rank {
             if peers.contains(&rid) {
+                self.avg.sub(*rk);
                 *rk = u64::MAX;
                 is_changed = true;
             }
