@@ -29,6 +29,11 @@ impl SelectedPeers {
         peers.union_copied(&self.others);
         peers
     }
+
+    #[must_use]
+    pub fn to_merged(&self) -> VecSet<ReplicaId> {
+        self.acc.to_union_copied(&self.others)
+    }
 }
 
 struct Avg {
@@ -94,6 +99,19 @@ impl Peers {
             self.avg.sub(pair.0);
             self.avg.add(rtt);
             pair.0 = rtt;
+            sort_rank(&mut self.rank)
+        }
+    }
+
+    pub fn set_inf_rtt(&mut self, peers: &VecSet<ReplicaId>) {
+        let mut is_changed = false;
+        for &mut (ref mut rk, rid) in &mut self.rank {
+            if peers.contains(&rid) {
+                *rk = u64::MAX;
+                is_changed = true;
+            }
+        }
+        if is_changed {
             sort_rank(&mut self.rank)
         }
     }

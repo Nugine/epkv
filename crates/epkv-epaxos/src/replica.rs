@@ -307,7 +307,7 @@ where
     ) -> Result<()> {
         debug!("phase_preaccept");
 
-        let (mut rx, mut seq, mut deps, mut acc) = {
+        let (mut rx, mut seq, mut deps, mut acc, targets) = {
             let s = &mut *guard;
 
             s.log.load(id).await?;
@@ -351,6 +351,8 @@ where
 
             drop(guard);
 
+            let targets = selected_peers.to_merged();
+
             {
                 debug!(?selected_peers, "broadcast preaccept");
 
@@ -363,8 +365,7 @@ where
                 if self.config.optimization.enable_acc {
                     net::broadcast_preaccept(&self.network, selected_peers.acc, selected_peers.others, msg);
                 } else {
-                    let targets = selected_peers.into_merged();
-                    self.network.broadcast(targets, Message::PreAccept(msg))
+                    self.network.broadcast(targets.clone(), Message::PreAccept(msg))
                 }
             }
 
@@ -372,7 +373,7 @@ where
                 self.spawn_recover_timeout(id, avg_rtt);
             }
 
-            (rx, seq, deps.into_mutable(), acc.into_mutable())
+            (rx, seq, deps.into_mutable(), acc.into_mutable(), targets)
         };
 
         {
@@ -521,6 +522,15 @@ where
                 let cluster_size = s.peers.cluster_size();
                 if received.len() < cluster_size / 2 {
                     debug!("preaccept timeout: not enough replies");
+
+                    let no_reply_targets = {
+                        let mut all_targets = targets;
+                        all_targets.difference_copied(&received);
+                        all_targets
+                    };
+
+                    s.peers.set_inf_rtt(&no_reply_targets);
+
                     return Ok(());
                 }
 
