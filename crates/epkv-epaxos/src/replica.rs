@@ -1895,8 +1895,14 @@ where
                     drop(guard);
                 }
 
+                if needs_issue.not() {
+                    debug!(root=?id, ?scc, "not needs issue")
+                }
+
                 needs_issue
             });
+
+            debug!(root=?id, ?scc_list);
 
             let flag_group = FlagGroup::new(scc_list.len());
 
