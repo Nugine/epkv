@@ -1846,6 +1846,18 @@ where
         } else if local_graph_nodes_count == 1 {
             // common case
             let node = local_graph.get_node(id).cloned().unwrap();
+            drop(local_graph);
+
+            {
+                let mut guard = node.status.lock();
+                let status = &mut *guard;
+                if *status == ExecStatus::Committed {
+                    *status = ExecStatus::Issuing;
+                } else {
+                    return Ok(());
+                }
+            }
+
             let this = Arc::clone(self);
             spawn(async move {
                 if let Err(err) = this.run_execute_single_node(id, node).await {
@@ -1871,7 +1883,9 @@ where
 
                 for status in iter_mut_deref(&mut stack) {
                     needs_issue = *status == ExecStatus::Committed;
-                    *status = ExecStatus::Issuing;
+                    if needs_issue {
+                        *status = ExecStatus::Issuing;
+                    }
                 }
 
                 while let Some(guard) = stack.pop() {
