@@ -637,7 +637,7 @@ where
 
     #[tracing::instrument(skip_all, fields(?id))]
     async fn resume_propose(self: &Arc<Self>, id: InstanceId, msg: Message<C>) -> Result<()> {
-        debug!(reply_variant_name=?msg.variant_name());
+        debug!(?id, reply_variant_name=?msg.variant_name());
         let tx = self.propose_tx.get(&id).as_deref().cloned();
         if let Some(tx) = tx {
             let _ = tx.send(msg).await;
@@ -967,6 +967,7 @@ where
             debug!("run_recover");
 
             if self.propose_tx.contains_key(&id) {
+                debug!(?id, "propose_tx exists");
                 // adaptive?
                 let base = Duration::from_micros(self.config.recover_timeout.default_us);
                 let timeout = Self::random_time(base, 0.5..1.5);
@@ -1059,7 +1060,7 @@ where
                         continue;
                     }
 
-                    debug!(received_len = ?received.len(), "receive new prepare reply");
+                    debug!(?id, received_len = ?received.len(), "receive new prepare reply");
 
                     let mut guard = self.state.lock().await;
                     let s = &mut *guard;
@@ -1126,7 +1127,7 @@ where
 
                     let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
 
-                    debug!(?pbal, "recover succeeded");
+                    debug!(?pbal, ?tuples, "recover succeeded");
                     with_mutex(&self.metrics, |m| {
                         m.recover_success_count = m.recover_success_count.wrapping_add(1);
                     });
@@ -1239,7 +1240,7 @@ where
             return Ok(());
         }
 
-        debug!(id =?msg.id, "handle_prepare");
+        debug!(?msg);
 
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
