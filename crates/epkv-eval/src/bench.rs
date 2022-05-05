@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{ensure, Context, Result};
 use bytes::Bytes;
@@ -316,6 +316,17 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
     let latency_us_queue: _ = Asc::new(ArrayQueue::<u64>::new(args.cmd_count));
 
     let wg = WaitGroup::new();
+
+    {
+        clone!(latency_us_queue);
+        spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+                println!("received {}", latency_us_queue.len());
+            }
+        });
+    }
 
     let cluster_metrics_before = get_cluster_metrics(config).await?;
 
