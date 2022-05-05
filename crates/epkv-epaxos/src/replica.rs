@@ -1712,10 +1712,8 @@ where
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
 
-        let committed_up_to = s.log.committed_up_to();
-        if committed_up_to.is_empty() {
-            return Ok(());
-        }
+        let committed_up_to = Some(s.log.committed_up_to());
+        let executed_up_to = Some(s.log.executed_up_to());
 
         let targets = s.peers.select_all();
 
@@ -1725,7 +1723,7 @@ where
             let sender = self.rid;
             self.network.broadcast(
                 targets,
-                Message::PeerBounds(PeerBounds { sender, committed_up_to: Some(committed_up_to) }),
+                Message::PeerBounds(PeerBounds { sender, committed_up_to, executed_up_to }),
             )
         }
 
@@ -1740,6 +1738,10 @@ where
 
         if let Some(bounds) = msg.committed_up_to {
             s.peer_status_bounds.set_committed(msg.sender, bounds);
+        }
+
+        if let Some(bounds) = msg.executed_up_to {
+            s.peer_status_bounds.set_executed(msg.sender, bounds)
         }
 
         drop(guard);

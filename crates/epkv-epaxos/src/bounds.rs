@@ -95,16 +95,21 @@ impl StatusBounds {
 #[derive(Default)]
 pub struct PeerStatusBounds {
     committed: VecMap<ReplicaId, VecMap<ReplicaId, LocalInstanceId>>,
+    executed: VecMap<ReplicaId, VecMap<ReplicaId, LocalInstanceId>>,
 }
 
 impl PeerStatusBounds {
     #[must_use]
     pub const fn new() -> Self {
-        Self { committed: VecMap::new() }
+        Self { committed: VecMap::new(), executed: VecMap::new() }
     }
 
     pub fn set_committed(&mut self, rid: ReplicaId, bounds: VecMap<ReplicaId, LocalInstanceId>) {
         let _ = self.committed.insert(rid, bounds);
+    }
+
+    pub fn set_executed(&mut self, rid: ReplicaId, bounds: VecMap<ReplicaId, LocalInstanceId>) {
+        let _ = self.executed.insert(rid, bounds);
     }
 
     #[must_use]

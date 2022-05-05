@@ -164,6 +164,7 @@ pub struct SyncLogOk {
 pub struct PeerBounds {
     pub sender: ReplicaId,
     pub committed_up_to: Option<VecMap<ReplicaId, LocalInstanceId>>,
+    pub executed_up_to: Option<VecMap<ReplicaId, LocalInstanceId>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

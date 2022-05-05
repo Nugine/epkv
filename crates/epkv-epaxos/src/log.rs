@@ -281,6 +281,10 @@ where
         self.status_bounds.lock().committed_up_to()
     }
 
+    pub fn executed_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
+        self.status_bounds.lock().executed_up_to()
+    }
+
     pub async fn save_bounds(&mut self) -> Result<()> {
         let saved_status_bounds = with_mutex(&self.status_bounds, |status_bounds: _| {
             status_bounds.update_bounds();
