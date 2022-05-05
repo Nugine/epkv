@@ -1116,6 +1116,8 @@ where
                         m.recover_success_count = m.recover_success_count.wrapping_add(1);
                     });
 
+                    let _ = self.recovering.remove(&id);
+
                     let acc = {
                         let mut acc = match s.log.get_cached_ins(id) {
                             Some(ins) => MutableAcc::clone(ins.acc.as_ref()),
