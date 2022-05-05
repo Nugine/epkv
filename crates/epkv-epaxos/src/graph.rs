@@ -94,18 +94,19 @@ impl<C> Graph<C> {
             }
         }
 
-        {
-            let rid = id.0;
-            let committed_up_to = with_mutex(&self.status_bounds, |status_bounds: _| {
-                let m = status_bounds.as_mut().get_mut(&rid)?;
-                m.committed.update_bound();
-                Some(m.committed.bound())
-            });
+        self.sync_watermark(id.0);
+    }
 
-            if let Some(lv) = committed_up_to {
-                let wm = self.watermark(rid);
-                wm.bump_level(lv)
-            }
+    pub fn sync_watermark(&self, rid: ReplicaId) {
+        let committed_up_to = with_mutex(&self.status_bounds, |status_bounds: _| {
+            let m = status_bounds.as_mut().get_mut(&rid)?;
+            m.committed.update_bound();
+            Some(m.committed.bound())
+        });
+
+        if let Some(lv) = committed_up_to {
+            let wm = self.watermark(rid);
+            wm.bump_level(lv)
         }
     }
 

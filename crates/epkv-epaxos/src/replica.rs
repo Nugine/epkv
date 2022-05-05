@@ -880,6 +880,7 @@ where
         }
 
         {
+            self.graph.sync_watermark(id.0);
             self.spawn_execute(id, cmd, seq, deps, status)
         }
 
@@ -938,6 +939,7 @@ where
 
         drop(guard);
 
+        self.graph.sync_watermark(id.0);
         self.spawn_execute(id, cmd, seq, deps, status);
 
         Ok(())
