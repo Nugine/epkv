@@ -1902,7 +1902,7 @@ where
                 clone!(flag_group);
                 let this = Arc::clone(self);
                 spawn(async move {
-                    if let Err(err) = this.run_execute_scc(scc, flag_group, idx).await {
+                    if let Err(err) = this.run_execute_scc(scc, flag_group, idx, id).await {
                         error!(?err);
                     }
                 });
@@ -1913,6 +1913,11 @@ where
 
     #[tracing::instrument(skip_all, fields(?id))]
     async fn run_execute_single_node(self: &Arc<Self>, id: InstanceId, node: Asc<InsNode<C>>) -> Result<()> {
+        {
+            let status = *node.status.lock();
+            assert_eq!(status, ExecStatus::Issuing);
+        }
+
         let notify = Asc::new(ExecNotify::new());
         {
             clone!(notify);
@@ -1948,11 +1953,13 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(root=?root))]
     async fn run_execute_scc(
         self: &Arc<Self>,
         scc: Vec<(InstanceId, Asc<InsNode<C>>)>,
         flag_group: FlagGroup,
         idx: usize,
+        root: InstanceId,
     ) -> Result<()> {
         if idx > 0 {
             flag_group.wait(idx.wrapping_sub(1)).await;
