@@ -719,7 +719,12 @@ where
         {
             let mut received = VecSet::new();
 
-            while let Some(msg) = rx.recv().await {
+            let timeout = Self::random_time(
+                Duration::from_micros(self.config.accept_timeout.default_us),
+                0.75..1.25,
+            );
+
+            while let Ok(Some(msg)) = recv_timeout(&mut rx, timeout).await {
                 let msg = match AcceptReply::convert(msg) {
                     Some(m) => m,
                     None => continue,
@@ -961,6 +966,14 @@ where
     async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
         loop {
             debug!("run_recover");
+
+            if self.propose_tx.contains_key(&id) {
+                // adaptive?
+                let base = Duration::from_micros(self.config.recover_timeout.default_us);
+                let timeout = Self::random_time(base, 0.5..1.5);
+                sleep(timeout).await;
+                continue;
+            }
 
             let mut rx = {
                 let mut guard = self.state.lock().await;

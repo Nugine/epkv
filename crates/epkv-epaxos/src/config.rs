@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 pub struct ReplicaConfig {
     pub preaccept_timeout: PreAcceptTimeout,
+    pub accept_timeout: AcceptTimeout,
     pub recover_timeout: RecoverTimeout,
     pub sync_limits: SyncLimits,
     pub join_timeout: JoinTimeout,
@@ -28,6 +29,11 @@ impl PreAcceptTimeout {
             default
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptTimeout {
+    pub default_us: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
