@@ -1829,12 +1829,14 @@ where
 
                         for l in LocalInstanceId::range_inclusive(start, end) {
                             let id = InstanceId(rid, l);
-                            self.spawn_recover_timeout(id, avg_rtt)
+                            if vis.contains(&id).not() {
+                                self.spawn_recover_timeout(id, avg_rtt)
+                            }
                         }
                     }
                 }
 
-                debug!("bfs waiting watermark rid = {:?}, lid = {:?}", rid, lid);
+                debug!(?rid, level=?wm.level(), ?lid, "bfs waiting watermark");
                 wm.until(lid.raw_value()).wait().await;
 
                 for d in node.deps.elements() {
