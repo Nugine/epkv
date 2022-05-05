@@ -61,4 +61,5 @@ pub struct JoinTimeout {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Optimization {
     pub enable_acc: bool,
+    pub probe_rtt_per_msg_count: u64,
 }

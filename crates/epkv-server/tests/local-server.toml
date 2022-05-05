@@ -27,6 +27,7 @@ default_us = 1_000_000 # 1s
 
 [replica.optimization]
 enable_acc = true
+probe_rtt_per_msg_count = 500
 
 [network]
 inbound_chan_size = 4096

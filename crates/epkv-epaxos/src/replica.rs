@@ -31,6 +31,8 @@ use std::collections::HashMap;
 use std::mem;
 use std::net::SocketAddr;
 use std::ops::Not;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering::*;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -73,6 +75,8 @@ where
     recovering: DashMap<InstanceId, JoinHandle<()>>,
 
     metrics: SyncMutex<Metrics>,
+
+    probe_rtt_countdown: AtomicU64,
 }
 
 struct State<C, L>
@@ -165,6 +169,8 @@ where
             recover_success_count: 0,
         });
 
+        let probe_rtt_countdown = AtomicU64::new(config.optimization.probe_rtt_per_msg_count);
+
         Ok(Arc::new(Self {
             rid,
             public_peer_addr,
@@ -179,6 +185,7 @@ where
             network,
             recovering,
             metrics,
+            probe_rtt_countdown,
         }))
     }
 
@@ -200,6 +207,20 @@ where
     #[tracing::instrument(skip_all, fields(rid = ?self.rid, epoch = ?self.epoch.load()))]
     pub async fn handle_message(self: &Arc<Self>, msg: Message<C>) -> Result<()> {
         debug!(msg_variant_name = ?msg.variant_name());
+
+        {
+            let countdown = self.probe_rtt_countdown.fetch_sub(1, Relaxed).saturating_sub(1);
+            if countdown == 0 {
+                let this = Arc::clone(self);
+                spawn(async move {
+                    if let Err(err) = this.run_probe_rtt().await {
+                        error!(?err)
+                    }
+                });
+                let count = self.config.optimization.probe_rtt_per_msg_count;
+                self.probe_rtt_countdown.store(count, Relaxed);
+            }
+        }
 
         match msg {
             Message::PreAccept(msg) => {
@@ -1415,7 +1436,6 @@ where
     }
 
     async fn handle_probe_rtt(self: &Arc<Self>, msg: ProbeRtt) -> Result<()> {
-        debug!(sender = ?msg.sender, "handle_probe_rtt");
         let sender = self.rid;
         let target = msg.sender;
         let time = msg.time;
@@ -1423,19 +1443,19 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all)]
     async fn handle_probe_rtt_ok(self: &Arc<Self>, msg: ProbeRttOk) -> Result<()> {
         let time = LocalInstant::now();
         let peer = msg.sender;
         let rtt = time.saturating_duration_since(msg.time);
 
-        let mut guard = self.state.lock().await;
-        let s = &mut *guard;
+        debug!(?peer, ?rtt);
 
-        s.peers.set_rtt(peer, rtt);
-
-        drop(guard);
-
-        debug!(?peer, ?rtt, "handle_probe_rtt_ok");
+        {
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+            s.peers.set_rtt(peer, rtt);
+        }
 
         Ok(())
     }
