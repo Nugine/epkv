@@ -1799,6 +1799,7 @@ where
                     }
                 }
 
+                debug!(?id, seq=?node.seq, deps=?node.deps, "local graph add node");
                 local_graph.add_node(id, Asc::clone(&node));
 
                 let InstanceId(rid, lid) = id;
@@ -1895,6 +1896,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(?id))]
     async fn run_execute_single_node(self: &Arc<Self>, id: InstanceId, node: Asc<InsNode<C>>) -> Result<()> {
         let notify = Asc::new(ExecNotify::new());
         {
@@ -1914,6 +1916,7 @@ where
                 Status::Executed => *node.status.lock() = ExecStatus::Executed,
                 _ => {}
             }
+            debug!(?status);
             status
         };
         notify.wait_executed().await;
