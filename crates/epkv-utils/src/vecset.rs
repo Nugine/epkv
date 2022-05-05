@@ -113,48 +113,47 @@ impl<T: Ord> VecSet<T> {
         lhs.reserve(ans_cap);
 
         unsafe {
-            let mut p1 = lhs.as_ptr();
-            let mut p2 = rhs.as_ptr();
-            let mut p3 = lhs.as_mut_ptr().add(lhs.len());
+            let p1 = lhs.as_ptr();
+            let p2 = rhs.as_ptr();
+            let p3 = lhs.as_mut_ptr().add(lhs.len());
             let e1 = p1.add(lhs.len());
             let e2 = p2.add(rhs.len());
 
-            while p1 < e1 && p2 < e2 {
-                match Ord::cmp(&*p1, &*p2) {
-                    Ordering::Less => {
-                        ptr::copy_nonoverlapping(p1, p3, 1);
-                        p1 = p1.add(1);
-                    }
-                    Ordering::Greater => {
-                        ptr::copy_nonoverlapping(p2, p3, 1);
-                        p2 = p2.add(1);
-                    }
-                    Ordering::Equal => {
-                        ptr::copy_nonoverlapping(p1, p3, 1);
-                        p1 = p1.add(1);
-                        p2 = p2.add(1);
-                    }
-                }
-                p3 = p3.add(1);
-            }
-            if p1 < e1 {
-                let cnt = e1.offset_from(p1) as usize;
-                ptr::copy_nonoverlapping(p1, p3, cnt);
-                p3 = p3.add(cnt);
-            }
-            if p2 < e2 {
-                let cnt = e2.offset_from(p2) as usize;
-                ptr::copy_nonoverlapping(p2, p3, cnt);
-                p3 = p3.add(cnt);
-            }
-            {
-                let dst = lhs.as_mut_ptr();
-                let src = dst.add(lhs.len());
-                let cnt = p3.offset_from(src) as usize;
-                ptr::copy(src, dst, cnt);
-                lhs.set_len(cnt)
-            }
+            let end = raw_union_copied(p1, p2, p3, e1, e2);
+
+            let dst = lhs.as_mut_ptr();
+            let src = dst.add(lhs.len());
+            let cnt = end.offset_from(src) as usize;
+            ptr::copy(src, dst, cnt);
+            lhs.set_len(cnt)
         }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn to_union_copied(&self, other: &Self) -> Self
+    where
+        T: Copy,
+    {
+        let lhs = &self.0;
+        let rhs = &other.0;
+
+        let ans_cap = lhs.len().checked_add(rhs.len()).unwrap();
+        let mut ans = Vec::with_capacity(ans_cap);
+
+        unsafe {
+            let p1 = lhs.as_ptr();
+            let p2 = rhs.as_ptr();
+            let p3 = ans.as_mut_ptr();
+            let e1 = p1.add(lhs.len());
+            let e2 = p2.add(rhs.len());
+
+            let end = raw_union_copied(p1, p2, p3, e1, e2);
+            let cnt = end.offset_from(p3) as usize;
+            ans.set_len(cnt);
+        }
+
+        Self(ans)
     }
 
     #[inline]
@@ -165,39 +164,51 @@ impl<T: Ord> VecSet<T> {
         let lhs = &mut self.0;
         let rhs = &other.0;
 
-        let ans_cap = lhs.len().checked_add(rhs.len()).unwrap();
+        let ans_cap = lhs.len().min(rhs.len());
         lhs.reserve(ans_cap);
 
         unsafe {
-            let mut p1 = lhs.as_ptr();
-            let mut p2 = rhs.as_ptr();
-            let mut p3 = lhs.as_mut_ptr().add(lhs.len());
+            let p1 = lhs.as_ptr();
+            let p2 = rhs.as_ptr();
+            let p3 = lhs.as_mut_ptr().add(lhs.len());
             let e1 = p1.add(lhs.len());
             let e2 = p2.add(rhs.len());
 
-            while p1 < e1 && p2 < e2 {
-                match Ord::cmp(&*p1, &*p2) {
-                    Ordering::Less => {
-                        p1 = p1.add(1);
-                    }
-                    Ordering::Greater => {
-                        p2 = p2.add(1);
-                    }
-                    Ordering::Equal => {
-                        ptr::copy_nonoverlapping(p1, p3, 1);
-                        p1 = p1.add(1);
-                        p2 = p2.add(1);
-                        p3 = p3.add(1);
-                    }
-                }
-            }
-            {
-                let dst = lhs.as_mut_ptr();
-                let src = dst.add(lhs.len());
-                let cnt = p3.offset_from(src) as usize;
-                ptr::copy(src, dst, cnt);
-                lhs.set_len(cnt)
-            }
+            let end = raw_intersection_copied(p1, p2, p3, e1, e2);
+
+            let dst = lhs.as_mut_ptr();
+            let src = dst.add(lhs.len());
+            let cnt = end.offset_from(src) as usize;
+            ptr::copy(src, dst, cnt);
+            lhs.set_len(cnt)
+        }
+    }
+
+    #[inline]
+    pub fn difference_copied(&mut self, other: &Self)
+    where
+        T: Copy,
+    {
+        let lhs = &mut self.0;
+        let rhs = &other.0;
+
+        let ans_cap = lhs.len();
+        lhs.reserve(ans_cap);
+
+        unsafe {
+            let p1 = lhs.as_ptr();
+            let p2 = rhs.as_ptr();
+            let p3 = lhs.as_mut_ptr().add(lhs.len());
+            let e1 = p1.add(lhs.len());
+            let e2 = p2.add(rhs.len());
+
+            let end = raw_difference_copied(p1, p2, p3, e1, e2);
+
+            let dst = lhs.as_mut_ptr();
+            let src = dst.add(lhs.len());
+            let cnt = end.offset_from(src) as usize;
+            ptr::copy(src, dst, cnt);
+            lhs.set_len(cnt)
         }
     }
 
@@ -317,6 +328,101 @@ impl<'a, T: Ord> IntoIterator for &'a mut VecSet<T> {
     }
 }
 
+unsafe fn raw_union_copied<T: Copy + Ord>(
+    mut p1: *const T,
+    mut p2: *const T,
+    mut p3: *mut T,
+    e1: *const T,
+    e2: *const T,
+) -> *mut T {
+    while p1 < e1 && p2 < e2 {
+        match Ord::cmp(&*p1, &*p2) {
+            Ordering::Less => {
+                ptr::copy_nonoverlapping(p1, p3, 1);
+                p1 = p1.add(1);
+            }
+            Ordering::Greater => {
+                ptr::copy_nonoverlapping(p2, p3, 1);
+                p2 = p2.add(1);
+            }
+            Ordering::Equal => {
+                ptr::copy_nonoverlapping(p1, p3, 1);
+                p1 = p1.add(1);
+                p2 = p2.add(1);
+            }
+        }
+        p3 = p3.add(1);
+    }
+    if p1 < e1 {
+        let cnt = e1.offset_from(p1) as usize;
+        ptr::copy_nonoverlapping(p1, p3, cnt);
+        p3 = p3.add(cnt);
+    }
+    if p2 < e2 {
+        let cnt = e2.offset_from(p2) as usize;
+        ptr::copy_nonoverlapping(p2, p3, cnt);
+        p3 = p3.add(cnt);
+    }
+    p3
+}
+
+unsafe fn raw_intersection_copied<T: Copy + Ord>(
+    mut p1: *const T,
+    mut p2: *const T,
+    mut p3: *mut T,
+    e1: *const T,
+    e2: *const T,
+) -> *mut T {
+    while p1 < e1 && p2 < e2 {
+        match Ord::cmp(&*p1, &*p2) {
+            Ordering::Less => {
+                p1 = p1.add(1);
+            }
+            Ordering::Greater => {
+                p2 = p2.add(1);
+            }
+            Ordering::Equal => {
+                ptr::copy_nonoverlapping(p1, p3, 1);
+                p1 = p1.add(1);
+                p2 = p2.add(1);
+                p3 = p3.add(1);
+            }
+        }
+    }
+    p3
+}
+
+unsafe fn raw_difference_copied<T: Copy + Ord>(
+    mut p1: *const T,
+    mut p2: *const T,
+    mut p3: *mut T,
+    e1: *const T,
+    e2: *const T,
+) -> *mut T {
+    while p1 < e1 && p2 < e2 {
+        match Ord::cmp(&*p1, &*p2) {
+            Ordering::Less => {
+                ptr::copy_nonoverlapping(p1, p3, 1);
+                p1 = p1.add(1);
+                p3 = p3.add(1);
+            }
+            Ordering::Greater => {
+                p2 = p2.add(1);
+            }
+            Ordering::Equal => {
+                p1 = p1.add(1);
+                p2 = p2.add(1);
+            }
+        }
+    }
+    if p1 < e1 {
+        let cnt = e1.offset_from(p1) as usize;
+        ptr::copy_nonoverlapping(p1, p3, cnt);
+        p3 = p3.add(cnt);
+    }
+    p3
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,10 +435,18 @@ mod tests {
 
     #[test]
     fn union() {
-        let mut s1 = VecSet::<u64>::from_vec(vec![1, 2, 3, 5]);
-        let s2 = VecSet::<u64>::from_vec(vec![2, 4, 5, 6]);
-        s1.union_copied(&s2);
-        assert_eq!(s1.as_slice(), &[1, 2, 3, 4, 5, 6])
+        {
+            let mut s1 = VecSet::<u64>::from_iter([1, 2, 3, 5]);
+            let s2 = VecSet::<u64>::from_iter([2, 4, 5, 6]);
+            s1.union_copied(&s2);
+            assert_eq!(s1.as_slice(), &[1, 2, 3, 4, 5, 6])
+        }
+        {
+            let s1 = VecSet::<u64>::from_iter([1, 2, 3, 5]);
+            let s2 = VecSet::<u64>::from_iter([2, 4, 5, 6]);
+            let s3 = s1.to_union_copied(&s2);
+            assert_eq!(s3.as_slice(), &[1, 2, 3, 4, 5, 6])
+        }
     }
 
     #[test]
@@ -341,5 +455,27 @@ mod tests {
         let s2 = VecSet::<u64>::from_vec(vec![2, 4, 5, 6]);
         s1.intersection_copied(&s2);
         assert_eq!(s1.as_slice(), &[2, 5])
+    }
+
+    #[test]
+    fn difference() {
+        {
+            let mut s1 = VecSet::<u64>::from_iter([1, 2, 3, 5]);
+            let s2 = VecSet::<u64>::from_iter([2, 4, 5, 6]);
+            s1.difference_copied(&s2);
+            assert_eq!(s1.as_slice(), &[1, 3])
+        }
+        {
+            let mut s1 = VecSet::<u64>::from_iter([1, 2, 3, 5]);
+            let s2 = VecSet::<u64>::from_iter([]);
+            s1.difference_copied(&s2);
+            assert_eq!(s1.as_slice(), &[1, 2, 3, 5])
+        }
+        {
+            let mut s1 = VecSet::<u64>::from_iter([3]);
+            let s2 = VecSet::<u64>::from_iter([1, 2, 4, 5]);
+            s1.difference_copied(&s2);
+            assert_eq!(s1.as_slice(), &[3])
+        }
     }
 }
