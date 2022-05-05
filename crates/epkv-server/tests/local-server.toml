@@ -12,11 +12,11 @@ path = "/tmp/epkv-server/log_db"
 path = "/tmp/epkv-server/data_db"
 
 [replica.preaccept_timeout]
-default_us = 100_000   # 100 ms
+default_us = 200_000   # 200ms
 enable_adaptive = true
 
 [replica.recover_timeout]
-default_us = 1_000_000 # 1s
+default_us = 800_000   # 800ms
 enable_adaptive = true
 
 [replica.sync_limits]
