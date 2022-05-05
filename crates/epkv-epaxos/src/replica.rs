@@ -1728,6 +1728,7 @@ where
     }
 
     fn spawn_execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps, status: Status) {
+        let _ = self.propose_tx.remove(&id);
         if let Some((_, task)) = self.recovering.remove(&id) {
             task.abort()
         }
