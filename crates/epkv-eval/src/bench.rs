@@ -38,6 +38,7 @@ pub enum Command {
     Case1(Case1),
     Case2(Case2),
     Case3(Case3),
+    Case4,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -106,6 +107,10 @@ pub async fn run(opt: Opt) -> Result<()> {
         Command::Case1(args) => case1(&config, args).await?,
         Command::Case2(args) => case2(&config, args).await?,
         Command::Case3(args) => case3(&config, args).await?,
+        Command::Case4 => {
+            let cluster_metrics: _ = get_cluster_metrics(&config).await?;
+            serde_json::to_value(&cluster_metrics)?
+        }
     };
 
     save_result(&opt.output, &result)?;
