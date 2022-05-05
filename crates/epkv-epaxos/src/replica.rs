@@ -34,10 +34,11 @@ use std::ops::Not;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::*;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{ensure, Result};
 use dashmap::DashMap;
+use fnv::FnvHashSet;
 use futures_util::future::join_all;
 use parking_lot::Mutex as SyncMutex;
 use rand::Rng;
@@ -1777,12 +1778,15 @@ where
             let row_guard = self.graph.lock_row(id.0).await;
             debug!("lock row {:?}", id.0);
 
+            let mut vis: _ = FnvHashSet::<InstanceId>::default();
             let mut q = DepsQueue::from_single(id);
+            let bfs_t0 = Instant::now();
 
             while let Some(id) = q.pop() {
-                if local_graph.contains_node(id) {
+                if vis.contains(&id) {
                     continue;
                 }
+                vis.insert(id);
 
                 debug!("bfs waiting node {:?}", id);
 
@@ -1827,10 +1831,14 @@ where
                 wm.until(lid.raw_value()).wait().await;
 
                 for d in node.deps.elements() {
-                    if local_graph.contains_node(d) {
+                    if vis.contains(&d) {
                         continue;
                     }
                     q.push(d);
+                }
+
+                if bfs_t0.elapsed() > Duration::from_secs(1) {
+                    debug!("bfs too slow")
                 }
             }
 

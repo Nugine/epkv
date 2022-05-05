@@ -223,10 +223,10 @@ where
         self.nodes.len()
     }
 
-    #[must_use]
-    pub fn contains_node(&self, id: I) -> bool {
-        self.nodes.contains_key(&id)
-    }
+    // #[must_use]
+    // pub fn contains_node(&self, id: I) -> bool {
+    //     self.nodes.contains_key(&id)
+    // }
 
     pub fn add_node(&mut self, id: I, node: N) {
         self.nodes.entry(id).or_insert(node);
