@@ -307,6 +307,7 @@ impl Server {
         let network = self.replica.network().metrics();
         let server = with_mutex(&self.metrics, |m: _| m.clone());
         let replica = self.replica.metrics();
+        let data_db = self.replica.data_store().metrics();
 
         Ok(cs::GetMetricsOutput {
             network_msg_total_size: network.msg_total_size,
@@ -317,6 +318,8 @@ impl Server {
             replica_preaccept_slow_path: replica.preaccept_slow_path,
             replica_recover_nop_count: replica.recover_nop_count,
             replica_recover_success_count: replica.recover_success_count,
+            executed_single_cmd_count: data_db.executed_single_cmd_count,
+            executed_batched_cmd_count: data_db.executed_batched_cmd_count,
         })
     }
 

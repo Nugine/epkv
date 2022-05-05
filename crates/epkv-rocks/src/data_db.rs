@@ -4,7 +4,8 @@ use epkv_epaxos::exec::ExecNotify;
 use epkv_epaxos::id::InstanceId;
 use epkv_epaxos::store::DataStore;
 use epkv_utils::asc::Asc;
-use tracing::debug;
+use epkv_utils::cast::NumericCast;
+use epkv_utils::lock::with_mutex;
 
 use std::future::Future;
 use std::sync::Arc;
@@ -12,16 +13,26 @@ use std::sync::Arc;
 use anyhow::Result;
 use bytes::Bytes;
 use camino::Utf8Path;
+use parking_lot::Mutex as SyncMutex;
 use rocksdb::DB;
+use tracing::debug;
 
 pub struct DataDb {
     db: DB,
+    metrics: SyncMutex<Metrics>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Metrics {
+    pub executed_single_cmd_count: u64,
+    pub executed_batched_cmd_count: u64,
 }
 
 impl DataDb {
     pub fn new(path: &Utf8Path) -> Result<Arc<Self>> {
         let db = DB::open_default(path)?;
-        Ok(Arc::new(Self { db }))
+        let metrics = SyncMutex::new(Metrics { executed_batched_cmd_count: 0, executed_single_cmd_count: 0 });
+        Ok(Arc::new(Self { db, metrics }))
     }
 
     pub fn execute(self: &Arc<Self>, cmd: CommandKind) -> Result<()> {
@@ -53,6 +64,7 @@ impl DataDb {
     }
 
     pub fn batched_execute(self: &Arc<Self>, cmd: BatchedCommand) -> Result<()> {
+        let single_cmd_count: u64 = cmd.as_slice().len().numeric_cast();
         for cmd in cmd.as_slice() {
             let cmd = cmd.as_ref();
             let kind = cmd.kind.clone();
@@ -61,7 +73,15 @@ impl DataDb {
                 n.notify_executed();
             }
         }
+        with_mutex(&self.metrics, |m| {
+            m.executed_single_cmd_count = m.executed_single_cmd_count.wrapping_add(single_cmd_count);
+            m.executed_batched_cmd_count = m.executed_batched_cmd_count.wrapping_add(1)
+        });
         Ok(())
+    }
+
+    pub fn metrics(&self) -> Metrics {
+        with_mutex(&self.metrics, |m| m.clone())
     }
 }
 

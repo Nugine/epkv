@@ -204,6 +204,11 @@ where
         with_mutex(&self.metrics, |m| m.clone())
     }
 
+    #[inline]
+    pub fn data_store(&self) -> &D {
+        &self.data_store
+    }
+
     #[tracing::instrument(skip_all, fields(rid = ?self.rid, epoch = ?self.epoch.load()))]
     pub async fn handle_message(self: &Arc<Self>, msg: Message<C>) -> Result<()> {
         debug!(msg_variant_name = ?msg.variant_name());

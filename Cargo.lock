@@ -349,6 +349,7 @@ dependencies = [
  "camino",
  "epkv-epaxos",
  "epkv-utils",
+ "parking_lot",
  "rocksdb",
  "serde",
  "tokio",

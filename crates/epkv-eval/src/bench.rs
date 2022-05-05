@@ -244,6 +244,8 @@ fn diff_cluster_metrics(
     let mut preaccept_slow_path = 0;
     let mut recover_nop_count = 0;
     let mut recover_success_count = 0;
+    let mut executed_single_cmd_count = 0;
+    let mut executed_batched_cmd_count = 0;
 
     for (name, rhs) in after {
         let lhs = &before[name];
@@ -255,6 +257,8 @@ fn diff_cluster_metrics(
         preaccept_slow_path += rhs.replica_preaccept_slow_path - lhs.replica_preaccept_slow_path;
         recover_nop_count += rhs.replica_recover_nop_count - lhs.replica_recover_nop_count;
         recover_success_count += rhs.replica_recover_success_count - lhs.replica_recover_success_count;
+        executed_single_cmd_count += rhs.executed_single_cmd_count - lhs.executed_single_cmd_count;
+        executed_batched_cmd_count += rhs.executed_batched_cmd_count - lhs.executed_batched_cmd_count;
     }
 
     let avg_transmission_per_single_cmd = msg_total_size as f64 / single_cmd_count as f64;
@@ -264,14 +268,18 @@ fn diff_cluster_metrics(
     let avg_msg_count_per_batched_cmd = msg_count as f64 / batched_cmd_count as f64;
 
     Ok(json!({
-        "msg_count": msg_count,
-        "msg_total_size": msg_total_size,
-        "batched_cmd_count": batched_cmd_count,
-        "single_cmd_count": single_cmd_count,
-        "preaccept_fast_path": preaccept_fast_path,
-        "preaccept_slow_path": preaccept_slow_path,
-        "recover_nop_count": recover_nop_count,
-        "recover_success_count": recover_success_count,
+        "cluster": {
+            "msg_count": msg_count,
+            "msg_total_size": msg_total_size,
+            "batched_cmd_count": batched_cmd_count,
+            "single_cmd_count": single_cmd_count,
+            "preaccept_fast_path": preaccept_fast_path,
+            "preaccept_slow_path": preaccept_slow_path,
+            "recover_nop_count": recover_nop_count,
+            "recover_success_count": recover_success_count,
+            "executed_single_cmd_count": executed_single_cmd_count,
+            "executed_batched_cmd_count": executed_batched_cmd_count,
+        },
         "avg": {
             "avg_transmission_per_single_cmd": avg_transmission_per_single_cmd,
             "avg_transmission_per_batched_cmd": avg_transmission_per_batched_cmd,
