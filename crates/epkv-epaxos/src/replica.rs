@@ -1064,14 +1064,8 @@ where
                         }
                         PrepareReply::Nack(msg) => {
                             s.log.save_pbal(id, msg.pbal).await?;
-
-                            let avg_rtt = s.peers.get_avg_rtt();
-
                             let _ = self.propose_tx.remove(&id);
-
                             drop(guard);
-
-                            self.spawn_nack_recover_timeout(id, avg_rtt);
                             return Ok(());
                         }
                         PrepareReply::Ok(msg) => {
@@ -1234,25 +1228,25 @@ where
         }
     }
 
-    #[allow(clippy::float_arithmetic)]
-    fn spawn_nack_recover_timeout(self: &Arc<Self>, id: InstanceId, avg_rtt: Option<Duration>) {
-        let conf = &self.config.recover_timeout;
-        let duration = conf.with(avg_rtt, |d| {
-            let rate: f64 = rand::thread_rng().gen_range(1.0..4.0);
-            Duration::from_secs_f64(d.as_secs_f64() * rate)
-        });
-        if let dashmap::mapref::entry::Entry::Vacant(e) = self.recovering.entry(id) {
-            let this = Arc::clone(self);
-            let task = spawn(async move {
-                sleep(duration).await;
-                if let Err(err) = this.run_recover(id).await {
-                    error!(?id, ?err);
-                }
-                this.recovering.remove(&id);
-            });
-            e.insert(task);
-        }
-    }
+    // #[allow(clippy::float_arithmetic)]
+    // fn spawn_nack_recover_timeout(self: &Arc<Self>, id: InstanceId, avg_rtt: Option<Duration>) {
+    //     let conf = &self.config.recover_timeout;
+    //     let duration = conf.with(avg_rtt, |d| {
+    //         let rate: f64 = rand::thread_rng().gen_range(1.0..4.0);
+    //         Duration::from_secs_f64(d.as_secs_f64() * rate)
+    //     });
+    //     if let dashmap::mapref::entry::Entry::Vacant(e) = self.recovering.entry(id) {
+    //         let this = Arc::clone(self);
+    //         let task = spawn(async move {
+    //             sleep(duration).await;
+    //             if let Err(err) = this.run_recover(id).await {
+    //                 error!(?id, ?err);
+    //             }
+    //             this.recovering.remove(&id);
+    //         });
+    //         e.insert(task);
+    //     }
+    // }
 
     #[tracing::instrument(skip_all, fields(id = ?msg.id))]
     async fn handle_prepare(self: &Arc<Self>, msg: Prepare) -> Result<()> {
