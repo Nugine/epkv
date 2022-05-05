@@ -290,6 +290,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_propose(self: &Arc<Self>, cmd: C) -> Result<()> {
         let mut guard = self.state.lock().await;
         let s = &mut *guard;
@@ -956,7 +957,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(id = ?id))]
+    #[tracing::instrument(skip_all, fields(rid = ?self.rid, id = ?id))]
     async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
         loop {
             debug!("run_recover");
@@ -1200,19 +1201,6 @@ where
         }
     }
 
-    // fn spawn_recover_immediately(self: &Arc<Self>, id: InstanceId) {
-    //     let this = Arc::clone(self);
-    //     let task = spawn(async move {
-    //         if let Err(err) = this.run_recover(id).await {
-    //             error!(?id, ?err);
-    //         }
-    //         this.recovering.remove(&id);
-    //     });
-    //     if let Some(prev) = self.recovering.insert(id, task) {
-    //         prev.abort();
-    //     }
-    // }
-
     #[allow(clippy::float_arithmetic)]
     fn spawn_recover_timeout(self: &Arc<Self>, id: InstanceId, avg_rtt: Option<Duration>) {
         let conf = &self.config.recover_timeout;
@@ -1234,26 +1222,6 @@ where
             e.insert(task);
         }
     }
-
-    // #[allow(clippy::float_arithmetic)]
-    // fn spawn_nack_recover_timeout(self: &Arc<Self>, id: InstanceId, avg_rtt: Option<Duration>) {
-    //     let conf = &self.config.recover_timeout;
-    //     let duration = conf.with(avg_rtt, |d| {
-    //         let rate: f64 = rand::thread_rng().gen_range(1.0..4.0);
-    //         Duration::from_secs_f64(d.as_secs_f64() * rate)
-    //     });
-    //     if let dashmap::mapref::entry::Entry::Vacant(e) = self.recovering.entry(id) {
-    //         let this = Arc::clone(self);
-    //         let task = spawn(async move {
-    //             sleep(duration).await;
-    //             if let Err(err) = this.run_recover(id).await {
-    //                 error!(?id, ?err);
-    //             }
-    //             this.recovering.remove(&id);
-    //         });
-    //         e.insert(task);
-    //     }
-    // }
 
     #[tracing::instrument(skip_all, fields(id = ?msg.id))]
     async fn handle_prepare(self: &Arc<Self>, msg: Prepare) -> Result<()> {
@@ -1759,6 +1727,8 @@ where
             Ordering::Equal => {}
             Ordering::Greater => return,
         }
+
+        debug!(?id, ?seq, ?deps, "spawn_execute");
 
         let _ = self.graph.init_node(id, cmd, seq, deps, status);
 
