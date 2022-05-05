@@ -1778,6 +1778,8 @@ where
                     continue;
                 }
 
+                debug!("bfs waiting node {:?}", id);
+
                 let node = match self.graph.wait_node(id).await {
                     Some(node) => node,
                     None => continue, // executed node
