@@ -309,6 +309,18 @@ where
         duration.mul_f64(rate)
     }
 
+    fn insert_propose_chan(&self, id: InstanceId, chan_size: usize) -> mpsc::Receiver<Message<C>> {
+        let (tx, rx) = mpsc::channel(chan_size);
+        self.propose_tx.insert(id, tx);
+        debug!(?id, "insert_propose_chan");
+        rx
+    }
+
+    fn remove_propose_chan(&self, id: InstanceId) {
+        let _ = self.propose_tx.remove(&id);
+        debug!(?id, "remove_propose_chan");
+    }
+
     #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn phase_preaccept(
         self: &Arc<Self>,
@@ -354,11 +366,7 @@ where
             let quorum = s.peers.cluster_size().wrapping_sub(2);
             let selected_peers = s.peers.select(quorum, acc.as_ref());
 
-            let rx = {
-                let (tx, rx) = mpsc::channel(quorum);
-                self.propose_tx.insert(id, tx);
-                rx
-            };
+            let rx = self.insert_propose_chan(id, quorum);
 
             let avg_rtt = s.peers.get_avg_rtt();
 
@@ -542,7 +550,7 @@ where
 
                     s.peers.set_inf_rtt(&no_reply_targets);
 
-                    let _ = self.propose_tx.remove(&id);
+                    self.remove_propose_chan(id);
 
                     return Ok(());
                 }
@@ -683,11 +691,7 @@ where
                 s.log.save(id, ins, mode).await?;
             }
 
-            let rx = {
-                let (tx, rx) = mpsc::channel(quorum);
-                self.propose_tx.insert(id, tx);
-                rx
-            };
+            let rx = self.insert_propose_chan(id, quorum);
 
             let avg_rtt = s.peers.get_avg_rtt();
 
@@ -778,7 +782,7 @@ where
             }
         }
 
-        let _ = self.propose_tx.remove(&id);
+        self.remove_propose_chan(id);
 
         Ok(())
     }
@@ -1001,11 +1005,7 @@ where
 
                 let mut targets = s.peers.select_all();
 
-                let rx = {
-                    let (tx, rx) = mpsc::channel(targets.len());
-                    self.propose_tx.insert(id, tx);
-                    rx
-                };
+                let rx = self.insert_propose_chan(id, targets.len());
 
                 drop(guard);
 
@@ -1084,7 +1084,7 @@ where
                         }
                         PrepareReply::Nack(msg) => {
                             s.log.save_pbal(id, msg.pbal).await?;
-                            let _ = self.propose_tx.remove(&id);
+                            self.remove_propose_chan(id);
                             drop(guard);
                             return Ok(());
                         }
@@ -1201,6 +1201,8 @@ where
 
                     return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
                 }
+
+                self.remove_propose_chan(id);
             }
 
             {
@@ -1729,7 +1731,7 @@ where
     }
 
     fn spawn_execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps, status: Status) {
-        let _ = self.propose_tx.remove(&id);
+        self.remove_propose_chan(id);
         if let Some((_, task)) = self.recovering.remove(&id) {
             task.abort()
         }
