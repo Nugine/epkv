@@ -137,6 +137,7 @@ where
     L: LogStore<C>,
 {
     fn drop(&mut self) {
+        debug!("unlock state");
         let elapsed = self.t1.elapsed();
         if elapsed > Duration::from_secs(1) {
             debug!(?elapsed, "state is locked for too long time")
@@ -351,8 +352,13 @@ where
     }
 
     async fn lock_state(&self) -> StateGuard<'_, C, L> {
+        debug!("start to lock state");
+
         let t0 = Instant::now();
         let guard = self.state.lock().await;
+
+        debug!("locked state");
+
         let elapsed = t0.elapsed();
         if elapsed > Duration::from_secs(1) {
             debug!(?elapsed, "lock state too slow");
@@ -1145,8 +1151,6 @@ where
                         continue;
                     }
 
-                    debug!(?id, received_len = ?received.len(), "receive new prepare reply");
-
                     let mut guard = self.lock_state().await;
                     let s = &mut *guard;
 
@@ -1199,6 +1203,8 @@ where
                             tuples.push((msg.sender, msg.seq, msg.deps, msg.status, msg.acc));
                         }
                     }
+
+                    debug!(?id, received_len = ?received.len(), "received prepare reply: tuples: {:?}", tuples);
 
                     let cluster_size = s.peers.cluster_size();
                     if received.len() <= cluster_size / 2 {
@@ -1298,6 +1304,7 @@ where
                 // adaptive?
                 let base = Duration::from_micros(self.config.recover_timeout.default_us);
                 let timeout = Self::random_time(base, 0.5..1.5);
+                debug!("retry recover after {:?}", timeout);
                 sleep(timeout).await
             }
         }
