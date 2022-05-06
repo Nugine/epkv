@@ -3,6 +3,7 @@ use crate::id::ReplicaId;
 use epkv_utils::asc::Asc;
 use epkv_utils::vecset::VecSet;
 
+use std::fmt;
 use std::hash::Hash;
 
 use once_cell::sync::Lazy;
@@ -26,7 +27,7 @@ impl MutableAcc {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Acc(Asc<MutableAcc>);
 
 impl Acc {
@@ -103,5 +104,11 @@ impl FromIterator<ReplicaId> for MutableAcc {
 impl FromIterator<ReplicaId> for Acc {
     fn from_iter<T: IntoIterator<Item = ReplicaId>>(iter: T) -> Self {
         Acc::from_mutable(MutableAcc(VecSet::from_iter(iter)))
+    }
+}
+
+impl fmt::Debug for Acc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_set().entries(self.as_inner().0.as_slice().iter()).finish()
     }
 }
