@@ -16,6 +16,7 @@ use futures_util::stream::StreamExt;
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::spawn;
+use tokio::sync::Semaphore;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::{self, error::Elapsed};
@@ -285,6 +286,7 @@ pub trait Service<A: Send + 'static>: Send + Sync + 'static {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcServerConfig {
     pub max_frame_length: usize,
+    pub max_task_num: usize,
 }
 
 #[inline]
@@ -300,6 +302,7 @@ where
     <S as Service<A>>::Output: Serialize + Send + 'static,
 {
     let max_frame_length = config.max_frame_length;
+    let limit = Arc::new(Semaphore::new(config.max_task_num));
 
     loop {
         if service.needs_stop() {
@@ -318,7 +321,7 @@ where
         let (res_tx, mut res_rx): _ = mpsc::unbounded_channel::<RpcResponse<S::Output>>();
 
         {
-            clone!(service, working);
+            clone!(service, working, limit);
             spawn(async move {
                 if service.needs_stop() {
                     return Ok(());
@@ -330,6 +333,8 @@ where
                     }
 
                     let bytes = result.inspect_err(|err| error!(?err, "remote rx error"))?;
+
+                    let permit = limit.clone().acquire_owned().await.unwrap();
 
                     clone!(service, working, res_tx);
                     spawn(async move {
@@ -354,6 +359,7 @@ where
                         let _ = res_tx.send(res);
 
                         drop(working);
+                        drop(permit);
                     });
                 }
 

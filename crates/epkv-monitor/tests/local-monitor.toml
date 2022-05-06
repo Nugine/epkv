@@ -5,3 +5,4 @@ save_state_interval_us = 1000000 # 1s
 
 [rpc_server]
 max_frame_length = 16777216 # 16 MiB
+max_task_num = 100_000
