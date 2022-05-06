@@ -36,7 +36,7 @@ where
 
     status_bounds: Asc<SyncMutex<StatusBounds>>,
 
-    ins_cache: FnvHashMap<InstanceId, Instance<C>>,
+    ins_cache: VecMap<ReplicaId, FnvHashMap<LocalInstanceId, Instance<C>>>,
     pbal_cache: FnvHashMap<InstanceId, Ballot>,
 }
 
@@ -70,7 +70,7 @@ where
 
         let max_seq = MaxSeq { checkpoint: attr_bounds.max_seq, any: attr_bounds.max_seq };
 
-        let ins_cache = FnvHashMap::default();
+        let ins_cache = VecMap::new();
         let pbal_cache = FnvHashMap::default();
 
         Self {
@@ -173,8 +173,32 @@ where
         garbage
     }
 
+    fn ins_cache_get(&self, id: InstanceId) -> Option<&Instance<C>> {
+        let row = self.ins_cache.get(&id.0)?;
+        row.get(&id.1)
+    }
+
+    fn ins_cache_get_mut(&mut self, id: InstanceId) -> Option<&mut Instance<C>> {
+        let row = self.ins_cache.get_mut(&id.0)?;
+        row.get_mut(&id.1)
+    }
+
+    fn ins_cache_contains(&self, id: InstanceId) -> bool {
+        match self.ins_cache.get(&id.0) {
+            Some(row) => row.contains_key(&id.1),
+            None => false,
+        }
+    }
+
+    fn cache_insert(&mut self, id: InstanceId, ins: Instance<C>) {
+        let (_, row) = self.ins_cache.init_with(id.0, FnvHashMap::default);
+        if row.insert(id.1, ins).is_none() {
+            self.pbal_cache.remove(&id);
+        }
+    }
+
     pub async fn save(&mut self, id: InstanceId, ins: Instance<C>, mode: UpdateMode) -> Result<()> {
-        let needs_update_attrs = if let Some(saved) = self.ins_cache.get(&id) {
+        let needs_update_attrs = if let Some(saved) = self.ins_cache_get(id) {
             saved.seq != ins.seq || saved.deps != ins.deps
         } else {
             true
@@ -195,21 +219,20 @@ where
 
         self.status_bounds.lock().set(id, ins.status);
 
-        let _ = self.ins_cache.insert(id, ins);
-        let _ = self.pbal_cache.remove(&id);
+        self.cache_insert(id, ins);
+
         Ok(())
     }
 
     pub async fn load(&mut self, id: InstanceId) -> Result<()> {
-        if self.ins_cache.contains_key(&id).not() {
+        if self.ins_cache_contains(id).not() {
             let t0 = Instant::now();
             let result = self.log_store.load(id).await;
             debug!(elapsed_us = ?t0.elapsed().as_micros(), "loaded instance id: {:?}", id);
 
             if let Some(ins) = result? {
                 self.status_bounds.lock().set(id, ins.status);
-                let _ = self.ins_cache.insert(id, ins);
-                let _ = self.pbal_cache.remove(&id);
+                self.cache_insert(id, ins);
             } else if self.pbal_cache.contains_key(&id).not() {
                 if let Some(pbal) = self.log_store.load_pbal(id).await? {
                     let _ = self.pbal_cache.insert(id, pbal);
@@ -222,7 +245,7 @@ where
     pub async fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Result<()> {
         self.log_store.save_pbal(id, pbal).await?;
 
-        match self.ins_cache.get_mut(&id) {
+        match self.ins_cache_get_mut(id) {
             Some(ins) => {
                 ins.pbal = pbal;
             }
@@ -236,7 +259,7 @@ where
 
     pub async fn update_status(&mut self, id: InstanceId, status: Status) -> Result<()> {
         self.log_store.update_status(id, status).await?;
-        if let Some(ins) = self.ins_cache.get_mut(&id) {
+        if let Some(ins) = self.ins_cache_get_mut(id) {
             if ins.status >= Status::Committed && status < Status::Committed {
                 debug!(?id, ins_status=?ins.status, new_status=?status, "consistency incorrect");
                 panic!("consistency incorrect")
@@ -248,14 +271,14 @@ where
     }
 
     pub fn get_cached_pbal(&self, id: InstanceId) -> Option<Ballot> {
-        if let Some(ins) = self.ins_cache.get(&id) {
+        if let Some(ins) = self.ins_cache_get(id) {
             return Some(ins.pbal);
         }
         self.pbal_cache.get(&id).copied()
     }
 
     pub fn get_cached_ins(&self, id: InstanceId) -> Option<&Instance<C>> {
-        self.ins_cache.get(&id)
+        self.ins_cache_get(id)
     }
 
     pub fn should_ignore_pbal(&self, id: InstanceId, pbal: Ballot) -> bool {
@@ -269,7 +292,7 @@ where
     }
 
     pub fn should_ignore_status(&self, id: InstanceId, pbal: Ballot, next_status: Status) -> bool {
-        if let Some(ins) = self.ins_cache.get(&id) {
+        if let Some(ins) = self.get_cached_ins(id) {
             let abal = ins.abal;
             let status = ins.status;
 
@@ -313,9 +336,15 @@ where
         Ok(())
     }
 
-    pub fn retire_instance(&mut self, id: InstanceId) {
-        if self.ins_cache.remove(&id).is_none() {
-            self.pbal_cache.remove(&id);
+    fn cache_remove(&mut self, id: InstanceId) {
+        if let Some(row) = self.ins_cache.get_mut(&id.0) {
+            if row.remove(&id.1).is_none() {
+                self.pbal_cache.remove(&id);
+            }
         }
+    }
+
+    pub fn retire_instance(&mut self, id: InstanceId) {
+        self.cache_remove(id);
     }
 }
