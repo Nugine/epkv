@@ -1418,6 +1418,7 @@ where
         });
     }
 
+    #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_join(self: &Arc<Self>) -> Result<bool> {
         debug!("run_join");
 
@@ -1524,6 +1525,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_probe_rtt(&self) -> Result<()> {
         let mut guard = self.lock_state().await;
         let s = &mut *guard;
@@ -1785,6 +1787,7 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_broadcast_bounds(self: &Arc<Self>) -> Result<()> {
         let mut guard = self.lock_state().await;
         let s = &mut *guard;
@@ -1865,9 +1868,10 @@ where
         debug!("wait graph");
 
         {
+            debug!("start to lock row {:?}", root.0);
             let row_lock = self.init_row_lock(root.0);
             let row_guard = row_lock.lock_owned().await;
-            debug!("lock row {:?}", root.0);
+            debug!("locked row {:?}", root.0);
 
             let mut vis: _ = FnvHashSet::<InstanceId>::default();
             let mut q = DepsQueue::new(root);
@@ -1987,20 +1991,20 @@ where
 
                     let mut needs_issue = None;
                     for (id, node) in &scc {
-                        let mut guard = node.status.lock();
-                        let status = &mut *guard;
-                        let flag = *status == ExecStatus::Committed;
-                        if let Some(prev) = needs_issue {
-                            if prev != flag {
-                                debug!(?root, ?id, status = ?*status, "scc marking incorrect: {:?}", scc);
-                                panic!("scc marking incorrect")
+                        with_mutex(&node.status, |es| {
+                            let flag = *es == ExecStatus::Committed;
+                            if let Some(prev) = needs_issue {
+                                if prev != flag {
+                                    debug!(?root, ?id, status = ?*es, "scc marking incorrect: {:?}", scc);
+                                    panic!("scc marking incorrect")
+                                }
                             }
-                        }
-                        needs_issue = Some(flag);
-                        if flag {
-                            *status = ExecStatus::Issuing;
-                            debug!(?id, "mark issuing")
-                        }
+                            needs_issue = Some(flag);
+                            if flag {
+                                *es = ExecStatus::Issuing;
+                                debug!(?id, "mark issuing")
+                            }
+                        });
                     }
 
                     let needs_issue = needs_issue.unwrap();
@@ -2043,7 +2047,7 @@ where
     #[tracing::instrument(skip_all, fields(?id))]
     async fn run_execute_single_node(self: &Arc<Self>, id: InstanceId, node: Asc<InsNode<C>>) -> Result<()> {
         {
-            let status = *node.status.lock();
+            let status = with_mutex(&node.status, |es| *es);
             assert_eq!(status, ExecStatus::Issuing);
         }
 
@@ -2056,25 +2060,34 @@ where
         notify.wait_issued().await;
 
         let prev_status = {
-            let mut guard = self.lock_state().await;
-            let s = &mut *guard;
             let status = notify.status();
-            s.log.update_status(id, status).await?;
-            match status {
-                Status::Issued => *node.status.lock() = ExecStatus::Issued,
-                Status::Executed => *node.status.lock() = ExecStatus::Executed,
-                _ => {}
+
+            {
+                let mut guard = self.lock_state().await;
+                let s = &mut *guard;
+                s.log.update_status(id, status).await?;
             }
-            debug!(?status);
+
+            with_mutex(&node.status, |es| match status {
+                Status::Issued => *es = ExecStatus::Issued,
+                Status::Executed => *es = ExecStatus::Executed,
+                _ => {}
+            });
+
             status
         };
+
+        debug!(?prev_status);
+
         notify.wait_executed().await;
 
         if prev_status < Status::Executed {
-            let mut guard = self.lock_state().await;
-            let s = &mut *guard;
-            s.log.update_status(id, Status::Executed).await?;
-            *node.status.lock() = ExecStatus::Executed;
+            {
+                let mut guard = self.lock_state().await;
+                let s = &mut *guard;
+                s.log.update_status(id, Status::Executed).await?;
+            }
+            with_mutex(&node.status, |es| *es = ExecStatus::Executed);
         }
 
         self.retire_executed_instances(std::iter::once(id)).await;
@@ -2122,11 +2135,15 @@ where
             for (&(id, ref node), n) in scc.iter().zip(handles.iter()) {
                 let status = n.status();
                 s.log.update_status(id, status).await?;
-                match status {
-                    Status::Issued => *node.status.lock() = ExecStatus::Issued,
-                    Status::Executed => *node.status.lock() = ExecStatus::Executed,
-                    _ => {}
-                };
+
+                with_mutex(&node.status, |es| {
+                    match status {
+                        Status::Issued => *es = ExecStatus::Issued,
+                        Status::Executed => *es = ExecStatus::Executed,
+                        _ => {}
+                    };
+                });
+
                 prev_status.push(status);
             }
         }
@@ -2141,7 +2158,7 @@ where
             for (&(id, ref node), &prev) in scc.iter().zip(prev_status.iter()) {
                 if Status::Executed > prev {
                     s.log.update_status(id, Status::Executed).await?;
-                    *node.status.lock() = ExecStatus::Executed;
+                    with_mutex(&node.status, |es| *es = ExecStatus::Executed);
                 }
             }
         }
@@ -2166,6 +2183,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_clear_key_map(self: &Arc<Self>) {
         debug!("run_clear_key_map");
         let mut guard = self.lock_state().await;
@@ -2175,6 +2193,7 @@ where
         drop(garbage);
     }
 
+    #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_save_bounds(self: &Arc<Self>) -> Result<()> {
         let mut guard = self.lock_state().await;
         let s = &mut *guard;
