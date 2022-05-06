@@ -22,6 +22,7 @@ use std::ops::Not;
 use dashmap::DashMap;
 use fnv::{FnvHashMap, FnvHashSet};
 use parking_lot::Mutex as SyncMutex;
+use parking_lot::MutexGuard as SyncMutexGuard;
 use rand::prelude::SliceRandom;
 use tokio::sync::Notify;
 
@@ -45,11 +46,12 @@ pub struct InsNode<C> {
 
 impl<C> InsNode<C> {
     pub fn estatus<R>(&self, f: impl FnOnce(&mut ExecStatus) -> R) -> R {
-        // debug!("start to lock node {id:?}");
         let mut guard = self.status.lock();
-        // debug!("locked node {id:?}");
         f(&mut *guard)
-        // debug!("unlock node {id:?}");
+    }
+
+    pub fn lock_estatus(&self) -> SyncMutexGuard<'_, ExecStatus> {
+        self.status.lock()
     }
 }
 

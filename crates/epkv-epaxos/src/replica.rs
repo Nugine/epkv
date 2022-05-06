@@ -76,7 +76,6 @@ where
     recovering: DashMap<InstanceId, JoinHandle<()>>,
     executing: DashMap<InstanceId, JoinHandle<()>>,
     exec_row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
-    marking: AsyncMutex<()>,
     executing_limit: Arc<Semaphore>,
 
     metrics: SyncMutex<Metrics>,
@@ -210,7 +209,6 @@ where
 
         let executing = DashMap::new();
         let exec_row_locks = DashMap::new();
-        let marking = AsyncMutex::new(());
 
         let executing_limit = Arc::new(Semaphore::new(
             config.execution_limits.max_task_num.numeric_cast(),
@@ -240,7 +238,6 @@ where
             recovering,
             executing,
             exec_row_locks,
-            marking,
             executing_limit,
             metrics,
             probe_rtt_countdown,
@@ -1916,7 +1913,6 @@ where
                 };
 
                 {
-                    let _guard = self.marking.lock().await;
                     let needs_skip = node.estatus(|es| *es > ExecStatus::Committed);
                     if needs_skip {
                         continue;
@@ -2019,25 +2015,38 @@ where
             let scc_list = {
                 let mut ans = Vec::with_capacity(scc_list.len());
                 for scc in scc_list {
-                    let _guard = self.marking.lock().await;
+                    let mut stack = Vec::with_capacity(scc.len());
+
+                    for &(id, ref node) in &scc {
+                        let guard = node.lock_estatus();
+                        stack.push((id, guard));
+                    }
+
+                    debug!("locked scc");
 
                     let mut needs_issue = None;
-                    for &(id, ref node) in &scc {
-                        node.estatus(|es| {
-                            let flag = *es == ExecStatus::Committed;
-                            if let Some(prev) = needs_issue {
-                                if prev != flag {
-                                    debug!(?root, ?id, status = ?*es, "scc marking incorrect: {:?}", scc);
-                                    panic!("scc marking incorrect")
-                                }
+                    for &mut (id, ref mut guard) in stack.iter_mut().rev() {
+                        let es = &mut **guard;
+                        let flag = *es == ExecStatus::Committed;
+                        if let Some(prev) = needs_issue {
+                            if prev != flag {
+                                debug!(?root, ?id, status = ?*es, "scc marking incorrect: {:?}", scc);
+                                panic!("scc marking incorrect")
                             }
-                            needs_issue = Some(flag);
-                            if flag {
-                                *es = ExecStatus::Issuing;
-                                debug!(?id, "mark issuing")
-                            }
-                        });
+                        }
+                        needs_issue = Some(flag);
+                        if flag {
+                            *es = ExecStatus::Issuing;
+                            debug!(?id, "mark issuing")
+                        }
                     }
+
+                    debug!("unlock scc");
+
+                    while let Some((_, guard)) = stack.pop() {
+                        drop(guard);
+                    }
+                    drop(stack);
 
                     let needs_issue = needs_issue.unwrap();
                     if needs_issue {
