@@ -20,6 +20,7 @@ use epkv_utils::vecmap::VecMap;
 use anyhow::Result;
 use fnv::FnvHashMap;
 use parking_lot::Mutex as SyncMutex;
+use tracing::debug;
 
 pub struct Log<C, L>
 where
@@ -230,6 +231,10 @@ where
     pub async fn update_status(&mut self, id: InstanceId, status: Status) -> Result<()> {
         self.log_store.update_status(id, status).await?;
         if let Some(ins) = self.ins_cache.get_mut(&id) {
+            if ins.status >= Status::Committed && status < Status::Committed {
+                debug!(?id, ins_status=?ins.status, new_status=?status, "consistency incorrect");
+                panic!("consistency incorrect")
+            }
             ins.status = status;
         }
         self.status_bounds.lock().set(id, status);
