@@ -708,6 +708,8 @@ where
             s.log.save(id, ins, mode).await?
         }
 
+        let avg_rtt = s.peers.get_avg_rtt();
+
         drop(guard);
 
         {
@@ -723,6 +725,8 @@ where
                 },
             );
         }
+
+        self.spawn_recover_timeout(id, avg_rtt);
         Ok(())
     }
 
@@ -913,6 +917,8 @@ where
             s.log.save(id, ins, mode).await?;
         }
 
+        let avg_rtt = s.peers.get_avg_rtt();
+
         drop(guard);
 
         {
@@ -921,6 +927,8 @@ where
             let epoch = self.epoch.load();
             self.network.send_one(target, Message::AcceptOk(AcceptOk { sender, epoch, id, pbal }));
         }
+
+        self.spawn_recover_timeout(id, avg_rtt);
         Ok(())
     }
 
@@ -1061,25 +1069,34 @@ where
         loop {
             debug!("run_recover");
 
-            let needs_delay = if self.propose_tx.contains_key(&id) {
-                debug!(?id, "propose_tx exists");
-                true
-            } else {
-                is_not_first
-            };
-            is_not_first = true;
+            loop {
+                let needs_delay = if self.propose_tx.contains_key(&id) {
+                    debug!(?id, "propose_tx exists");
+                    true
+                } else {
+                    is_not_first
+                };
 
-            if needs_delay {
-                // adaptive?
-                let base = Duration::from_micros(self.config.recover_timeout.default_us);
-                let timeout = Self::random_time(base, 0.5..1.5);
-                debug!("delay recover in {:?}", timeout);
-                sleep(timeout).await
+                if needs_delay {
+                    // adaptive?
+                    let base = Duration::from_micros(self.config.recover_timeout.default_us);
+                    let timeout = Self::random_time(base, 0.5..1.5);
+                    debug!("delay recover in {:?}", timeout);
+                    sleep(timeout).await
+                } else {
+                    break;
+                }
             }
+
+            is_not_first = true;
 
             let mut rx = {
                 let mut guard = self.lock_state().await;
                 let s = &mut *guard;
+
+                if self.propose_tx.contains_key(&id) {
+                    continue;
+                }
 
                 s.log.load(id).await?;
 
