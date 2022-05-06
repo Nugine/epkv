@@ -137,8 +137,7 @@ where
     L: LogStore<C>,
 {
     fn drop(&mut self) {
-        let elapsed = self.t1.elapsed();
-        debug!(elapsed_us = ?elapsed.as_micros(), "unlock state");
+        debug!(elapsed_us = ?self.t1.elapsed().as_micros(), "unlock state");
     }
 }
 
@@ -360,8 +359,7 @@ where
         let t0 = Instant::now();
         let guard = self.state.lock().await;
 
-        let elapsed = t0.elapsed();
-        debug!(elapsed_us = ?elapsed.as_micros(), "locked state");
+        debug!(elapsed_us = ?t0.elapsed().as_micros(), "locked state");
 
         let t1 = Instant::now();
         StateGuard { guard, t1 }
@@ -427,8 +425,7 @@ where
             let (seq, deps) = s.log.calc_attributes(id, &cmd.keys());
             let deps = Deps::from_mutable(deps);
 
-            let calc_elapsed = calc_t0.elapsed();
-            debug!(?id, ?seq, ?deps, elapsed_us=?calc_elapsed.as_micros(), "calc_attributes");
+            debug!(?id, ?seq, ?deps, elapsed_us=?calc_t0.elapsed().as_micros(), "calc_attributes");
 
             let abal = pbal;
             let status = Status::PreAccepted;
@@ -1897,7 +1894,8 @@ where
 
             let mut vis: _ = FnvHashSet::<InstanceId>::default();
             let mut q = DepsQueue::new(root);
-            let bfs_t0 = Instant::now();
+
+            let t0 = Instant::now();
 
             while let Some(id) = q.pop() {
                 if vis.contains(&id) {
@@ -1957,7 +1955,7 @@ where
                 }
 
                 {
-                    let elapsed = bfs_t0.elapsed();
+                    let elapsed = t0.elapsed();
                     if elapsed > Duration::from_secs(1) {
                         debug!(elapsed_us = ?elapsed.as_micros(), "bfs too slow")
                     }

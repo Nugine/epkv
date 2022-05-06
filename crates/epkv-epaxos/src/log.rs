@@ -184,15 +184,13 @@ where
             clone!(ins);
             let t0 = Instant::now();
             self.log_store.save(id, ins, mode).await?;
-            let elapsed = t0.elapsed();
-            debug!(elapsed_us = ?elapsed.as_micros(), "saved instance id: {:?}, mode: {:?}", id, mode);
+            debug!(elapsed_us = ?t0.elapsed().as_micros(), "saved instance id: {:?}, mode: {:?}", id, mode);
         }
 
         if needs_update_attrs {
             let t0 = Instant::now();
             self.update_attrs(id, ins.cmd.keys(), ins.seq);
-            let elapsed = t0.elapsed();
-            debug!(elapsed_us = ?elapsed.as_micros(), "updated attrs id: {:?}", id);
+            debug!(elapsed_us = ?t0.elapsed().as_micros(), "updated attrs id: {:?}", id);
         }
 
         self.status_bounds.lock().set(id, ins.status);
@@ -204,10 +202,9 @@ where
 
     pub async fn load(&mut self, id: InstanceId) -> Result<()> {
         if self.ins_cache.contains_key(&id).not() {
-            let load_t0 = Instant::now();
+            let t0 = Instant::now();
             let result = self.log_store.load(id).await;
-            let elapsed = load_t0.elapsed();
-            debug!(elapsed_us = ?elapsed.as_micros(), "loaded instance id: {:?}", id);
+            debug!(elapsed_us = ?t0.elapsed().as_micros(), "loaded instance id: {:?}", id);
 
             if let Some(ins) = result? {
                 self.status_bounds.lock().set(id, ins.status);

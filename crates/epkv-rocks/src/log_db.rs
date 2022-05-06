@@ -158,8 +158,7 @@ impl LogDb {
         let t0 = Instant::now();
         let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_STATUS);
         let result = put_small_value(&mut &self.db, bytes_of(&log_key), &status);
-        let elapsed = t0.elapsed();
-        debug!(elapsed_us = ?elapsed.as_micros(), "updated status");
+        debug!(elapsed_us = ?t0.elapsed().as_micros(), "updated status");
         result
     }
 
