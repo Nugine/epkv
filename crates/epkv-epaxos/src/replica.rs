@@ -1904,18 +1904,18 @@ where
 
                 let mut needs_issue = None;
 
-                for &mut (id, ref mut guard) in &mut stack {
+                for &mut (scc_node_id, ref mut guard) in &mut stack {
                     let status = &mut **guard;
                     let flag = *status == ExecStatus::Committed;
                     if let Some(prev) = needs_issue {
                         if prev != flag {
-                            panic!("id={:?}, scc marking incorrect", id)
+                            panic!("root: {:?}, id: {:?}, scc marking incorrect", id, scc_node_id)
                         }
                     }
                     needs_issue = Some(flag);
                     if flag {
                         *status = ExecStatus::Issuing;
-                        debug!(?id, "mark issuing")
+                        debug!(?scc_node_id, "mark issuing")
                     }
                 }
 
