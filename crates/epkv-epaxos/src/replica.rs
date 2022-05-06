@@ -29,7 +29,7 @@ use epkv_utils::vecset::VecSet;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::ops::Not;
+use std::ops::{Deref, DerefMut, Not};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering::*;
 use std::sync::Arc;
@@ -97,6 +97,50 @@ where
     lid_head: Head<LocalInstanceId>,
 
     sync_id_head: Head<SyncId>,
+}
+
+struct StateGuard<'a, C, L>
+where
+    C: CommandLike,
+    L: LogStore<C>,
+{
+    guard: AsyncMutexGuard<'a, State<C, L>>,
+    t1: Instant,
+}
+
+impl<C, L> Deref for StateGuard<'_, C, L>
+where
+    C: CommandLike,
+    L: LogStore<C>,
+{
+    type Target = State<C, L>;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.guard
+    }
+}
+
+impl<C, L> DerefMut for StateGuard<'_, C, L>
+where
+    C: CommandLike,
+    L: LogStore<C>,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.guard
+    }
+}
+
+impl<C, L> Drop for StateGuard<'_, C, L>
+where
+    C: CommandLike,
+    L: LogStore<C>,
+{
+    fn drop(&mut self) {
+        let elapsed = self.t1.elapsed();
+        if elapsed > Duration::from_secs(1) {
+            debug!(?elapsed, "state is locked for too long time")
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -300,14 +344,16 @@ where
         }
     }
 
-    async fn lock_state(&self) -> AsyncMutexGuard<'_, State<C, L>> {
+    async fn lock_state(&self) -> StateGuard<'_, C, L> {
         let t0 = Instant::now();
         let guard = self.state.lock().await;
         let elapsed = t0.elapsed();
         if elapsed > Duration::from_secs(1) {
             debug!(?elapsed, "lock state too slow");
         }
-        guard
+
+        let t1 = Instant::now();
+        StateGuard { guard, t1 }
     }
 
     #[tracing::instrument(skip_all, fields(rid=?self.rid))]
@@ -344,7 +390,7 @@ where
     #[tracing::instrument(skip_all, fields(id = ?id, pbal=?pbal))]
     async fn phase_preaccept(
         self: &Arc<Self>,
-        mut guard: AsyncMutexGuard<'_, State<C, L>>,
+        mut guard: StateGuard<'_, C, L>,
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,
@@ -683,7 +729,7 @@ where
     #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn phase_accept(
         self: &Arc<Self>,
-        mut guard: AsyncMutexGuard<'_, State<C, L>>,
+        mut guard: StateGuard<'_, C, L>,
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,
@@ -871,7 +917,7 @@ where
     #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn phase_commit(
         self: &Arc<Self>,
-        mut guard: AsyncMutexGuard<'_, State<C, L>>,
+        mut guard: StateGuard<'_, C, L>,
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,
