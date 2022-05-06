@@ -1805,7 +1805,8 @@ where
             let mut row_guards = {
                 let row_lock = self.init_row_lock(root.0);
                 let guard = row_lock.lock_owned().await;
-                vec![guard]
+                debug!("lock row {:?}", root.0);
+                vec![(root.0, guard)]
             };
 
             let mut vis: _ = FnvHashSet::<InstanceId>::default();
@@ -1839,7 +1840,8 @@ where
                 {
                     let row_lock = self.init_row_lock(id.0);
                     if let Ok(guard) = row_lock.try_lock_owned() {
-                        row_guards.push(guard);
+                        debug!("try lock row {:?}", id.0);
+                        row_guards.push((id.0, guard));
                     }
                 }
 
@@ -1881,7 +1883,8 @@ where
                 }
             }
 
-            while let Some(guard) = row_guards.pop() {
+            while let Some((row, guard)) = row_guards.pop() {
+                debug!("unlock row {:?}", row);
                 drop(guard)
             }
         }
@@ -1940,7 +1943,8 @@ where
                     let flag = *status == ExecStatus::Committed;
                     if let Some(prev) = needs_issue {
                         if prev != flag {
-                            panic!("root: {:?}, id: {:?}, scc marking incorrect", root, scc_node_id)
+                            debug!(?root, ?scc_node_id, status = ?*status, "scc marking incorrect: {:?}", scc);
+                            panic!("scc marking incorrect")
                         }
                     }
                     needs_issue = Some(flag);
