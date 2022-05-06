@@ -360,12 +360,8 @@ where
         let t0 = Instant::now();
         let guard = self.state.lock().await;
 
-        debug!("locked state");
-
         let elapsed = t0.elapsed();
-        if elapsed > Duration::from_secs(1) {
-            debug!(?elapsed, "lock state too slow");
-        }
+        debug!(elapsed_us = ?elapsed.as_micros(), "locked state");
 
         let t1 = Instant::now();
         StateGuard { guard, t1 }
