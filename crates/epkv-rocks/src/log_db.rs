@@ -167,9 +167,14 @@ impl LogDb {
         get_value(&self.db, bytes_of(&log_key))
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn update_status(self: &Arc<Self>, id: InstanceId, status: Status) -> Result<()> {
+        let t0 = Instant::now();
         let log_key = InstanceFieldKey::new(id, InstanceFieldKey::FIELD_STATUS);
-        put_small_value(&mut &self.db, bytes_of(&log_key), &status)
+        let result = put_small_value(&mut &self.db, bytes_of(&log_key), &status);
+        let elapsed = t0.elapsed();
+        debug!(elapsed_us = ?elapsed.as_micros(), "updated status");
+        result
     }
 
     pub fn save_bounds(self: &Arc<Self>, attr: AttrBounds, status: SavedStatusBounds) -> Result<()> {
