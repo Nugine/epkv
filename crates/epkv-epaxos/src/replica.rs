@@ -1789,7 +1789,6 @@ where
                 if let Err(err) = this.run_execute(id).await {
                     error!(?id, ?err)
                 }
-                let _ = this.executing.remove(&id);
             })
         });
     }
@@ -1874,6 +1873,8 @@ where
                     debug!("bfs too slow")
                 }
             }
+
+            let _ = self.executing.remove(&root);
 
             debug!("unlock row {:?}", root.0);
             drop(row_guard)
