@@ -1058,16 +1058,24 @@ where
 
     #[tracing::instrument(skip_all, fields(rid = ?self.rid, id = ?id))]
     async fn run_recover(self: &Arc<Self>, id: InstanceId) -> Result<()> {
+        let mut is_not_first = false;
         loop {
             debug!("run_recover");
 
-            if self.propose_tx.contains_key(&id) {
+            let needs_delay = if self.propose_tx.contains_key(&id) {
                 debug!(?id, "propose_tx exists");
+                true
+            } else {
+                is_not_first
+            };
+            is_not_first = true;
+
+            if needs_delay {
                 // adaptive?
                 let base = Duration::from_micros(self.config.recover_timeout.default_us);
                 let timeout = Self::random_time(base, 0.5..1.5);
-                sleep(timeout).await;
-                continue;
+                debug!("delay recover in {:?}", timeout);
+                sleep(timeout).await
             }
 
             let mut rx = {
@@ -1091,6 +1099,8 @@ where
                     Some(Ballot(rnd, _)) => Ballot(rnd.add_one(), self.rid),
                     None => Ballot(Round::ZERO, self.rid),
                 };
+
+                debug!(?pbal);
 
                 let known = matches!(s.log.get_cached_ins(id), Some(ins) if ins.cmd.is_nop().not());
 
@@ -1131,6 +1141,8 @@ where
 
                 // (sender, seq, deps, status, acc)
                 let mut tuples: Vec<(ReplicaId, Seq, Deps, Status, Acc)> = Vec::new();
+
+                let mut has_one_commit: bool = false;
 
                 // adaptive?
                 let timeout = Duration::from_micros(self.config.recover_timeout.default_us);
@@ -1173,9 +1185,8 @@ where
                         }
                         PrepareReply::Nack(msg) => {
                             s.log.save_pbal(id, msg.pbal).await?;
-                            self.remove_propose_chan(id);
                             drop(guard);
-                            return Ok(());
+                            break;
                         }
                         PrepareReply::Ok(msg) => {
                             let _ = received.insert(msg.sender);
@@ -1201,13 +1212,15 @@ where
                             }
                             cmd = msg.cmd;
                             tuples.push((msg.sender, msg.seq, msg.deps, msg.status, msg.acc));
+
+                            has_one_commit = msg.status >= Status::Committed;
                         }
                     }
 
                     debug!(?id, received_len = ?received.len(), "received prepare reply: tuples: {:?}", tuples);
 
                     let cluster_size = s.peers.cluster_size();
-                    if received.len() <= cluster_size / 2 {
+                    if has_one_commit.not() && received.len() <= cluster_size / 2 {
                         continue;
                     }
 
@@ -1298,14 +1311,6 @@ where
                 }
 
                 self.remove_propose_chan(id);
-            }
-
-            {
-                // adaptive?
-                let base = Duration::from_micros(self.config.recover_timeout.default_us);
-                let timeout = Self::random_time(base, 0.5..1.5);
-                debug!("retry recover after {:?}", timeout);
-                sleep(timeout).await
             }
         }
     }
