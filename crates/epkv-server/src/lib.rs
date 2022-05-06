@@ -337,8 +337,8 @@ impl Server {
                 None => break,
             };
 
-            let mut batch = Vec::<Command>::with_capacity(initial_capacity);
-            batch.push(cmd);
+            let mut batch = Vec::with_capacity(initial_capacity);
+            batch.push(cmd.into_mutable());
 
             loop {
                 if batch.len() >= max_size {
@@ -346,7 +346,7 @@ impl Server {
                 }
 
                 match rx.try_recv() {
-                    Ok(cmd) => batch.push(cmd),
+                    Ok(cmd) => batch.push(cmd.into_mutable()),
                     Err(_) => break,
                 }
             }

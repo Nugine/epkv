@@ -83,34 +83,32 @@ where
         }
     }
 
-    pub fn calc_attributes(&self, id: InstanceId, keys: &Keys<C>) -> (Seq, MutableDeps) {
+    pub fn calc_attributes(&self, id: InstanceId, keys: &C::Keys) -> (Seq, MutableDeps) {
         let mut deps = MutableDeps::with_capacity(self.max_lid_map.len());
         let mut seq = Seq::ZERO;
         let InstanceId(rid, lid) = id;
 
-        match keys {
-            Keys::Bounded(ref keys) => {
-                let conflicts: _ = keys.iter().filter_map(|k: _| self.max_key_map.get(k));
-                for m in conflicts {
+        if keys.is_unbounded() {
+            let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
+            for &(r, ref m) in others {
+                deps.insert(InstanceId(r, m.any));
+            }
+            max_assign(&mut seq, self.max_seq.any);
+        } else {
+            keys.for_each(|k| {
+                if let Some(m) = self.max_key_map.get(k) {
                     let others: _ = m.lids.iter().filter(|(r, _)| *r != rid);
                     for &(r, l) in others {
                         deps.insert(InstanceId(r, l));
                     }
                     max_assign(&mut seq, m.seq);
                 }
-                let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
-                for &(r, ref m) in others {
-                    deps.insert(InstanceId(r, m.checkpoint));
-                }
-                max_assign(&mut seq, self.max_seq.checkpoint);
+            });
+            let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
+            for &(r, ref m) in others {
+                deps.insert(InstanceId(r, m.checkpoint));
             }
-            Keys::Unbounded => {
-                let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
-                for &(r, ref m) in others {
-                    deps.insert(InstanceId(r, m.any));
-                }
-                max_assign(&mut seq, self.max_seq.any);
-            }
+            max_assign(&mut seq, self.max_seq.checkpoint);
         }
         if lid > LocalInstanceId::ONE {
             deps.insert(InstanceId(rid, lid.sub_one()));
@@ -119,47 +117,41 @@ where
         (seq, deps)
     }
 
-    fn update_attrs(&mut self, id: InstanceId, keys: Keys<C>, seq: Seq) {
+    fn update_attrs(&mut self, id: InstanceId, keys: C::Keys, seq: Seq) {
         let InstanceId(rid, lid) = id;
 
-        match keys {
-            Keys::Bounded(keys) => {
-                for k in keys.into_iter() {
-                    match self.max_key_map.entry(k) {
-                        hash_map::Entry::Occupied(mut e) => {
-                            let m = e.get_mut();
-                            max_assign(&mut m.seq, seq);
-                            m.lids.update(rid, |l| max_assign(l, lid), || lid);
-                        }
-                        hash_map::Entry::Vacant(e) => {
-                            let mut lids = VecMap::new();
-                            let _ = lids.insert(rid, lid);
-                            e.insert(MaxKey { seq, lids });
-                        }
-                    }
+        if keys.is_unbounded() {
+            self.max_lid_map.update(
+                rid,
+                |m| {
+                    max_assign(&mut m.checkpoint, lid);
+                    max_assign(&mut m.any, lid);
+                },
+                || MaxLid { checkpoint: lid, any: lid },
+            );
+
+            max_assign(&mut self.max_seq.checkpoint, seq);
+            max_assign(&mut self.max_seq.any, seq);
+        } else {
+            keys.for_each(|k| match self.max_key_map.entry(k.clone()) {
+                hash_map::Entry::Occupied(mut e) => {
+                    let m = e.get_mut();
+                    max_assign(&mut m.seq, seq);
+                    m.lids.update(rid, |l| max_assign(l, lid), || lid);
                 }
+                hash_map::Entry::Vacant(e) => {
+                    let mut lids = VecMap::new();
+                    let _ = lids.insert(rid, lid);
+                    e.insert(MaxKey { seq, lids });
+                }
+            });
+            self.max_lid_map.update(
+                rid,
+                |m| max_assign(&mut m.any, lid),
+                || MaxLid { checkpoint: lid, any: lid },
+            );
 
-                self.max_lid_map.update(
-                    rid,
-                    |m| max_assign(&mut m.any, lid),
-                    || MaxLid { checkpoint: lid, any: lid },
-                );
-
-                max_assign(&mut self.max_seq.any, seq);
-            }
-            Keys::Unbounded => {
-                self.max_lid_map.update(
-                    rid,
-                    |m| {
-                        max_assign(&mut m.checkpoint, lid);
-                        max_assign(&mut m.any, lid);
-                    },
-                    || MaxLid { checkpoint: lid, any: lid },
-                );
-
-                max_assign(&mut self.max_seq.checkpoint, seq);
-                max_assign(&mut self.max_seq.any, seq);
-            }
+            max_assign(&mut self.max_seq.any, seq);
         }
     }
 

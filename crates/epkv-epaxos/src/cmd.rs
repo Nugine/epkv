@@ -1,5 +1,3 @@
-use epkv_utils::vecset::VecSet;
-
 use std::hash::Hash;
 
 use serde::de::DeserializeOwned;
@@ -7,13 +5,13 @@ use serde::Serialize;
 
 pub trait CommandLike
 where
-    Self: Serialize + DeserializeOwned,
-    Self: Send + Sync + 'static,
-    Self: Clone,
+    Self: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
 {
-    type Key: Eq + Ord + Hash + Send + Sync + 'static;
+    type Key: Clone + Eq + Ord + Hash + Send + Sync + 'static;
 
-    fn keys(&self) -> Keys<Self>;
+    type Keys: Keys<Key = Self::Key>;
+
+    fn keys(&self) -> Self::Keys;
 
     fn is_nop(&self) -> bool;
 
@@ -26,7 +24,8 @@ where
     fn notify_executed(&self);
 }
 
-pub enum Keys<C: CommandLike> {
-    Bounded(VecSet<C::Key>),
-    Unbounded,
+pub trait Keys {
+    type Key;
+    fn is_unbounded(&self) -> bool;
+    fn for_each(&self, f: impl FnMut(&Self::Key));
 }

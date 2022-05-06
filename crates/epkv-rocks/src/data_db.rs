@@ -67,7 +67,6 @@ impl DataDb {
     pub fn batched_execute(self: &Arc<Self>, id: InstanceId, cmd: BatchedCommand) -> Result<()> {
         let single_cmd_count: u64 = cmd.as_slice().len().numeric_cast();
         for cmd in cmd.as_slice() {
-            let cmd = cmd.as_ref();
             let kind = cmd.kind.clone();
             self.execute(kind)?;
             if let Some(ref n) = cmd.notify {

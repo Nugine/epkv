@@ -4,7 +4,7 @@ use epkv_epaxos::id::{Ballot, InstanceId, LocalInstanceId, ReplicaId, Round, Seq
 use epkv_epaxos::ins::Instance;
 use epkv_epaxos::status::Status;
 use epkv_epaxos::store::UpdateMode;
-use epkv_rocks::cmd::{BatchedCommand, Command, CommandKind, Get, MutableCommand};
+use epkv_rocks::cmd::{BatchedCommand, CommandKind, Get, MutableCommand};
 use epkv_rocks::log_db::LogDb;
 use epkv_utils::clone;
 use epkv_utils::tracing::setup_tracing;
@@ -37,10 +37,10 @@ fn log_db() -> Result<()> {
     let id = InstanceId(1.into(), 1.into());
     let ins = {
         let pbal = Ballot(Round::ZERO, 1.into());
-        let cmd = BatchedCommand::from_vec(vec![Command::from_mutable(MutableCommand {
+        let cmd = BatchedCommand::from_vec(vec![MutableCommand {
             kind: CommandKind::Get(Get { key: "hello".into(), tx: None }),
             notify: None,
-        })]);
+        }]);
         let seq = Seq::from(2);
         let deps = Deps::from_iter([(ReplicaId::from(2), LocalInstanceId::from(1))]);
         let abal = pbal;
@@ -66,7 +66,7 @@ fn log_db() -> Result<()> {
 
         for (i, ins_cmd) in ins.cmd.as_slice().iter().enumerate() {
             let ans_cmd = &ans.cmd.as_slice()[i];
-            assert!(compare_cmd(ans_cmd.as_ref(), ins_cmd.as_ref()));
+            assert!(compare_cmd(ans_cmd, ins_cmd));
         }
     }
 
