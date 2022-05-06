@@ -949,7 +949,11 @@ where
         };
 
         let status = match s.log.get_cached_ins(id) {
-            Some(ins) if ins.status > Status::Committed => ins.status,
+            Some(ins) if ins.status >= Status::Committed => {
+                assert_eq!(ins.seq, msg.seq);
+                assert_eq!(ins.deps, msg.deps);
+                ins.status
+            }
             _ => Status::Committed,
         };
 
