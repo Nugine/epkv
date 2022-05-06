@@ -1172,7 +1172,11 @@ where
                         if status >= Status::Committed {
                             let deps = mem::take(deps);
                             return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
-                        } else if status == Status::Accepted {
+                        }
+                    }
+
+                    for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
+                        if status == Status::Accepted {
                             let deps = mem::take(deps);
                             return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
                         }
