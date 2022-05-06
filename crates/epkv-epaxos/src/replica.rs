@@ -1883,11 +1883,14 @@ where
             for scc in &mut scc_list {
                 scc.sort_by_key(|&(InstanceId(rid, lid), ref node): _| (node.seq, lid, rid));
             }
+
+            let scc_total_len: usize = scc_list.iter().map(|scc: _| scc.len()).sum();
+            assert_eq!(scc_total_len, local_graph.nodes_count());
             assert!(scc_list.is_empty().not());
 
-            scc_list.retain(|scc| {
-                let mut needs_issue = true;
+            debug!(root=?id, scc_list_len=?scc_list.len());
 
+            scc_list.retain(|scc| {
                 let mut stack = Vec::with_capacity(scc.len());
 
                 for (id, node) in scc {
@@ -1895,10 +1898,18 @@ where
                     stack.push((id, guard));
                 }
 
+                let mut needs_issue = None;
+
                 for &mut (id, ref mut guard) in &mut stack {
                     let status = &mut **guard;
-                    needs_issue = *status == ExecStatus::Committed;
-                    if needs_issue {
+                    let flag = *status == ExecStatus::Committed;
+                    if let Some(prev) = needs_issue {
+                        if prev != flag {
+                            panic!("id={:?}, scc marking incorrect", id)
+                        }
+                    }
+                    needs_issue = Some(flag);
+                    if flag {
                         *status = ExecStatus::Issuing;
                         debug!(?id, "mark issuing")
                     }
@@ -1908,14 +1919,14 @@ where
                     drop(guard);
                 }
 
-                if needs_issue.not() {
-                    debug!(root=?id, ?scc, "not needs issue")
+                if needs_issue == Some(false) {
+                    debug!(root=?id, scc_len=?scc.len(), "not needs issue")
                 }
 
-                needs_issue
+                needs_issue.unwrap()
             });
 
-            debug!(root=?id, ?scc_list);
+            debug!(root=?id, scc_list_len=?scc_list.len());
 
             let flag_group = FlagGroup::new(scc_list.len());
 
