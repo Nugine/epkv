@@ -2029,7 +2029,9 @@ where
         root: InstanceId,
     ) -> Result<()> {
         if idx > 0 {
-            flag_group.wait(idx.wrapping_sub(1)).await;
+            let prev = idx.wrapping_sub(1);
+            debug!("waiting prev={}", prev);
+            flag_group.wait(prev).await;
         }
 
         let mut handles = Vec::with_capacity(scc.len());
