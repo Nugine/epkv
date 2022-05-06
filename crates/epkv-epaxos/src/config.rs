@@ -11,6 +11,7 @@ pub struct ReplicaConfig {
     pub sync_limits: SyncLimits,
     pub join_timeout: JoinTimeout,
     pub optimization: Optimization,
+    pub execution_limits: ExecutionLimits,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,4 +69,9 @@ pub struct JoinTimeout {
 pub struct Optimization {
     pub enable_acc: bool,
     pub probe_rtt_per_msg_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionLimits {
+    pub max_task_num: u64,
 }

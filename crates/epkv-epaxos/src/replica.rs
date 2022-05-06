@@ -43,9 +43,9 @@ use futures_util::future::join_all;
 use parking_lot::Mutex as SyncMutex;
 use rand::Rng;
 use tokio::spawn;
-use tokio::sync::mpsc;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::MutexGuard as AsyncMutexGuard;
+use tokio::sync::{mpsc, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tracing::{debug, error};
@@ -77,6 +77,7 @@ where
     executing: DashMap<InstanceId, JoinHandle<()>>,
     exec_row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
     marking_lock: AsyncMutex<()>,
+    executing_limit: Arc<Semaphore>,
 
     metrics: SyncMutex<Metrics>,
 
@@ -214,6 +215,10 @@ where
         let exec_row_locks = DashMap::new();
         let marking_lock = AsyncMutex::new(());
 
+        let executing_limit = Arc::new(Semaphore::new(
+            config.execution_limits.max_task_num.numeric_cast(),
+        ));
+
         let metrics = SyncMutex::new(Metrics {
             preaccept_fast_path: 0,
             preaccept_slow_path: 0,
@@ -239,6 +244,7 @@ where
             executing,
             exec_row_locks,
             marking_lock,
+            executing_limit,
             metrics,
             probe_rtt_countdown,
         }))
@@ -973,7 +979,7 @@ where
 
         {
             self.graph.sync_watermark(id.0);
-            self.spawn_execute(id, cmd, seq, deps, status)
+            self.spawn_execute(id, cmd, seq, deps, status);
         }
 
         Ok(())
@@ -1832,9 +1838,11 @@ where
 
             let this = Arc::clone(self);
             spawn(async move {
+                let permit = this.executing_limit.acquire().await.unwrap();
                 if let Err(err) = this.run_execute(id).await {
                     error!(?id, ?err)
                 }
+                drop(permit);
             })
         });
     }

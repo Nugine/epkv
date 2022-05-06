@@ -32,6 +32,9 @@ default_us = 1_000_000 # 1s
 enable_acc = true
 probe_rtt_per_msg_count = 500
 
+[replica.execution_limits]
+max_task_num = 256
+
 [network]
 inbound_chan_size = 4096
 outbound_chan_size = 256
