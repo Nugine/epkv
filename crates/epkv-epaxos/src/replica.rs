@@ -426,10 +426,13 @@ where
                 }
             };
 
+            let calc_t0 = Instant::now();
+
             let (seq, deps) = s.log.calc_attributes(id, &cmd.keys());
             let deps = Deps::from_mutable(deps);
 
-            debug!(?id, ?seq, ?deps, "calc_attributes");
+            let calc_elapsed = calc_t0.elapsed();
+            debug!(?id, ?seq, ?deps, elapsed_us=?calc_elapsed.as_micros(), "calc_attributes");
 
             let abal = pbal;
             let status = Status::PreAccepted;
