@@ -1955,7 +1955,7 @@ where
                         }
                         ans.push(scc)
                     } else {
-                        debug!(root=?root, scc_len=?scc.len(), "not needs issue")
+                        debug!(root=?root, scc_len=?scc.len(), "not needs issue: {:?}", scc)
                     }
                 }
                 ans
