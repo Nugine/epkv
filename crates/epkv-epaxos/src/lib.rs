@@ -17,7 +17,6 @@ pub mod cmd;
 pub mod deps;
 pub mod exec;
 pub mod id;
-pub mod id_guard;
 pub mod ins;
 pub mod msg;
 pub mod net;

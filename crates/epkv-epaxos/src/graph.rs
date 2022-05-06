@@ -4,7 +4,6 @@ use crate::id::InstanceId;
 use crate::id::LocalInstanceId;
 use crate::id::ReplicaId;
 use crate::id::Seq;
-use crate::id_guard::IdGuard;
 use crate::status::ExecStatus;
 use crate::status::Status;
 
@@ -18,21 +17,15 @@ use epkv_utils::watermark::WaterMark;
 use std::fmt;
 use std::hash::Hash;
 use std::ops::Not;
-use std::sync::Arc;
 
-use dashmap::{DashMap, DashSet};
+use dashmap::DashMap;
 use fnv::{FnvHashMap, FnvHashSet};
 use parking_lot::Mutex as SyncMutex;
-use tokio::sync::Mutex as AsyncMutex;
-use tokio::sync::MutexGuard as AsyncMutexGuard;
 use tokio::sync::Notify;
-use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
 
 pub struct Graph<C> {
     nodes: DashMap<InstanceId, Node<C>>,
     status_bounds: Asc<SyncMutex<StatusBounds>>,
-    executing: Asc<DashSet<InstanceId>>,
-    row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
     watermarks: DashMap<ReplicaId, Asc<WaterMark>>,
 }
 
@@ -47,9 +40,6 @@ pub struct InsNode<C> {
     pub deps: Deps,
     pub status: SyncMutex<ExecStatus>,
 }
-
-pub struct RowGuard(OwnedAsyncMutexGuard<()>);
-pub struct GlobalGuard<'a>(AsyncMutexGuard<'a, ()>);
 
 impl<C> fmt::Debug for InsNode<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -66,10 +56,8 @@ impl<C> Graph<C> {
     #[must_use]
     pub fn new(status_bounds: Asc<SyncMutex<StatusBounds>>) -> Self {
         let nodes = DashMap::new();
-        let executing = Asc::new(DashSet::new());
-        let row_locks = DashMap::new();
         let watermarks = DashMap::new();
-        Self { nodes, status_bounds, executing, row_locks, watermarks }
+        Self { nodes, status_bounds, watermarks }
     }
 
     pub fn init_node(&self, id: InstanceId, cmd: C, seq: Seq, deps: Deps, status: Status) {
@@ -154,17 +142,6 @@ impl<C> Graph<C> {
         if let Some((_, Node::Waiting(n))) = self.nodes.remove(&id) {
             n.notify_waiters()
         }
-    }
-
-    #[must_use]
-    pub fn executing(&self, id: InstanceId) -> Option<IdGuard> {
-        IdGuard::new(Asc::clone(&self.executing), id)
-    }
-
-    pub async fn lock_row(&self, rid: ReplicaId) -> RowGuard {
-        let gen = || Arc::new(AsyncMutex::new(()));
-        let mutex: Arc<_> = self.row_locks.entry(rid).or_insert_with(gen).clone();
-        RowGuard(mutex.lock_owned().await)
     }
 
     #[must_use]

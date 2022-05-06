@@ -74,6 +74,8 @@ where
     network: N,
 
     recovering: DashMap<InstanceId, JoinHandle<()>>,
+    executing: DashMap<InstanceId, JoinHandle<()>>,
+    exec_row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
 
     metrics: SyncMutex<Metrics>,
 
@@ -163,6 +165,9 @@ where
 
         let recovering = DashMap::new();
 
+        let executing = DashMap::new();
+        let exec_row_locks = DashMap::new();
+
         let metrics = SyncMutex::new(Metrics {
             preaccept_fast_path: 0,
             preaccept_slow_path: 0,
@@ -185,6 +190,8 @@ where
             data_store,
             network,
             recovering,
+            executing,
+            exec_row_locks,
             metrics,
             probe_rtt_countdown,
         }))
@@ -295,7 +302,7 @@ where
         let guard = self.state.lock().await;
         let elapsed = t0.elapsed();
         if elapsed > Duration::from_secs(1) {
-            debug!("lock state too slow");
+            debug!(?elapsed, "lock state too slow");
         }
         guard
     }
@@ -1758,48 +1765,51 @@ where
     }
 
     fn spawn_execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps, status: Status) {
-        self.remove_propose_chan(id);
-        if let Some((_, task)) = self.recovering.remove(&id) {
-            task.abort()
-        }
-
         match Ord::cmp(&status, &Status::Committed) {
             Ordering::Less => panic!("unexpected status: {:?}", status),
             Ordering::Equal => {}
             Ordering::Greater => return,
         }
 
-        debug!(?id, ?seq, ?deps, "spawn_execute");
+        self.remove_propose_chan(id);
+        if let Some((_, task)) = self.recovering.remove(&id) {
+            task.abort()
+        }
 
-        let _ = self.graph.init_node(id, cmd, seq, deps, status);
+        self.executing.entry(id).or_insert_with(|| {
+            debug!(?id, ?seq, ?deps, "spawn_execute");
 
-        let this = Arc::clone(self);
-        spawn(async move {
-            if let Err(err) = this.run_execute(id).await {
-                error!(?id, ?err)
-            }
+            let _ = self.graph.init_node(id, cmd, seq, deps, status);
+
+            let this = Arc::clone(self);
+            spawn(async move {
+                if let Err(err) = this.run_execute(id).await {
+                    error!(?id, ?err)
+                }
+                let _ = this.executing.remove(&id);
+            })
         });
     }
 
-    #[tracing::instrument(skip_all, fields(id = ?id))]
-    async fn run_execute(self: &Arc<Self>, id: InstanceId) -> Result<()> {
-        debug!("run_execute");
+    fn init_row_lock(&self, rid: ReplicaId) -> Arc<AsyncMutex<()>> {
+        self.exec_row_locks.entry(rid).or_insert_with(|| Arc::new(AsyncMutex::new(()))).clone()
+    }
 
-        let _executing = match self.graph.executing(id) {
-            Some(exec) => exec,
-            None => return Ok(()),
-        };
-
+    #[tracing::instrument(skip_all, fields(id = ?root))]
+    async fn run_execute(self: &Arc<Self>, root: InstanceId) -> Result<()> {
         let mut local_graph = LocalGraph::new();
 
         debug!("wait graph");
 
         {
-            let row_guard = self.graph.lock_row(id.0).await;
-            debug!("lock row {:?}", id.0);
+            let mut row_guards = {
+                let row_lock = self.init_row_lock(root.0);
+                let guard = row_lock.lock_owned().await;
+                vec![guard]
+            };
 
             let mut vis: _ = FnvHashSet::<InstanceId>::default();
-            let mut q = DepsQueue::from_single(id);
+            let mut q = DepsQueue::from_single(root);
             let bfs_t0 = Instant::now();
 
             while let Some(id) = q.pop() {
@@ -1825,6 +1835,13 @@ where
 
                 debug!(?id, seq=?node.seq, deps=?node.deps, "local graph add node");
                 local_graph.add_node(id, Asc::clone(&node));
+
+                {
+                    let row_lock = self.init_row_lock(id.0);
+                    if let Ok(guard) = row_lock.try_lock_owned() {
+                        row_guards.push(guard);
+                    }
+                }
 
                 let InstanceId(rid, lid) = id;
 
@@ -1864,8 +1881,9 @@ where
                 }
             }
 
-            drop(row_guard);
-            debug!("unlock row {:?}", id.0);
+            while let Some(guard) = row_guards.pop() {
+                drop(guard)
+            }
         }
 
         let local_graph_nodes_count = local_graph.nodes_count();
@@ -1875,7 +1893,7 @@ where
             return Ok(()); // ins executed
         } else if local_graph_nodes_count == 1 {
             // common case
-            let node = local_graph.get_node(id).cloned().unwrap();
+            let node = local_graph.get_node(root).cloned().unwrap();
             drop(local_graph);
 
             {
@@ -1883,7 +1901,7 @@ where
                 let status = &mut *guard;
                 if *status == ExecStatus::Committed {
                     *status = ExecStatus::Issuing;
-                    debug!(?id, "mark issuing");
+                    debug!(?root, "mark issuing");
                 } else {
                     return Ok(());
                 }
@@ -1891,12 +1909,12 @@ where
 
             let this = Arc::clone(self);
             spawn(async move {
-                if let Err(err) = this.run_execute_single_node(id, node).await {
+                if let Err(err) = this.run_execute_single_node(root, node).await {
                     error!(?err);
                 }
             });
         } else {
-            let mut scc_list = local_graph.tarjan_scc(id);
+            let mut scc_list = local_graph.tarjan_scc(root);
             for scc in &mut scc_list {
                 scc.sort_by_key(|&(InstanceId(rid, lid), ref node): _| (node.seq, lid, rid));
             }
@@ -1905,7 +1923,7 @@ where
             assert_eq!(scc_total_len, local_graph.nodes_count());
             assert!(scc_list.is_empty().not());
 
-            debug!(root=?id, scc_list_len=?scc_list.len());
+            debug!(root=?root, scc_list_len=?scc_list.len());
 
             scc_list.retain(|scc| {
                 let mut stack = Vec::with_capacity(scc.len());
@@ -1922,7 +1940,7 @@ where
                     let flag = *status == ExecStatus::Committed;
                     if let Some(prev) = needs_issue {
                         if prev != flag {
-                            panic!("root: {:?}, id: {:?}, scc marking incorrect", id, scc_node_id)
+                            panic!("root: {:?}, id: {:?}, scc marking incorrect", root, scc_node_id)
                         }
                     }
                     needs_issue = Some(flag);
@@ -1936,14 +1954,27 @@ where
                     drop(guard);
                 }
 
-                if needs_issue == Some(false) {
-                    debug!(root=?id, scc_len=?scc.len(), "not needs issue")
+                let needs_issue = needs_issue.unwrap();
+
+                if needs_issue {
+                    for &(id, _) in scc {
+                        if id == root {
+                            continue;
+                        }
+                        let task = self.executing.remove(&id);
+                        if let Some((_, task)) = task {
+                            task.abort();
+                            debug!("abort executing task {:?}", id)
+                        }
+                    }
+                } else {
+                    debug!(root=?root, scc_len=?scc.len(), "not needs issue")
                 }
 
-                needs_issue.unwrap()
+                needs_issue
             });
 
-            debug!(root=?id, scc_list_len=?scc_list.len());
+            debug!(root=?root, scc_list_len=?scc_list.len());
 
             let flag_group = FlagGroup::new(scc_list.len());
 
@@ -1951,7 +1982,7 @@ where
                 clone!(flag_group);
                 let this = Arc::clone(self);
                 spawn(async move {
-                    if let Err(err) = this.run_execute_scc(scc, flag_group, idx, id).await {
+                    if let Err(err) = this.run_execute_scc(scc, flag_group, idx, root).await {
                         error!(?err);
                     }
                 });
