@@ -24,7 +24,6 @@ use fnv::{FnvHashMap, FnvHashSet};
 use parking_lot::Mutex as SyncMutex;
 use rand::prelude::SliceRandom;
 use tokio::sync::Notify;
-use tracing::debug;
 
 pub struct Graph<C> {
     nodes: DashMap<InstanceId, Node<C>>,
@@ -46,22 +45,21 @@ pub struct InsNode<C> {
 
 impl<C> InsNode<C> {
     pub fn estatus<R>(&self, f: impl FnOnce(&mut ExecStatus) -> R) -> R {
-        debug!("start to lock node");
+        // debug!("start to lock node {id:?}");
         let mut guard = self.status.lock();
-        debug!("locked node");
-        let ans = f(&mut *guard);
-        debug!("unlock node");
-        ans
+        // debug!("locked node {id:?}");
+        f(&mut *guard)
+        // debug!("unlock node {id:?}");
     }
 }
 
 impl<C> fmt::Debug for InsNode<C> {
+    #[track_caller]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let status = with_mutex(&self.status, |s| *s);
+        // locking status here will cause reentry deadlock
         f.debug_struct("InsNode")
             .field("seq", &self.seq)
             .field("deps", &self.deps)
-            .field("status", &status)
             .finish_non_exhaustive()
     }
 }

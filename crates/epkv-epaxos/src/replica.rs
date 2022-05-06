@@ -1992,7 +1992,7 @@ where
                     let _guard = self.marking_lock.lock().await;
 
                     let mut needs_issue = None;
-                    for (id, node) in &scc {
+                    for &(id, ref node) in &scc {
                         node.estatus(|es| {
                             let flag = *es == ExecStatus::Committed;
                             if let Some(prev) = needs_issue {
