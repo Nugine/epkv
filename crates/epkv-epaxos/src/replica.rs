@@ -76,6 +76,7 @@ where
     recovering: DashMap<InstanceId, JoinHandle<()>>,
     executing: DashMap<InstanceId, JoinHandle<()>>,
     exec_row_locks: DashMap<ReplicaId, Arc<AsyncMutex<()>>>,
+    marking_lock: AsyncMutex<()>,
 
     metrics: SyncMutex<Metrics>,
 
@@ -167,6 +168,7 @@ where
 
         let executing = DashMap::new();
         let exec_row_locks = DashMap::new();
+        let marking_lock = AsyncMutex::new(());
 
         let metrics = SyncMutex::new(Metrics {
             preaccept_fast_path: 0,
@@ -192,6 +194,7 @@ where
             recovering,
             executing,
             exec_row_locks,
+            marking_lock,
             metrics,
             probe_rtt_countdown,
         }))
@@ -1802,12 +1805,9 @@ where
         debug!("wait graph");
 
         {
-            let mut row_guards = {
-                let row_lock = self.init_row_lock(root.0);
-                let guard = row_lock.lock_owned().await;
-                debug!("lock row {:?}", root.0);
-                vec![(root.0, guard)]
-            };
+            let row_lock = self.init_row_lock(root.0);
+            let row_guard = row_lock.lock_owned().await;
+            debug!("lock row {:?}", root.0);
 
             let mut vis: _ = FnvHashSet::<InstanceId>::default();
             let mut q = DepsQueue::from_single(root);
@@ -1836,14 +1836,6 @@ where
 
                 debug!(?id, seq=?node.seq, deps=?node.deps, "local graph add node");
                 local_graph.add_node(id, Asc::clone(&node));
-
-                {
-                    let row_lock = self.init_row_lock(id.0);
-                    if let Ok(guard) = row_lock.try_lock_owned() {
-                        debug!("try lock row {:?}", id.0);
-                        row_guards.push((id.0, guard));
-                    }
-                }
 
                 let InstanceId(rid, lid) = id;
 
@@ -1883,10 +1875,8 @@ where
                 }
             }
 
-            while let Some((row, guard)) = row_guards.pop() {
-                debug!("unlock row {:?}", row);
-                drop(guard)
-            }
+            debug!("unlock row {:?}", root.0);
+            drop(row_guard)
         }
 
         let local_graph_nodes_count = local_graph.nodes_count();
@@ -1928,55 +1918,48 @@ where
 
             debug!(root=?root, scc_list_len=?scc_list.len());
 
-            scc_list.retain(|scc| {
-                let mut stack = Vec::with_capacity(scc.len());
+            let scc_list = {
+                let mut ans = Vec::with_capacity(scc_list.len());
+                for scc in scc_list {
+                    let _guard = self.marking_lock.lock().await;
 
-                for (id, node) in scc {
-                    let guard = node.status.lock();
-                    stack.push((id, guard));
-                }
-
-                let mut needs_issue = None;
-
-                for &mut (scc_node_id, ref mut guard) in &mut stack {
-                    let status = &mut **guard;
-                    let flag = *status == ExecStatus::Committed;
-                    if let Some(prev) = needs_issue {
-                        if prev != flag {
-                            debug!(?root, ?scc_node_id, status = ?*status, "scc marking incorrect: {:?}", scc);
-                            panic!("scc marking incorrect")
+                    let mut needs_issue = None;
+                    for (id, node) in &scc {
+                        let mut guard = node.status.lock();
+                        let status = &mut *guard;
+                        let flag = *status == ExecStatus::Committed;
+                        if let Some(prev) = needs_issue {
+                            if prev != flag {
+                                debug!(?root, ?id, status = ?*status, "scc marking incorrect: {:?}", scc);
+                                panic!("scc marking incorrect")
+                            }
+                        }
+                        needs_issue = Some(flag);
+                        if flag {
+                            *status = ExecStatus::Issuing;
+                            debug!(?id, "mark issuing")
                         }
                     }
-                    needs_issue = Some(flag);
-                    if flag {
-                        *status = ExecStatus::Issuing;
-                        debug!(?scc_node_id, "mark issuing")
+
+                    let needs_issue = needs_issue.unwrap();
+                    if needs_issue {
+                        for &(id, _) in &scc {
+                            if id == root {
+                                continue;
+                            }
+                            let task = self.executing.remove(&id);
+                            if let Some((_, task)) = task {
+                                task.abort();
+                                debug!("abort executing task {:?}", id)
+                            }
+                        }
+                        ans.push(scc)
+                    } else {
+                        debug!(root=?root, scc_len=?scc.len(), "not needs issue")
                     }
                 }
-
-                while let Some(guard) = stack.pop() {
-                    drop(guard);
-                }
-
-                let needs_issue = needs_issue.unwrap();
-
-                if needs_issue {
-                    for &(id, _) in scc {
-                        if id == root {
-                            continue;
-                        }
-                        let task = self.executing.remove(&id);
-                        if let Some((_, task)) = task {
-                            task.abort();
-                            debug!("abort executing task {:?}", id)
-                        }
-                    }
-                } else {
-                    debug!(root=?root, scc_len=?scc.len(), "not needs issue")
-                }
-
-                needs_issue
-            });
+                ans
+            };
 
             debug!(root=?root, scc_list_len=?scc_list.len());
 
@@ -2120,6 +2103,7 @@ where
     }
 
     pub async fn run_clear_key_map(self: &Arc<Self>) {
+        debug!("run_clear_key_map");
         let mut guard = self.lock_state().await;
         let s = &mut *guard;
         let garbage = s.log.clear_key_map();
