@@ -1856,6 +1856,7 @@ where
                 let status = &mut *guard;
                 if *status == ExecStatus::Committed {
                     *status = ExecStatus::Issuing;
+                    debug!(?id, "mark issuing");
                 } else {
                     return Ok(());
                 }
@@ -1879,15 +1880,17 @@ where
 
                 let mut stack = Vec::with_capacity(scc.len());
 
-                for (_, node) in scc {
+                for (id, node) in scc {
                     let guard = node.status.lock();
-                    stack.push(guard);
+                    stack.push((id, guard));
                 }
 
-                for status in iter_mut_deref(&mut stack) {
+                for &mut (id, ref mut guard) in &mut stack {
+                    let status = &mut **guard;
                     needs_issue = *status == ExecStatus::Committed;
                     if needs_issue {
                         *status = ExecStatus::Issuing;
+                        debug!(?id, "mark issuing")
                     }
                 }
 
