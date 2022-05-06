@@ -2220,8 +2220,8 @@ where
         let s = &mut *guard;
         for id in iter {
             s.log.retire_instance(id);
-            debug!(?id, "retire instance");
         }
+        debug!("retire instances")
     }
 
     #[tracing::instrument(skip_all, fields(rid=?self.rid))]
