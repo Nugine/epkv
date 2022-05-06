@@ -1,20 +1,17 @@
 use crate::bounds::StatusBounds;
 use crate::deps::Deps;
 use crate::id::InstanceId;
-use crate::id::LocalInstanceId;
 use crate::id::ReplicaId;
 use crate::id::Seq;
 use crate::status::ExecStatus;
 use crate::status::Status;
 
 use epkv_utils::asc::Asc;
-use epkv_utils::cmp::max_assign;
 use epkv_utils::cmp::min_assign;
 use epkv_utils::lock::with_mutex;
-use epkv_utils::vecmap::VecMap;
-use epkv_utils::vecset::VecSet;
 use epkv_utils::watermark::WaterMark;
 
+use std::collections::VecDeque;
 use std::fmt;
 use std::hash::Hash;
 use std::ops::Not;
@@ -23,7 +20,6 @@ use dashmap::DashMap;
 use fnv::{FnvHashMap, FnvHashSet};
 use parking_lot::Mutex as SyncMutex;
 use parking_lot::MutexGuard as SyncMutexGuard;
-use rand::prelude::SliceRandom;
 use tokio::sync::Notify;
 
 pub struct Graph<C> {
@@ -169,35 +165,24 @@ impl<C> Graph<C> {
 }
 
 pub struct DepsQueue {
-    map: VecMap<ReplicaId, LocalInstanceId>,
-    rows: VecSet<ReplicaId>,
+    queue: VecDeque<InstanceId>,
 }
 
 impl DepsQueue {
     #[must_use]
-    pub fn new(InstanceId(rid, lid): InstanceId) -> Self {
-        Self {
-            map: VecMap::from_single(rid, lid),
-            rows: VecSet::from_single(rid),
-        }
+    pub fn new(root: InstanceId) -> Self {
+        let mut queue = VecDeque::new();
+        queue.push_back(root);
+        Self { queue }
     }
 
-    pub fn push(&mut self, InstanceId(rid, lid): InstanceId) {
-        self.map.update(
-            rid,
-            |v: _| max_assign(v, lid),
-            || {
-                let _ = self.rows.insert(rid);
-                lid
-            },
-        );
+    pub fn push(&mut self, id: InstanceId) {
+        self.queue.push_back(id);
     }
 
     #[must_use]
     pub fn pop(&mut self) -> Option<InstanceId> {
-        let row = self.rows.as_slice().choose(&mut rand::thread_rng()).copied()?;
-        let _ = self.rows.remove(&row);
-        self.map.remove(&row).map(|lid| InstanceId(row, lid))
+        self.queue.pop_front()
     }
 }
 
