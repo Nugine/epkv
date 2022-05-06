@@ -49,7 +49,7 @@ forward_chan_size = 256
 
 [rpc_server]
 max_frame_length = 16777216 # 16 MiB
-max_task_num = 100_000
+max_task_num = 1_000_000
 
 [batching]
 chan_size = 8192
