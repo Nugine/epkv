@@ -1072,26 +1072,20 @@ where
         loop {
             debug!("run_recover");
 
-            loop {
-                let needs_delay = if self.propose_tx.contains_key(&id) {
-                    debug!(?id, "propose_tx exists");
-                    true
-                } else {
-                    is_not_first
-                };
-
-                if needs_delay {
-                    // adaptive?
-                    let base = Duration::from_micros(self.config.recover_timeout.default_us);
-                    let timeout = Self::random_time(base, 0.5..1.5);
-                    debug!("delay recover in {:?}", timeout);
-                    sleep(timeout).await
-                } else {
-                    break;
-                }
+            if is_not_first {
+                let base = Duration::from_micros(self.config.recover_timeout.default_us);
+                let timeout = Self::random_time(base, 0.5..1.5);
+                debug!("delay recover in {:?}", timeout);
+                sleep(timeout).await;
             }
-
             is_not_first = true;
+
+            while self.propose_tx.contains_key(&id) {
+                let base = Duration::from_micros(self.config.recover_timeout.default_us);
+                let timeout = Self::random_time(base, 0.5..1.5);
+                debug!("delay recover in {:?}", timeout);
+                sleep(timeout).await;
+            }
 
             let mut rx = {
                 let mut guard = self.lock_state().await;
