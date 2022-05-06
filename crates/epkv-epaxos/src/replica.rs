@@ -137,11 +137,8 @@ where
     L: LogStore<C>,
 {
     fn drop(&mut self) {
-        debug!("unlock state");
         let elapsed = self.t1.elapsed();
-        if elapsed > Duration::from_secs(1) {
-            debug!(?elapsed, "state is locked for too long time")
-        }
+        debug!(elapsed_us = ?elapsed.as_micros(), "unlock state");
     }
 }
 
@@ -290,7 +287,9 @@ where
             }
         }
 
-        match msg {
+        let t0 = Instant::now();
+
+        let result = match msg {
             Message::PreAccept(msg) => {
                 self.handle_preaccept(msg).await //
             }
@@ -348,7 +347,11 @@ where
             Message::PeerBounds(msg) => {
                 self.handle_peer_bounds(msg).await //
             }
-        }
+        };
+
+        debug!(elapsed_us=?t0.elapsed().as_micros());
+
+        result
     }
 
     async fn lock_state(&self) -> StateGuard<'_, C, L> {
