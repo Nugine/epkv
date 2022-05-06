@@ -1114,6 +1114,9 @@ where
                 {
                     let sender = self.rid;
                     let epoch = self.epoch.load();
+
+                    debug!(?epoch, ?id, ?pbal, ?known, "broadcast prepare");
+
                     self.network.broadcast(
                         targets,
                         Message::Prepare(Prepare { sender, epoch, id, pbal, known }),
