@@ -2169,7 +2169,7 @@ where
         flag_group.set(idx);
 
         let mut prev_status = Vec::with_capacity(handles.len());
-
+        let mut is_all_executed = true;
         {
             let mut guard = self.lock_state().await;
             let s = &mut *guard;
@@ -2185,21 +2185,24 @@ where
                     };
                 });
 
+                is_all_executed &= status == Status::Executed;
                 prev_status.push(status);
             }
         }
 
-        for n in &handles {
-            n.wait_executed().await;
-        }
+        if is_all_executed.not() {
+            for n in &handles {
+                n.wait_executed().await;
+            }
 
-        {
-            let mut guard = self.lock_state().await;
-            let s = &mut *guard;
-            for (&(id, ref node), &prev) in scc.iter().zip(prev_status.iter()) {
-                if Status::Executed > prev {
-                    s.log.update_status(id, Status::Executed).await?;
-                    node.estatus(|es| *es = ExecStatus::Executed);
+            {
+                let mut guard = self.lock_state().await;
+                let s = &mut *guard;
+                for (&(id, ref node), &prev) in scc.iter().zip(prev_status.iter()) {
+                    if Status::Executed > prev {
+                        s.log.update_status(id, Status::Executed).await?;
+                        node.estatus(|es| *es = ExecStatus::Executed);
+                    }
                 }
             }
         }
