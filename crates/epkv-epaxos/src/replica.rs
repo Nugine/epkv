@@ -612,47 +612,46 @@ where
                         }
                     }
                     Ok(None) => break,
-                    Err(_) => break,
+                    Err(_) => {
+                        let mut guard = self.lock_state().await;
+                        let s = &mut *guard;
+
+                        let cluster_size = s.peers.cluster_size();
+                        if received.len() < cluster_size / 2 {
+                            debug!("preaccept timeout: not enough replies");
+
+                            let no_reply_targets = {
+                                let mut all_targets = targets;
+                                all_targets.difference_copied(&received);
+                                all_targets
+                            };
+
+                            s.peers.set_inf_rtt(&no_reply_targets);
+                            break;
+                        }
+
+                        debug!("preaccept timeout: goto slow path");
+
+                        s.log.load(id).await?;
+                        let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
+
+                        let cmd = None;
+                        let deps = Deps::from_mutable(deps);
+                        let acc = Acc::from_mutable(acc);
+
+                        with_mutex(&self.metrics, |m| {
+                            m.preaccept_slow_path = m.preaccept_slow_path.wrapping_add(1);
+                        });
+
+                        return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                    }
                 }
-            }
-
-            {
-                let mut guard = self.lock_state().await;
-                let s = &mut *guard;
-
-                let cluster_size = s.peers.cluster_size();
-                if received.len() < cluster_size / 2 {
-                    debug!("preaccept timeout: not enough replies");
-
-                    let no_reply_targets = {
-                        let mut all_targets = targets;
-                        all_targets.difference_copied(&received);
-                        all_targets
-                    };
-
-                    s.peers.set_inf_rtt(&no_reply_targets);
-
-                    self.remove_propose_chan(id);
-
-                    return Ok(());
-                }
-
-                debug!("preaccept timeout: goto slow path");
-
-                s.log.load(id).await?;
-                let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
-
-                let cmd = None;
-                let deps = Deps::from_mutable(deps);
-                let acc = Acc::from_mutable(acc);
-
-                with_mutex(&self.metrics, |m| {
-                    m.preaccept_slow_path = m.preaccept_slow_path.wrapping_add(1);
-                });
-
-                self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await
             }
         }
+
+        debug!("phase preaccept failed");
+        self.remove_propose_chan(id);
+        Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(sender=?msg.sender, id = ?msg.id, pbal = ?msg.pbal))]
@@ -866,8 +865,8 @@ where
             }
         }
 
+        debug!("phase accept failed");
         self.remove_propose_chan(id);
-
         Ok(())
     }
 
