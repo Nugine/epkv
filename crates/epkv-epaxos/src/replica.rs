@@ -1834,6 +1834,8 @@ where
     }
 
     fn spawn_execute(self: &Arc<Self>, id: InstanceId, cmd: C, seq: Seq, deps: Deps, status: Status) {
+        debug!(?id, ?seq, ?deps, ?status, "spawn_execute");
+
         match Ord::cmp(&status, &Status::Committed) {
             Ordering::Less => panic!("unexpected status: {:?}", status),
             Ordering::Equal => {}
@@ -1846,8 +1848,6 @@ where
         }
 
         self.executing.entry(id).or_insert_with(|| {
-            debug!(?id, ?seq, ?deps, "spawn_execute");
-
             let _ = self.graph.init_node(id, cmd, seq, deps, status);
 
             let this = Arc::clone(self);
@@ -1859,6 +1859,8 @@ where
                 drop(permit);
             })
         });
+
+        debug!(?id, "spawned executing task");
     }
 
     fn init_row_lock(&self, rid: ReplicaId) -> Arc<AsyncMutex<()>> {
