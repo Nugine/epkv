@@ -39,15 +39,12 @@ impl LogDb {
         Ok(Arc::new(Self { db }))
     }
 
-    #[tracing::instrument(skip_all, fields(id = ?id, mode = ?mode))]
     pub fn save(
         self: &Arc<Self>,
         id: InstanceId,
         ins: Instance<BatchedCommand>,
         mode: UpdateMode,
     ) -> Result<()> {
-        let t0 = Instant::now();
-
         let needs_save_cmd = match mode {
             UpdateMode::Full => true,
             UpdateMode::Partial => false,
@@ -89,19 +86,12 @@ impl LogDb {
         }
 
         self.db.write(wb)?;
-
-        let elapsed = t0.elapsed();
-        debug!(elapsed_us = ?elapsed.as_micros(), "saved instance");
-
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(id = ?id))]
     pub fn load(self: &Arc<Self>, id: InstanceId) -> Result<Option<Instance<BatchedCommand>>> {
         // <https://github.com/facebook/rocksdb/wiki/Basic-Operations#iteration>
         // <https://github.com/facebook/rocksdb/wiki/Iterator>
-
-        let t0 = Instant::now();
 
         let mut iter = self.db.raw_iterator();
 
@@ -112,7 +102,6 @@ impl LogDb {
 
             if iter.valid().not() {
                 iter.status()?;
-                debug!("not found");
                 return Ok(None);
             }
 
@@ -150,9 +139,6 @@ impl LogDb {
         let (deps, abal, acc) = others;
 
         let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-
-        let elapsed = t0.elapsed();
-        debug!(elapsed_us = ?elapsed.as_micros(), "loaded instance");
 
         Ok(Some(ins))
     }

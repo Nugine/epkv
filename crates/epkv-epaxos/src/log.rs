@@ -9,6 +9,7 @@ use crate::store::{LogStore, UpdateMode};
 use std::collections::{hash_map, HashMap};
 use std::mem;
 use std::ops::Not;
+use std::time::Instant;
 
 use epkv_utils::asc::Asc;
 use epkv_utils::clone;
@@ -156,7 +157,11 @@ where
     }
 
     pub fn clear_key_map(&mut self) -> impl Send + Sync + 'static {
-        let garbage = mem::take(&mut self.max_key_map);
+        let cap = self.max_key_map.capacity() / 2;
+        let new_key_map = HashMap::with_capacity(cap);
+
+        let garbage = mem::replace(&mut self.max_key_map, new_key_map);
+
         for (_, m) in &mut self.max_lid_map {
             m.checkpoint = m.any;
         }
@@ -164,6 +169,7 @@ where
             let m = &mut self.max_seq;
             m.checkpoint = m.any;
         }
+
         garbage
     }
 
@@ -176,11 +182,17 @@ where
 
         {
             clone!(ins);
+            let t0 = Instant::now();
             self.log_store.save(id, ins, mode).await?;
+            let elapsed = t0.elapsed();
+            debug!(elapsed_us = ?elapsed.as_micros(), "saved instance id: {:?}, mode: {:?}", id, mode);
         }
 
         if needs_update_attrs {
+            let t0 = Instant::now();
             self.update_attrs(id, ins.cmd.keys(), ins.seq);
+            let elapsed = t0.elapsed();
+            debug!(elapsed_us = ?elapsed.as_micros(), "updated attrs id: {:?}", id);
         }
 
         self.status_bounds.lock().set(id, ins.status);
@@ -192,7 +204,12 @@ where
 
     pub async fn load(&mut self, id: InstanceId) -> Result<()> {
         if self.ins_cache.contains_key(&id).not() {
-            if let Some(ins) = self.log_store.load(id).await? {
+            let load_t0 = Instant::now();
+            let result = self.log_store.load(id).await;
+            let elapsed = load_t0.elapsed();
+            debug!(elapsed_us = ?elapsed.as_micros(), "loaded instance id: {:?}", id);
+
+            if let Some(ins) = result? {
                 self.status_bounds.lock().set(id, ins.status);
                 let _ = self.ins_cache.insert(id, ins);
                 let _ = self.pbal_cache.remove(&id);
