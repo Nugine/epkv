@@ -20,7 +20,7 @@ use epkv_utils::chan::recv_timeout;
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::flag_group::FlagGroup;
-use epkv_utils::iter::{iter_mut_deref, map_collect};
+use epkv_utils::iter::map_collect;
 use epkv_utils::lock::with_mutex;
 use epkv_utils::time::LocalInstant;
 use epkv_utils::vecmap::VecMap;
@@ -290,9 +290,19 @@ where
         }
     }
 
+    async fn lock_state(&self) -> AsyncMutexGuard<'_, State<C, L>> {
+        let t0 = Instant::now();
+        let guard = self.state.lock().await;
+        let elapsed = t0.elapsed();
+        if elapsed > Duration::from_secs(1) {
+            debug!("lock state too slow");
+        }
+        guard
+    }
+
     #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_propose(self: &Arc<Self>, cmd: C) -> Result<()> {
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         let id = InstanceId(self.rid, s.lid_head.gen_next());
@@ -400,7 +410,7 @@ where
             let mut all_same = true;
 
             let avg_rtt = {
-                let mut guard = self.state.lock().await;
+                let mut guard = self.lock_state().await;
                 let s = &mut *guard;
                 s.peers.get_avg_rtt()
             };
@@ -438,7 +448,7 @@ where
 
                         debug!("received preaccept reply");
 
-                        let mut guard = self.state.lock().await;
+                        let mut guard = self.lock_state().await;
                         let s = &mut *guard;
 
                         let pbal = match msg {
@@ -535,7 +545,7 @@ where
             }
 
             {
-                let mut guard = self.state.lock().await;
+                let mut guard = self.lock_state().await;
                 let s = &mut *guard;
 
                 let cluster_size = s.peers.cluster_size();
@@ -581,7 +591,7 @@ where
 
         debug!(seq=?msg.seq, deps=?msg.deps);
 
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         let id = msg.id;
@@ -741,7 +751,7 @@ where
 
                 debug!("received accept reply");
 
-                let mut guard = self.state.lock().await;
+                let mut guard = self.lock_state().await;
                 let s = &mut *guard;
 
                 assert_eq!(id, msg.id);
@@ -793,7 +803,7 @@ where
             return Ok(());
         }
 
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         let id = msg.id;
@@ -913,7 +923,7 @@ where
             return Ok(());
         }
 
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         let id = msg.id;
@@ -980,7 +990,7 @@ where
             }
 
             let mut rx = {
-                let mut guard = self.state.lock().await;
+                let mut guard = self.lock_state().await;
                 let s = &mut *guard;
 
                 s.log.load(id).await?;
@@ -1062,7 +1072,7 @@ where
 
                     debug!(?id, received_len = ?received.len(), "receive new prepare reply");
 
-                    let mut guard = self.state.lock().await;
+                    let mut guard = self.lock_state().await;
                     let s = &mut *guard;
 
                     match msg {
@@ -1244,7 +1254,7 @@ where
 
         debug!(?msg);
 
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         let id = msg.id;
@@ -1326,7 +1336,7 @@ where
         debug!("run_join");
 
         let mut rx = {
-            let mut guard = self.state.lock().await;
+            let mut guard = self.lock_state().await;
             let s = &mut *guard;
 
             let targets = s.peers.select_all();
@@ -1369,7 +1379,7 @@ where
             while let Ok(Some(msg)) = recv_timeout(&mut rx, join_timeout).await {
                 let _ = received.insert(msg.sender);
 
-                let mut guard = self.state.lock().await;
+                let mut guard = self.lock_state().await;
                 let s = &mut *guard;
 
                 let cluster_size = s.peers.cluster_size();
@@ -1387,7 +1397,7 @@ where
 
     #[tracing::instrument(skip_all, fields(?msg))]
     async fn handle_join(self: &Arc<Self>, msg: Join) -> Result<()> {
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         if let Some(prev) = self.network.join(msg.sender, msg.addr) {
@@ -1418,7 +1428,7 @@ where
 
     #[tracing::instrument(skip_all, fields(?msg))]
     async fn handle_leave(self: &Arc<Self>, msg: Leave) -> Result<()> {
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         s.peers.remove(msg.sender);
@@ -1429,7 +1439,7 @@ where
     }
 
     pub async fn run_probe_rtt(&self) -> Result<()> {
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         let targets = s.peers.select_all();
@@ -1461,7 +1471,7 @@ where
         debug!(?peer, ?rtt);
 
         {
-            let mut guard = self.state.lock().await;
+            let mut guard = self.lock_state().await;
             let s = &mut *guard;
             s.peers.set_rtt(peer, rtt);
         }
@@ -1470,7 +1480,7 @@ where
     }
 
     pub async fn run_sync_known(self: &Arc<Self>) -> Result<()> {
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         s.log.update_bounds();
@@ -1495,7 +1505,7 @@ where
     async fn handle_ask_log(self: &Arc<Self>, msg: AskLog) -> Result<()> {
         self.network.join(msg.sender, msg.addr);
 
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         s.log.update_bounds();
@@ -1544,7 +1554,7 @@ where
 
     pub async fn run_sync_committed(self: &Arc<Self>) -> Result<bool> {
         let (rxs, quorum) = {
-            let mut guard = self.state.lock().await;
+            let mut guard = self.lock_state().await;
             let s = &mut *guard;
 
             s.log.update_bounds();
@@ -1633,7 +1643,7 @@ where
     }
 
     async fn handle_sync_log(self: &Arc<Self>, msg: SyncLog<C>) -> Result<()> {
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         for (id, mut ins) in msg.instances {
@@ -1690,7 +1700,7 @@ where
     }
 
     pub async fn run_broadcast_bounds(self: &Arc<Self>) -> Result<()> {
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         let committed_up_to = Some(s.log.committed_up_to());
@@ -1714,7 +1724,7 @@ where
     async fn handle_peer_bounds(self: &Arc<Self>, msg: PeerBounds) -> Result<()> {
         debug!(?msg, "handle_peer_bounds");
 
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
         if let Some(bounds) = msg.committed_up_to {
@@ -1808,7 +1818,7 @@ where
                     let end = lid.sub_one();
 
                     if start <= end {
-                        let mut guard = self.state.lock().await;
+                        let mut guard = self.lock_state().await;
                         let s = &mut *guard;
                         let avg_rtt = s.peers.get_avg_rtt();
                         drop(guard);
@@ -1938,7 +1948,7 @@ where
         notify.wait_issued().await;
 
         let prev_status = {
-            let mut guard = self.state.lock().await;
+            let mut guard = self.lock_state().await;
             let s = &mut *guard;
             let status = notify.status();
             s.log.update_status(id, status).await?;
@@ -1953,7 +1963,7 @@ where
         notify.wait_executed().await;
 
         if prev_status < Status::Executed {
-            let mut guard = self.state.lock().await;
+            let mut guard = self.lock_state().await;
             let s = &mut *guard;
             s.log.update_status(id, Status::Executed).await?;
             *node.status.lock() = ExecStatus::Executed;
@@ -1997,7 +2007,7 @@ where
         let mut prev_status = Vec::with_capacity(handles.len());
 
         {
-            let mut guard = self.state.lock().await;
+            let mut guard = self.lock_state().await;
             let s = &mut *guard;
             for (&(id, ref node), n) in scc.iter().zip(handles.iter()) {
                 let status = n.status();
@@ -2016,7 +2026,7 @@ where
         }
 
         {
-            let mut guard = self.state.lock().await;
+            let mut guard = self.lock_state().await;
             let s = &mut *guard;
             for (&(id, ref node), &prev) in scc.iter().zip(prev_status.iter()) {
                 if Status::Executed > prev {
@@ -2038,7 +2048,7 @@ where
                 task.abort()
             }
         }
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
         for id in iter {
             s.log.retire_instance(id);
@@ -2047,7 +2057,7 @@ where
     }
 
     pub async fn run_clear_key_map(self: &Arc<Self>) {
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
         let garbage = s.log.clear_key_map();
         drop(guard);
@@ -2055,7 +2065,7 @@ where
     }
 
     pub async fn run_save_bounds(self: &Arc<Self>) -> Result<()> {
-        let mut guard = self.state.lock().await;
+        let mut guard = self.lock_state().await;
         let s = &mut *guard;
         s.log.save_bounds().await
     }
