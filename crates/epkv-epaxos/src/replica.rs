@@ -331,7 +331,7 @@ where
         debug!(?id, "remove_propose_chan");
     }
 
-    #[tracing::instrument(skip_all, fields(id = ?id))]
+    #[tracing::instrument(skip_all, fields(id = ?id, pbal=?pbal))]
     async fn phase_preaccept(
         self: &Arc<Self>,
         mut guard: AsyncMutexGuard<'_, State<C, L>>,
@@ -357,6 +357,8 @@ where
 
             let (seq, deps) = s.log.calc_attributes(id, &cmd.keys());
             let deps = Deps::from_mutable(deps);
+
+            debug!(?id, ?seq, ?deps, "calc_attributes");
 
             let abal = pbal;
             let status = Status::PreAccepted;
@@ -523,6 +525,8 @@ where
                         let deps = Deps::from_mutable(deps);
                         let acc = Acc::from_mutable(acc);
 
+                        debug!(?id, ?seq, ?deps, "ins attributes");
+
                         with_mutex(&self.metrics, |m| {
                             if is_fast_path {
                                 m.preaccept_fast_path = m.preaccept_fast_path.wrapping_add(1);
@@ -583,7 +587,7 @@ where
         }
     }
 
-    #[tracing::instrument(skip_all, fields(id = ?msg.id))]
+    #[tracing::instrument(skip_all, fields(sender=?msg.sender, id = ?msg.id, pbal = ?msg.pbal))]
     async fn handle_preaccept(self: &Arc<Self>, msg: PreAccept<C>) -> Result<()> {
         if msg.epoch < self.epoch.load() {
             return Ok(());
@@ -620,6 +624,8 @@ where
             deps.merge(msg.deps.as_ref());
             (seq, Deps::from_mutable(deps))
         };
+
+        debug!(?id, ?seq, ?deps, "ins attributes");
 
         let is_changed = seq != msg.seq || deps != msg.deps;
 
@@ -797,7 +803,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(id = ?msg.id))]
+    #[tracing::instrument(skip_all, fields(sender=?msg.sender, id = ?msg.id, pbal = ?msg.pbal))]
     async fn handle_accept(self: &Arc<Self>, msg: Accept<C>) -> Result<()> {
         if msg.epoch < self.epoch.load() {
             return Ok(());
@@ -917,7 +923,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(id = ?msg.id))]
+    #[tracing::instrument(skip_all, fields(sender=?msg.sender, id = ?msg.id, pbal = ?msg.pbal))]
     async fn handle_commit(self: &Arc<Self>, msg: Commit<C>) -> Result<()> {
         if msg.epoch < self.epoch.load() {
             return Ok(());
