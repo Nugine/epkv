@@ -267,6 +267,11 @@ where
         &self.data_store
     }
 
+    #[inline]
+    pub fn rid(&self) -> ReplicaId {
+        self.rid
+    }
+
     #[tracing::instrument(skip_all, fields(rid = ?self.rid, epoch = ?self.epoch.load()))]
     pub async fn handle_message(self: &Arc<Self>, msg: Message<C>) -> Result<()> {
         debug!(msg_variant_name = ?msg.variant_name());
