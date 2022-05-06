@@ -950,8 +950,11 @@ where
 
         let status = match s.log.get_cached_ins(id) {
             Some(ins) if ins.status >= Status::Committed => {
-                assert_eq!(ins.seq, msg.seq);
-                assert_eq!(ins.deps, msg.deps);
+                if ins.seq != msg.seq || ins.deps != msg.deps {
+                    debug!(?id, ins_seq=?ins.seq, msg_seq=?msg.seq, ins_deps=?ins.deps, msg_deps=?msg.deps,"consistency incorrect");
+                    assert_eq!(ins.seq, msg.seq);
+                    assert_eq!(ins.deps, msg.deps);
+                }
                 ins.status
             }
             _ => Status::Committed,
