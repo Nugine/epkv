@@ -1957,8 +1957,11 @@ where
                     q.push(d);
                 }
 
-                if bfs_t0.elapsed() > Duration::from_secs(1) {
-                    debug!("bfs too slow")
+                {
+                    let elapsed = bfs_t0.elapsed();
+                    if elapsed > Duration::from_secs(1) {
+                        debug!(elapsed_us = ?elapsed.as_micros(), "bfs too slow")
+                    }
                 }
             }
 
