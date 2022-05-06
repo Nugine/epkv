@@ -20,6 +20,7 @@ use epkv_utils::vecmap::VecMap;
 use std::future::Future;
 use std::ops::Not;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{ensure, Result};
 use bytemuck::bytes_of;
@@ -45,7 +46,7 @@ impl LogDb {
         ins: Instance<BatchedCommand>,
         mode: UpdateMode,
     ) -> Result<()> {
-        debug!("saving instance");
+        let t0 = Instant::now();
 
         let needs_save_cmd = match mode {
             UpdateMode::Full => true,
@@ -89,6 +90,9 @@ impl LogDb {
 
         self.db.write(wb)?;
 
+        let elapsed = t0.elapsed();
+        debug!(elapsed_us = ?elapsed.as_micros(), "saved instance");
+
         Ok(())
     }
 
@@ -97,7 +101,7 @@ impl LogDb {
         // <https://github.com/facebook/rocksdb/wiki/Basic-Operations#iteration>
         // <https://github.com/facebook/rocksdb/wiki/Iterator>
 
-        debug!("loading instance");
+        let t0 = Instant::now();
 
         let mut iter = self.db.raw_iterator();
 
@@ -114,10 +118,7 @@ impl LogDb {
 
             let log_key: &InstanceFieldKey = match try_from_bytes(iter.key().unwrap()) {
                 Ok(k) => k,
-                Err(_) => {
-                    debug!(iter_key = ?iter.key(), "not an instance field key");
-                    return Ok(None);
-                }
+                Err(_) => return Ok(None),
             };
 
             if log_key.id() != id {
@@ -149,6 +150,9 @@ impl LogDb {
         let (deps, abal, acc) = others;
 
         let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+
+        let elapsed = t0.elapsed();
+        debug!(elapsed_us = ?elapsed.as_micros(), "loaded instance");
 
         Ok(Some(ins))
     }
