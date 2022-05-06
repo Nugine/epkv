@@ -12,6 +12,7 @@ use epkv_utils::cmp::max_assign;
 use epkv_utils::cmp::min_assign;
 use epkv_utils::lock::with_mutex;
 use epkv_utils::vecmap::VecMap;
+use epkv_utils::vecset::VecSet;
 use epkv_utils::watermark::WaterMark;
 
 use std::fmt;
@@ -21,6 +22,7 @@ use std::ops::Not;
 use dashmap::DashMap;
 use fnv::{FnvHashMap, FnvHashSet};
 use parking_lot::Mutex as SyncMutex;
+use rand::prelude::SliceRandom;
 use tokio::sync::Notify;
 
 pub struct Graph<C> {
@@ -154,21 +156,36 @@ impl<C> Graph<C> {
     }
 }
 
-pub struct DepsQueue(VecMap<ReplicaId, LocalInstanceId>);
+pub struct DepsQueue {
+    map: VecMap<ReplicaId, LocalInstanceId>,
+    rows: VecSet<ReplicaId>,
+}
 
 impl DepsQueue {
     #[must_use]
-    pub fn from_single(InstanceId(rid, lid): InstanceId) -> Self {
-        Self(VecMap::from_single(rid, lid))
+    pub fn new(InstanceId(rid, lid): InstanceId) -> Self {
+        Self {
+            map: VecMap::from_single(rid, lid),
+            rows: VecSet::from_single(rid),
+        }
     }
 
     pub fn push(&mut self, InstanceId(rid, lid): InstanceId) {
-        self.0.update(rid, |v: _| max_assign(v, lid), || lid);
+        self.map.update(
+            rid,
+            |v: _| max_assign(v, lid),
+            || {
+                let _ = self.rows.insert(rid);
+                lid
+            },
+        );
     }
 
     #[must_use]
     pub fn pop(&mut self) -> Option<InstanceId> {
-        self.0.pop_max().map(|(rid, lid)| InstanceId(rid, lid))
+        let row = self.rows.as_slice().choose(&mut rand::thread_rng()).copied()?;
+        let _ = self.rows.remove(&row);
+        self.map.remove(&row).map(|lid| InstanceId(row, lid))
     }
 }
 

@@ -1810,7 +1810,7 @@ where
             debug!("lock row {:?}", root.0);
 
             let mut vis: _ = FnvHashSet::<InstanceId>::default();
-            let mut q = DepsQueue::from_single(root);
+            let mut q = DepsQueue::new(root);
             let bfs_t0 = Instant::now();
 
             while let Some(id) = q.pop() {
