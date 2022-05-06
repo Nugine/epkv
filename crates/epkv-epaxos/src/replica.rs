@@ -1891,9 +1891,8 @@ where
                 };
 
                 {
-                    let guard = node.status.lock();
-                    let status = *guard;
-                    if status > ExecStatus::Committed {
+                    let needs_skip = node.estatus(|es| *es > ExecStatus::Committed);
+                    if needs_skip {
                         continue;
                     }
                 }
@@ -1956,12 +1955,15 @@ where
             drop(local_graph);
 
             {
-                let mut guard = node.status.lock();
-                let status = &mut *guard;
-                if *status == ExecStatus::Committed {
-                    *status = ExecStatus::Issuing;
-                    debug!(?root, "mark issuing");
-                } else {
+                let needs_issue = node.estatus(|es| {
+                    if *es == ExecStatus::Committed {
+                        *es = ExecStatus::Issuing;
+                        true
+                    } else {
+                        false
+                    }
+                });
+                if needs_issue.not() {
                     return Ok(());
                 }
             }
@@ -1991,7 +1993,7 @@ where
 
                     let mut needs_issue = None;
                     for (id, node) in &scc {
-                        with_mutex(&node.status, |es| {
+                        node.estatus(|es| {
                             let flag = *es == ExecStatus::Committed;
                             if let Some(prev) = needs_issue {
                                 if prev != flag {
@@ -2047,7 +2049,7 @@ where
     #[tracing::instrument(skip_all, fields(?id))]
     async fn run_execute_single_node(self: &Arc<Self>, id: InstanceId, node: Asc<InsNode<C>>) -> Result<()> {
         {
-            let status = with_mutex(&node.status, |es| *es);
+            let status = node.estatus(|es| *es);
             assert_eq!(status, ExecStatus::Issuing);
         }
 
@@ -2068,7 +2070,7 @@ where
                 s.log.update_status(id, status).await?;
             }
 
-            with_mutex(&node.status, |es| match status {
+            node.estatus(|es| match status {
                 Status::Issued => *es = ExecStatus::Issued,
                 Status::Executed => *es = ExecStatus::Executed,
                 _ => {}
@@ -2087,7 +2089,7 @@ where
                 let s = &mut *guard;
                 s.log.update_status(id, Status::Executed).await?;
             }
-            with_mutex(&node.status, |es| *es = ExecStatus::Executed);
+            node.estatus(|es| *es = ExecStatus::Executed);
         }
 
         self.retire_executed_instances(std::iter::once(id)).await;
@@ -2136,7 +2138,7 @@ where
                 let status = n.status();
                 s.log.update_status(id, status).await?;
 
-                with_mutex(&node.status, |es| {
+                node.estatus(|es| {
                     match status {
                         Status::Issued => *es = ExecStatus::Issued,
                         Status::Executed => *es = ExecStatus::Executed,
@@ -2158,7 +2160,7 @@ where
             for (&(id, ref node), &prev) in scc.iter().zip(prev_status.iter()) {
                 if Status::Executed > prev {
                     s.log.update_status(id, Status::Executed).await?;
-                    with_mutex(&node.status, |es| *es = ExecStatus::Executed);
+                    node.estatus(|es| *es = ExecStatus::Executed);
                 }
             }
         }

@@ -24,6 +24,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 use parking_lot::Mutex as SyncMutex;
 use rand::prelude::SliceRandom;
 use tokio::sync::Notify;
+use tracing::debug;
 
 pub struct Graph<C> {
     nodes: DashMap<InstanceId, Node<C>>,
@@ -40,7 +41,18 @@ pub struct InsNode<C> {
     pub cmd: C,
     pub seq: Seq,
     pub deps: Deps,
-    pub status: SyncMutex<ExecStatus>,
+    status: SyncMutex<ExecStatus>,
+}
+
+impl<C> InsNode<C> {
+    pub fn estatus<R>(&self, f: impl FnOnce(&mut ExecStatus) -> R) -> R {
+        debug!("start to lock node");
+        let mut guard = self.status.lock();
+        debug!("locked node");
+        let ans = f(&mut *guard);
+        debug!("unlock node");
+        ans
+    }
 }
 
 impl<C> fmt::Debug for InsNode<C> {
