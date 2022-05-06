@@ -58,6 +58,6 @@ batch_max_size = 4096
 
 [interval]
 probe_rtt_interval_us = 10_000_000       # 10 s
-clear_key_map_interval_us = 10_000_000   # 10 s
+clear_key_map_interval_us = 2_000_000    # 2 s
 save_bounds_interval_us = 1_000_000      # 1 s
 broadcast_bounds_interval_us = 5_000_000 # 5 s
