@@ -165,7 +165,7 @@ where
 {
     pub async fn new(
         meta: ReplicaMeta,
-        mut log_store: L,
+        log_store: Arc<L>,
         data_store: Arc<D>,
         network: N,
     ) -> Result<Arc<Self>> {

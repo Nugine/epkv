@@ -9,6 +9,7 @@ use crate::store::{LogStore, UpdateMode};
 use std::collections::{hash_map, HashMap};
 use std::mem;
 use std::ops::Not;
+use std::sync::Arc;
 use std::time::Instant;
 
 use epkv_utils::asc::Asc;
@@ -28,7 +29,7 @@ where
     C: CommandLike,
     L: LogStore<C>,
 {
-    log_store: L,
+    log_store: Arc<L>,
 
     max_key_map: HashMap<C::Key, MaxKey>,
     max_lid_map: VecMap<ReplicaId, MaxLid>,
@@ -60,7 +61,12 @@ where
     C: CommandLike,
     L: LogStore<C>,
 {
-    pub fn new(log_store: L, attr_bounds: AttrBounds, status_bounds: Asc<SyncMutex<StatusBounds>>) -> Self {
+    #[must_use]
+    pub fn new(
+        log_store: Arc<L>,
+        attr_bounds: AttrBounds,
+        status_bounds: Asc<SyncMutex<StatusBounds>>,
+    ) -> Self {
         let max_key_map = HashMap::new();
 
         let max_lid_map = copied_map_collect(attr_bounds.max_lids.iter(), |(rid, lid)| {
@@ -270,6 +276,7 @@ where
         Ok(())
     }
 
+    #[must_use]
     pub fn get_cached_pbal(&self, id: InstanceId) -> Option<Ballot> {
         if let Some(ins) = self.ins_cache_get(id) {
             return Some(ins.pbal);
@@ -277,10 +284,12 @@ where
         self.pbal_cache.get(&id).copied()
     }
 
+    #[must_use]
     pub fn get_cached_ins(&self, id: InstanceId) -> Option<&Instance<C>> {
         self.ins_cache_get(id)
     }
 
+    #[must_use]
     pub fn should_ignore_pbal(&self, id: InstanceId, pbal: Ballot) -> bool {
         if let Some(saved_pbal) = self.get_cached_pbal(id) {
             if saved_pbal != pbal {
@@ -291,6 +300,7 @@ where
         false
     }
 
+    #[must_use]
     pub fn should_ignore_status(&self, id: InstanceId, pbal: Ballot, next_status: Status) -> bool {
         if let Some(ins) = self.get_cached_ins(id) {
             let abal = ins.abal;
@@ -307,14 +317,17 @@ where
         self.status_bounds.lock().update_bounds();
     }
 
+    #[must_use]
     pub fn known_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
         self.status_bounds.lock().known_up_to()
     }
 
+    #[must_use]
     pub fn committed_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
         self.status_bounds.lock().committed_up_to()
     }
 
+    #[must_use]
     pub fn executed_up_to(&self) -> VecMap<ReplicaId, LocalInstanceId> {
         self.status_bounds.lock().executed_up_to()
     }

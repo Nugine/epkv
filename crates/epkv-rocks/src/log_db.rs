@@ -304,9 +304,9 @@ impl LogDb {
     }
 }
 
-impl LogStore<BatchedCommand> for Arc<LogDb> {
+impl LogStore<BatchedCommand> for LogDb {
     fn save(
-        &mut self,
+        self: &Arc<Self>,
         id: InstanceId,
         ins: Instance<BatchedCommand>,
         mode: UpdateMode,
@@ -321,7 +321,7 @@ impl LogStore<BatchedCommand> for Arc<LogDb> {
         rx
     }
 
-    fn load(&mut self, id: InstanceId) -> oneshot::Receiver<Result<Option<Instance<BatchedCommand>>>> {
+    fn load(self: &Arc<Self>, id: InstanceId) -> oneshot::Receiver<Result<Option<Instance<BatchedCommand>>>> {
         let (tx, rx) = oneshot::channel();
         let this = Arc::clone(self);
         let task = move || {
@@ -332,7 +332,7 @@ impl LogStore<BatchedCommand> for Arc<LogDb> {
         rx
     }
 
-    fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> oneshot::Receiver<Result<()>> {
+    fn save_pbal(self: &Arc<Self>, id: InstanceId, pbal: Ballot) -> oneshot::Receiver<Result<()>> {
         let (tx, rx) = oneshot::channel();
         let this = Arc::clone(self);
         let task = move || {
@@ -343,7 +343,7 @@ impl LogStore<BatchedCommand> for Arc<LogDb> {
         rx
     }
 
-    fn load_pbal(&mut self, id: InstanceId) -> oneshot::Receiver<Result<Option<Ballot>>> {
+    fn load_pbal(self: &Arc<Self>, id: InstanceId) -> oneshot::Receiver<Result<Option<Ballot>>> {
         let (tx, rx) = oneshot::channel();
         let this = Arc::clone(self);
         let task = move || {
@@ -355,7 +355,7 @@ impl LogStore<BatchedCommand> for Arc<LogDb> {
     }
 
     fn save_bounds(
-        &mut self,
+        self: &Arc<Self>,
         attr_bounds: AttrBounds,
         status_bounds: SavedStatusBounds,
     ) -> oneshot::Receiver<Result<()>> {
@@ -369,7 +369,7 @@ impl LogStore<BatchedCommand> for Arc<LogDb> {
         rx
     }
 
-    fn load_bounds(&mut self) -> oneshot::Receiver<Result<(AttrBounds, StatusBounds)>> {
+    fn load_bounds(self: &Arc<Self>) -> oneshot::Receiver<Result<(AttrBounds, StatusBounds)>> {
         let (tx, rx) = oneshot::channel();
         let this = Arc::clone(self);
         let task = move || {
@@ -380,7 +380,7 @@ impl LogStore<BatchedCommand> for Arc<LogDb> {
         rx
     }
 
-    fn update_status(&mut self, id: InstanceId, status: Status) -> oneshot::Receiver<Result<()>> {
+    fn update_status(self: &Arc<Self>, id: InstanceId, status: Status) -> oneshot::Receiver<Result<()>> {
         let (tx, rx) = oneshot::channel();
         let this = Arc::clone(self);
         let task = move || {
