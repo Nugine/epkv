@@ -1096,7 +1096,7 @@ where
                     .await;
 
                 if let Some((id, cmd, seq, deps, status)) = is_committed {
-                    let _ = self.graph.init_node(id, cmd, seq, deps, status);
+                    self.graph.init_node(id, cmd, seq, deps, status);
                     return Ok(());
                 }
 
@@ -1894,7 +1894,7 @@ where
         }
 
         self.executing.entry(id).or_insert_with(|| {
-            let _ = self.graph.init_node(id, cmd, seq, deps, status);
+            self.graph.init_node(id, cmd, seq, deps, status);
 
             let this = Arc::clone(self);
             spawn(async move {
