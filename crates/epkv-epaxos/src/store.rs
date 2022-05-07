@@ -9,32 +9,26 @@ use epkv_utils::asc::Asc;
 use std::future::Future;
 
 use anyhow::Result;
+use tokio::sync::oneshot;
 
 pub trait LogStore<C>: Send + Sync + 'static {
-    type SaveFuture<'a>: Future<Output = Result<()>> + Send + 'a;
-    fn save(&mut self, id: InstanceId, ins: Instance<C>, mode: UpdateMode) -> Self::SaveFuture<'_>;
+    fn save(&mut self, id: InstanceId, ins: Instance<C>, mode: UpdateMode) -> oneshot::Receiver<Result<()>>;
 
-    type LoadFuture<'a>: Future<Output = Result<Option<Instance<C>>>> + Send + 'a;
-    fn load(&mut self, id: InstanceId) -> Self::LoadFuture<'_>;
+    fn load(&mut self, id: InstanceId) -> oneshot::Receiver<Result<Option<Instance<C>>>>;
 
-    type SavePbalFuture<'a>: Future<Output = Result<()>> + Send + 'a;
-    fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Self::SavePbalFuture<'_>;
+    fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> oneshot::Receiver<Result<()>>;
 
-    type LoadPbalFuture<'a>: Future<Output = Result<Option<Ballot>>> + Send + 'a;
-    fn load_pbal(&mut self, id: InstanceId) -> Self::LoadPbalFuture<'_>;
+    fn load_pbal(&mut self, id: InstanceId) -> oneshot::Receiver<Result<Option<Ballot>>>;
 
-    type SaveBoundsFuture<'a>: Future<Output = Result<()>> + Send + 'a;
     fn save_bounds(
         &mut self,
         attr_bounds: AttrBounds,
         status_bounds: SavedStatusBounds,
-    ) -> Self::SaveBoundsFuture<'_>;
+    ) -> oneshot::Receiver<Result<()>>;
 
-    type LoadBoundsFuture<'a>: Future<Output = Result<(AttrBounds, StatusBounds)>> + Send + 'a;
-    fn load_bounds(&mut self) -> Self::LoadBoundsFuture<'_>;
+    fn load_bounds(&mut self) -> oneshot::Receiver<Result<(AttrBounds, StatusBounds)>>;
 
-    type UpdateStatusFuture<'a>: Future<Output = Result<()>> + Send + 'a;
-    fn update_status(&mut self, id: InstanceId, status: Status) -> Self::UpdateStatusFuture<'_>;
+    fn update_status(&mut self, id: InstanceId, status: Status) -> oneshot::Receiver<Result<()>>;
 }
 
 #[derive(Debug, Clone, Copy)]

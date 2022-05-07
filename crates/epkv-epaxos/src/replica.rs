@@ -176,7 +176,7 @@ where
 
         let epoch = AtomicEpoch::new(epoch);
 
-        let (attr_bounds, status_bounds) = log_store.load_bounds().await?;
+        let (attr_bounds, status_bounds) = log_store.load_bounds().await??;
         let status_bounds: _ = Asc::new(SyncMutex::new(status_bounds));
 
         let state = {

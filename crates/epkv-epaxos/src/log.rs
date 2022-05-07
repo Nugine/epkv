@@ -207,7 +207,7 @@ where
         {
             clone!(ins);
             let t0 = Instant::now();
-            self.log_store.save(id, ins, mode).await?;
+            self.log_store.save(id, ins, mode).await??;
             debug!(elapsed_us = ?t0.elapsed().as_micros(), "saved instance id: {:?}, mode: {:?}", id, mode);
         }
 
@@ -227,14 +227,14 @@ where
     pub async fn load(&mut self, id: InstanceId) -> Result<()> {
         if self.ins_cache_contains(id).not() {
             let t0 = Instant::now();
-            let result = self.log_store.load(id).await;
+            let result = self.log_store.load(id).await?;
             debug!(elapsed_us = ?t0.elapsed().as_micros(), "loaded instance id: {:?}", id);
 
             if let Some(ins) = result? {
                 self.status_bounds.lock().set(id, ins.status);
                 self.cache_insert(id, ins);
             } else if self.pbal_cache.contains_key(&id).not() {
-                if let Some(pbal) = self.log_store.load_pbal(id).await? {
+                if let Some(pbal) = self.log_store.load_pbal(id).await?? {
                     let _ = self.pbal_cache.insert(id, pbal);
                 }
             }
@@ -243,7 +243,7 @@ where
     }
 
     pub async fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Result<()> {
-        self.log_store.save_pbal(id, pbal).await?;
+        self.log_store.save_pbal(id, pbal).await??;
 
         match self.ins_cache_get_mut(id) {
             Some(ins) => {
@@ -258,7 +258,7 @@ where
     }
 
     pub async fn update_status(&mut self, id: InstanceId, status: Status) -> Result<()> {
-        self.log_store.update_status(id, status).await?;
+        self.log_store.update_status(id, status).await??;
         if let Some(ins) = self.ins_cache_get_mut(id) {
             if ins.status >= Status::Committed && status < Status::Committed {
                 debug!(?id, ins_status=?ins.status, new_status=?status, "consistency incorrect");
@@ -332,7 +332,7 @@ where
             max_seq: self.max_seq.any,
             max_lids: map_collect(&self.max_lid_map, |&(rid, ref m)| (rid, m.any)),
         };
-        self.log_store.save_bounds(attr_bounds, saved_status_bounds).await?;
+        self.log_store.save_bounds(attr_bounds, saved_status_bounds).await??;
         Ok(())
     }
 

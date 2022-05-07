@@ -16,8 +16,8 @@ use epkv_utils::cmp::max_assign;
 use epkv_utils::codec;
 use epkv_utils::onemap::OneMap;
 use epkv_utils::vecmap::VecMap;
+use tokio::sync::oneshot;
 
-use std::future::Future;
 use std::ops::Not;
 use std::sync::Arc;
 use std::time::Instant;
@@ -304,78 +304,91 @@ impl LogDb {
     }
 }
 
-type SaveFuture = impl Future<Output = Result<()>> + Send + 'static;
-type LoadFuture = impl Future<Output = Result<Option<Instance<BatchedCommand>>>> + Send + 'static;
-type SavePbalFuture = impl Future<Output = Result<()>> + Send + 'static;
-type LoadPbalFuture = impl Future<Output = Result<Option<Ballot>>> + Send + 'static;
-type SaveBoundsFuture = impl Future<Output = Result<()>> + Send + 'static;
-type LoadBoundsFuture = impl Future<Output = Result<(AttrBounds, StatusBounds)>> + Send + 'static;
-type UpdateStatusFuture = impl Future<Output = Result<()>> + Send + 'static;
-
 impl LogStore<BatchedCommand> for Arc<LogDb> {
-    type SaveFuture<'a> = SaveFuture;
     fn save(
         &mut self,
         id: InstanceId,
         ins: Instance<BatchedCommand>,
         mode: UpdateMode,
-    ) -> Self::SaveFuture<'_> {
-        // let this = Arc::clone(self);
-        // let task = move || LogDb::save(&this, id, ins, mode);
-        // async move { tokio::task::spawn_blocking(task).await.unwrap() }
-        std::future::ready(LogDb::save(self, id, ins, mode))
+    ) -> oneshot::Receiver<Result<()>> {
+        let (tx, rx) = oneshot::channel();
+        let this = Arc::clone(self);
+        let task = move || {
+            let result = LogDb::save(&this, id, ins, mode);
+            let _ = tx.send(result);
+        };
+        tokio::task::spawn_blocking(task);
+        rx
     }
 
-    type LoadFuture<'a> = LoadFuture;
-    fn load(&mut self, id: InstanceId) -> Self::LoadFuture<'_> {
-        // let this = Arc::clone(self);
-        // let task = move || LogDb::load(&this, id);
-        // async move { tokio::task::spawn_blocking(task).await.unwrap() }
-        std::future::ready(LogDb::load(self, id))
+    fn load(&mut self, id: InstanceId) -> oneshot::Receiver<Result<Option<Instance<BatchedCommand>>>> {
+        let (tx, rx) = oneshot::channel();
+        let this = Arc::clone(self);
+        let task = move || {
+            let result = LogDb::load(&this, id);
+            let _ = tx.send(result);
+        };
+        tokio::task::spawn_blocking(task);
+        rx
     }
 
-    type SavePbalFuture<'a> = SavePbalFuture;
-    fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Self::SavePbalFuture<'_> {
-        // let this = Arc::clone(self);
-        // let task = move || LogDb::save_pbal(&this, id, pbal);
-        // async move { tokio::task::spawn_blocking(task).await.unwrap() }
-        std::future::ready(LogDb::save_pbal(self, id, pbal))
+    fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> oneshot::Receiver<Result<()>> {
+        let (tx, rx) = oneshot::channel();
+        let this = Arc::clone(self);
+        let task = move || {
+            let result = LogDb::save_pbal(&this, id, pbal);
+            let _ = tx.send(result);
+        };
+        tokio::task::spawn_blocking(task);
+        rx
     }
 
-    type LoadPbalFuture<'a> = LoadPbalFuture;
-    fn load_pbal(&mut self, id: InstanceId) -> Self::LoadPbalFuture<'_> {
-        // let this = Arc::clone(self);
-        // let task = move || LogDb::load_pbal(&this, id);
-        // async move { tokio::task::spawn_blocking(task).await.unwrap() }
-        std::future::ready(LogDb::load_pbal(self, id))
+    fn load_pbal(&mut self, id: InstanceId) -> oneshot::Receiver<Result<Option<Ballot>>> {
+        let (tx, rx) = oneshot::channel();
+        let this = Arc::clone(self);
+        let task = move || {
+            let result = LogDb::load_pbal(&this, id);
+            let _ = tx.send(result);
+        };
+        tokio::task::spawn_blocking(task);
+        rx
     }
 
-    type SaveBoundsFuture<'a> = SaveBoundsFuture;
     fn save_bounds(
         &mut self,
         attr_bounds: AttrBounds,
         status_bounds: SavedStatusBounds,
-    ) -> Self::SaveBoundsFuture<'_> {
-        // let this = Arc::clone(self);
-        // let task = move || LogDb::save_bounds(&this, attr_bounds, status_bounds);
-        // async move { tokio::task::spawn_blocking(task).await.unwrap() }
-        std::future::ready(LogDb::save_bounds(self, attr_bounds, status_bounds))
+    ) -> oneshot::Receiver<Result<()>> {
+        let (tx, rx) = oneshot::channel();
+        let this = Arc::clone(self);
+        let task = move || {
+            let result = LogDb::save_bounds(&this, attr_bounds, status_bounds);
+            let _ = tx.send(result);
+        };
+        tokio::task::spawn_blocking(task);
+        rx
     }
 
-    type LoadBoundsFuture<'a> = LoadBoundsFuture;
-    fn load_bounds(&mut self) -> Self::LoadBoundsFuture<'_> {
-        // let this = Arc::clone(self);
-        // let task = move || LogDb::load_bounds(&this);
-        // async move { tokio::task::spawn_blocking(task).await.unwrap() }
-        std::future::ready(LogDb::load_bounds(self))
+    fn load_bounds(&mut self) -> oneshot::Receiver<Result<(AttrBounds, StatusBounds)>> {
+        let (tx, rx) = oneshot::channel();
+        let this = Arc::clone(self);
+        let task = move || {
+            let result = LogDb::load_bounds(&this);
+            let _ = tx.send(result);
+        };
+        tokio::task::spawn_blocking(task);
+        rx
     }
 
-    type UpdateStatusFuture<'a> = UpdateStatusFuture;
-    fn update_status(&mut self, id: InstanceId, status: Status) -> Self::UpdateStatusFuture<'_> {
-        // let this = Arc::clone(self);
-        // let task = move || LogDb::update_status(&this, id, status);
-        // async move { tokio::task::spawn_blocking(task).await.unwrap() }
-        std::future::ready(LogDb::update_status(self, id, status))
+    fn update_status(&mut self, id: InstanceId, status: Status) -> oneshot::Receiver<Result<()>> {
+        let (tx, rx) = oneshot::channel();
+        let this = Arc::clone(self);
+        let task = move || {
+            let result = LogDb::update_status(&this, id, status);
+            let _ = tx.send(result);
+        };
+        tokio::task::spawn_blocking(task);
+        rx
     }
 }
 
