@@ -9,7 +9,7 @@ where
 {
     type Key: Clone + Eq + Ord + Hash + Send + Sync + 'static;
 
-    type Keys: Keys<Key = Self::Key>;
+    type Keys: Keys<Key = Self::Key> + Send + Sync + 'static;
 
     fn keys(&self) -> Self::Keys;
 

@@ -7,7 +7,7 @@ use crate::exec::ExecNotify;
 use crate::graph::{DepsQueue, Graph, InsNode, LocalGraph};
 use crate::id::*;
 use crate::ins::Instance;
-use crate::log::Log;
+use crate::log::{InsGuard, Log};
 use crate::msg::*;
 use crate::net::{self, Network};
 use crate::peers::Peers;
@@ -62,7 +62,8 @@ where
     config: ReplicaConfig,
 
     epoch: AtomicEpoch,
-    state: AsyncMutex<State<C, L>>,
+    state: AsyncMutex<State>,
+    log: Log<C, L>,
 
     propose_tx: DashMap<InstanceId, mpsc::Sender<Message<C>>>,
     join_tx: SyncMutex<Option<mpsc::Sender<JoinOk>>>,
@@ -83,14 +84,8 @@ where
     probe_rtt_countdown: AtomicU64,
 }
 
-struct State<C, L>
-where
-    C: CommandLike,
-    L: LogStore<C>,
-{
+struct State {
     peers: Peers,
-
-    log: Log<C, L>,
 
     peer_status_bounds: PeerStatusBounds,
 
@@ -99,42 +94,26 @@ where
     sync_id_head: Head<SyncId>,
 }
 
-struct StateGuard<'a, C, L>
-where
-    C: CommandLike,
-    L: LogStore<C>,
-{
-    guard: AsyncMutexGuard<'a, State<C, L>>,
+struct StateGuard<'a> {
+    guard: AsyncMutexGuard<'a, State>,
     t1: Instant,
 }
 
-impl<C, L> Deref for StateGuard<'_, C, L>
-where
-    C: CommandLike,
-    L: LogStore<C>,
-{
-    type Target = State<C, L>;
+impl Deref for StateGuard<'_> {
+    type Target = State;
 
     fn deref(&self) -> &Self::Target {
         &*self.guard
     }
 }
 
-impl<C, L> DerefMut for StateGuard<'_, C, L>
-where
-    C: CommandLike,
-    L: LogStore<C>,
-{
+impl DerefMut for StateGuard<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut *self.guard
     }
 }
 
-impl<C, L> Drop for StateGuard<'_, C, L>
-where
-    C: CommandLike,
-    L: LogStore<C>,
-{
+impl Drop for StateGuard<'_> {
     fn drop(&mut self) {
         debug!(elapsed_us = ?self.t1.elapsed().as_micros(), "unlock state");
     }
@@ -193,12 +172,12 @@ where
 
             let sync_id_head = Head::new(SyncId::ZERO);
 
-            let log = Log::new(log_store, attr_bounds, Asc::clone(&status_bounds));
-
             let peer_status_bounds = PeerStatusBounds::new();
 
-            AsyncMutex::new(State { peers, lid_head, sync_id_head, log, peer_status_bounds })
+            AsyncMutex::new(State { peers, lid_head, sync_id_head, peer_status_bounds })
         };
+
+        let log = Log::new(log_store, attr_bounds, Asc::clone(&status_bounds));
 
         let propose_tx = DashMap::new();
         let join_tx = SyncMutex::new(None);
@@ -233,6 +212,7 @@ where
             public_peer_addr,
             config,
             state,
+            log,
             epoch,
             propose_tx,
             join_tx,
@@ -360,27 +340,13 @@ where
         result
     }
 
-    async fn lock_state(&self) -> StateGuard<'_, C, L> {
+    async fn lock_state(&self) -> StateGuard<'_> {
         debug!("start to lock state");
         let t0 = Instant::now();
         let guard = self.state.lock().await;
         debug!(elapsed_us = ?t0.elapsed().as_micros(), "locked state");
         let t1 = Instant::now();
         StateGuard { guard, t1 }
-    }
-
-    #[tracing::instrument(skip_all, fields(rid=?self.rid))]
-    pub async fn run_propose(self: &Arc<Self>, cmd: C) -> Result<()> {
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
-
-        let id = InstanceId(self.rid, s.lid_head.gen_next());
-        let pbal = Ballot(Round::ZERO, self.rid);
-        let acc = Acc::from_mutable(MutableAcc::with_capacity(1));
-
-        debug!(?id, "run_propose");
-
-        self.phase_preaccept(guard, id, pbal, Some(cmd), acc).await
     }
 
     fn random_time(duration: Duration, rate_range: ops::Range<f64>) -> Duration {
@@ -400,10 +366,57 @@ where
         debug!(?id, "remove_propose_chan");
     }
 
+    async fn determine_update_mode(&self, id: InstanceId, cmd: Option<C>) -> Result<(C, UpdateMode)> {
+        if let Some(cmd) = cmd {
+            return Ok((cmd, UpdateMode::Full));
+        }
+        self.log.load(id).await?;
+        let cmd: _ = self.log.with_cached_ins(id, |ins: _| ins.unwrap().cmd.clone()).await;
+        Ok((cmd, UpdateMode::Partial))
+    }
+
+    async fn is_status_changed(&self, id: InstanceId, expected: Status) -> bool {
+        self.log
+            .with_cached_ins(id, |ins: _| {
+                let ins = ins.unwrap();
+                ins.status != expected
+            })
+            .await
+    }
+
+    #[tracing::instrument(skip_all, fields(?id))]
+    async fn resume_propose(self: &Arc<Self>, id: InstanceId, msg: Message<C>) -> Result<()> {
+        debug!(?id, reply_variant_name=?msg.variant_name());
+        let tx = self.propose_tx.get(&id).as_deref().cloned();
+        if let Some(tx) = tx {
+            let _ = tx.send(msg).await;
+        }
+        Ok(())
+    }
+
+    async fn with<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
+        let mut guard = self.lock_state().await;
+        f(&mut *guard)
+    }
+
+    #[tracing::instrument(skip_all, fields(rid=?self.rid))]
+    pub async fn run_propose(self: &Arc<Self>, cmd: C) -> Result<()> {
+        let id = self.with(|s| InstanceId(self.rid, s.lid_head.gen_next())).await;
+
+        let pbal = Ballot(Round::ZERO, self.rid);
+        let acc = Acc::from_mutable(MutableAcc::with_capacity(1));
+
+        debug!(?id, "run_propose");
+
+        let ins_guard = self.log.lock_instance(id).await;
+
+        self.phase_preaccept(ins_guard, id, pbal, Some(cmd), acc).await
+    }
+
     #[tracing::instrument(skip_all, fields(id = ?id, pbal=?pbal))]
     async fn phase_preaccept(
         self: &Arc<Self>,
-        mut guard: StateGuard<'_, C, L>,
+        ins_guard: InsGuard,
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,
@@ -412,22 +425,14 @@ where
         debug!("phase_preaccept");
 
         let (mut rx, mut seq, mut deps, mut acc, targets) = {
-            let s = &mut *guard;
+            self.log.load(id).await?;
 
-            s.log.load(id).await?;
-
-            let (cmd, mode) = match cmd {
-                Some(cmd) => (cmd, UpdateMode::Full),
-                None => {
-                    let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-                    (ins.cmd.clone(), UpdateMode::Partial)
-                }
-            };
+            let (cmd, mode) = self.determine_update_mode(id, cmd).await?;
 
             let calc_t0 = Instant::now();
 
-            let (seq, deps) = s.log.calc_attributes(id, &cmd.keys());
-            let deps = Deps::from_mutable(deps);
+            let (seq, deps) =
+                self.log.calc_and_update_attributes(id, cmd.keys(), Seq::ZERO, &Deps::default()).await;
 
             debug!(?id, ?seq, ?deps, elapsed_us=?calc_t0.elapsed().as_micros(), "calc_attributes");
 
@@ -443,17 +448,24 @@ where
             {
                 clone!(cmd, deps, acc);
                 let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
-                s.log.save(id, ins, mode).await?;
+                self.log.save(id, ins, mode, Some(false)).await?;
             }
 
-            let quorum = s.peers.cluster_size().wrapping_sub(2);
-            let selected_peers = s.peers.select(quorum, acc.as_ref());
+            let quorum;
+            let selected_peers;
+            let avg_rtt;
+            {
+                let mut guard = self.state.lock().await;
+                let s = &mut *guard;
+
+                quorum = s.peers.cluster_size().wrapping_sub(2);
+                selected_peers = s.peers.select(quorum, acc.as_ref());
+                avg_rtt = s.peers.get_avg_rtt();
+            }
 
             let rx = self.insert_propose_chan(id, quorum);
 
-            let avg_rtt = s.peers.get_avg_rtt();
-
-            drop(guard);
+            drop(ins_guard);
 
             let targets = selected_peers.to_merged();
 
@@ -521,27 +533,24 @@ where
 
                         debug!("received preaccept reply");
 
-                        let mut guard = self.lock_state().await;
-                        let s = &mut *guard;
-
                         let pbal = match msg {
                             PreAcceptReply::Ok(ref msg) => msg.pbal,
                             PreAcceptReply::Diff(ref msg) => msg.pbal,
                         };
 
-                        s.log.load(id).await?;
+                        let ins_guard = self.log.lock_instance(id).await;
 
-                        if s.log.should_ignore_pbal(id, pbal) {
+                        self.log.load(id).await?;
+
+                        if self.log.should_ignore_pbal(id, pbal).await {
                             continue;
                         }
 
-                        let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-
-                        if ins.status != Status::PreAccepted {
-                            continue;
+                        if self.is_status_changed(id, Status::PreAccepted).await {
+                            break;
                         }
 
-                        let cluster_size = s.peers.cluster_size();
+                        let cluster_size = self.with(|s| s.peers.cluster_size()).await;
 
                         {
                             let msg_sender = match msg {
@@ -608,10 +617,10 @@ where
 
                         if is_fast_path {
                             debug!("fast path");
-                            return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+                            return self.phase_commit(ins_guard, id, pbal, cmd, seq, deps, acc).await;
                         } else {
                             debug!("slow path");
-                            return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                            return self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc).await;
                         }
                     }
                     Ok(None) => break,
@@ -630,13 +639,18 @@ where
                             };
 
                             s.peers.set_inf_rtt(&no_reply_targets);
+                            drop(guard);
                             break;
                         }
 
+                        drop(guard);
+
                         debug!("preaccept timeout: goto slow path");
 
-                        s.log.load(id).await?;
-                        let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
+                        let ins_guard = self.log.lock_instance(id).await;
+
+                        self.log.load(id).await?;
+                        let pbal = self.log.get_cached_pbal(id).await.expect("pbal should exist");
 
                         let cmd = None;
                         let deps = Deps::from_mutable(deps);
@@ -646,7 +660,7 @@ where
                             m.preaccept_slow_path = m.preaccept_slow_path.wrapping_add(1);
                         });
 
-                        return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                        return self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc).await;
                     }
                 }
             }
@@ -665,35 +679,23 @@ where
 
         debug!(seq=?msg.seq, deps=?msg.deps);
 
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
-
         let id = msg.id;
         let pbal = msg.pbal;
 
-        s.log.load(id).await?;
+        let ins_guard = self.log.lock_instance(id).await;
 
-        if s.log.should_ignore_pbal(id, pbal) {
+        self.log.load(id).await?;
+
+        if self.log.should_ignore_pbal(id, pbal).await {
             return Ok(());
         }
-        if s.log.should_ignore_status(id, pbal, Status::PreAccepted) {
+        if self.log.should_ignore_status(id, pbal, Status::PreAccepted).await {
             return Ok(());
         }
 
-        let (cmd, mode) = match msg.cmd {
-            Some(cmd) => (cmd, UpdateMode::Full),
-            None => {
-                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-                (ins.cmd.clone(), UpdateMode::Partial)
-            }
-        };
+        let (cmd, mode) = self.determine_update_mode(id, msg.cmd).await?;
 
-        let (seq, deps) = {
-            let (mut seq, mut deps) = s.log.calc_attributes(id, &cmd.keys());
-            max_assign(&mut seq, msg.seq);
-            deps.merge(msg.deps.as_ref());
-            (seq, Deps::from_mutable(deps))
-        };
+        let (seq, deps) = self.log.calc_and_update_attributes(id, cmd.keys(), msg.seq, &msg.deps).await;
 
         debug!(?id, ?seq, ?deps, "ins attributes");
 
@@ -708,11 +710,14 @@ where
         {
             clone!(deps);
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            s.log.save(id, ins, mode).await?
+            self.log.save(id, ins, mode, Some(false)).await?
         }
 
-        let avg_rtt = s.peers.get_avg_rtt();
+        drop(ins_guard);
 
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
+        let avg_rtt = s.peers.get_avg_rtt();
         drop(guard);
 
         {
@@ -733,21 +738,11 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(?id))]
-    async fn resume_propose(self: &Arc<Self>, id: InstanceId, msg: Message<C>) -> Result<()> {
-        debug!(?id, reply_variant_name=?msg.variant_name());
-        let tx = self.propose_tx.get(&id).as_deref().cloned();
-        if let Some(tx) = tx {
-            let _ = tx.send(msg).await;
-        }
-        Ok(())
-    }
-
     #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn phase_accept(
         self: &Arc<Self>,
-        mut guard: StateGuard<'_, C, L>,
+        ins_guard: InsGuard,
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,
@@ -758,34 +753,30 @@ where
         debug!("phase_accept");
 
         let (mut rx, mut acc) = {
-            let s = &mut *guard;
-
             let abal = pbal;
             let status = Status::Accepted;
 
-            let quorum = s.peers.cluster_size() / 2;
-            let selected_peers = s.peers.select(quorum, acc.as_ref());
-
-            let (cmd, mode) = match cmd {
-                Some(cmd) => (cmd, UpdateMode::Full),
-                None => {
-                    s.log.load(id).await?;
-                    let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-                    (ins.cmd.clone(), UpdateMode::Partial)
-                }
-            };
+            let (cmd, mode) = self.determine_update_mode(id, cmd).await?;
 
             {
                 clone!(cmd, deps, acc);
                 let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-                s.log.save(id, ins, mode).await?;
+                self.log.save(id, ins, mode, None).await?;
             }
 
-            let rx = self.insert_propose_chan(id, quorum);
+            let mut guard = self.state.lock().await;
+            let s = &mut *guard;
+
+            let quorum = s.peers.cluster_size() / 2;
+            let selected_peers = s.peers.select(quorum, acc.as_ref());
 
             let avg_rtt = s.peers.get_avg_rtt();
 
             drop(guard);
+
+            let rx = self.insert_propose_chan(id, quorum);
+
+            drop(ins_guard);
 
             {
                 debug!(?selected_peers, "broadcast accept");
@@ -831,27 +822,21 @@ where
 
                 debug!("received accept reply");
 
-                let mut guard = self.lock_state().await;
-                let s = &mut *guard;
-
                 assert_eq!(id, msg.id);
+
+                let ins_guard = self.log.lock_instance(id).await;
 
                 let pbal = msg.pbal;
 
-                s.log.load(id).await?;
+                self.log.load(id).await?;
 
-                if s.log.should_ignore_pbal(id, pbal) {
+                if self.log.should_ignore_pbal(id, pbal).await {
                     continue;
                 }
 
-                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-
-                if ins.status != Status::Accepted {
-                    continue;
+                if self.is_status_changed(id, Status::Accepted).await {
+                    break;
                 }
-
-                let seq = ins.seq;
-                let deps = ins.deps.clone();
 
                 {
                     if received.insert(msg.sender).is_some() {
@@ -860,7 +845,10 @@ where
                     acc.insert(msg.sender);
                 }
 
+                let mut guard = self.state.lock().await;
+                let s = &mut *guard;
                 let cluster_size = s.peers.cluster_size();
+                drop(guard);
 
                 if received.len() < cluster_size / 2 {
                     continue;
@@ -868,7 +856,16 @@ where
 
                 let cmd = None;
                 let acc = Acc::from_mutable(acc);
-                return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+
+                let (seq, deps) = self
+                    .log
+                    .with_cached_ins(id, |ins| {
+                        let ins = ins.unwrap();
+                        (ins.seq, ins.deps.clone())
+                    })
+                    .await;
+
+                return self.phase_commit(ins_guard, id, pbal, cmd, seq, deps, acc).await;
             }
         }
 
@@ -883,18 +880,17 @@ where
             return Ok(());
         }
 
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
-
         let id = msg.id;
         let pbal = msg.pbal;
 
-        s.log.load(id).await?;
+        let ins_guard = self.log.lock_instance(id).await;
 
-        if s.log.should_ignore_pbal(id, pbal) {
+        self.log.load(id).await?;
+
+        if self.log.should_ignore_pbal(id, pbal).await {
             return Ok(());
         }
-        if s.log.should_ignore_status(id, pbal, Status::Accepted) {
+        if self.log.should_ignore_status(id, pbal, Status::Accepted).await {
             return Ok(());
         }
 
@@ -907,18 +903,17 @@ where
         let seq = msg.seq;
         let deps = msg.deps;
 
-        let (cmd, mode) = match msg.cmd {
-            Some(cmd) => (cmd, UpdateMode::Full),
-            None => {
-                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-                (ins.cmd.clone(), UpdateMode::Partial)
-            }
-        };
+        let (cmd, mode) = self.determine_update_mode(id, msg.cmd).await?;
 
         {
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            s.log.save(id, ins, mode).await?;
+            self.log.save(id, ins, mode, None).await?;
         }
+
+        drop(ins_guard);
+
+        let mut guard = self.lock_state().await;
+        let s = &mut *guard;
 
         let avg_rtt = s.peers.get_avg_rtt();
 
@@ -939,7 +934,7 @@ where
     #[tracing::instrument(skip_all, fields(id = ?id))]
     async fn phase_commit(
         self: &Arc<Self>,
-        mut guard: StateGuard<'_, C, L>,
+        ins_guard: InsGuard,
         id: InstanceId,
         pbal: Ballot,
         cmd: Option<C>,
@@ -949,30 +944,26 @@ where
     ) -> Result<()> {
         debug!("phase_commit");
 
-        let s = &mut *guard;
-
         let abal = pbal;
         let status = Status::Committed;
+
+        let (cmd, mode) = self.determine_update_mode(id, cmd).await?;
+
+        let mut guard = self.state.lock().await;
+        let s = &mut *guard;
 
         let quorum = s.peers.cluster_size().wrapping_sub(1);
         let selected_peers = s.peers.select(quorum, acc.as_ref());
 
-        let (cmd, mode) = match cmd {
-            Some(cmd) => (cmd, UpdateMode::Full),
-            None => {
-                s.log.load(id).await?;
-                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-                (ins.cmd.clone(), UpdateMode::Partial)
-            }
-        };
+        drop(guard);
 
         {
             clone!(cmd, deps, acc);
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            s.log.save(id, ins, mode).await?;
+            self.log.save(id, ins, mode, None).await?;
         }
 
-        drop(guard);
+        drop(ins_guard);
 
         cmd.notify_committed();
 
@@ -1007,42 +998,34 @@ where
             return Ok(());
         }
 
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
-
         let id = msg.id;
         let pbal = msg.pbal;
 
-        s.log.load(id).await?;
+        let ins_guard = self.log.lock_instance(id).await;
 
-        if s.log.should_ignore_pbal(id, pbal) {
+        self.log.load(id).await?;
+
+        if self.log.should_ignore_pbal(id, pbal).await {
             return Ok(());
         }
 
-        if s.log.should_ignore_status(id, pbal, Status::Committed) {
+        if self.log.should_ignore_status(id, pbal, Status::Committed).await {
             return Ok(());
         }
 
-        let (cmd, mode) = match msg.cmd {
-            Some(cmd) => (cmd, UpdateMode::Full),
-            None => {
-                s.log.load(id).await?;
-                let ins: _ = s.log.get_cached_ins(id).expect("instance should exist");
-                (ins.cmd.clone(), UpdateMode::Partial)
-            }
-        };
+        let (cmd, mode) = self.determine_update_mode(id, msg.cmd).await?;
 
-        let status = match s.log.get_cached_ins(id) {
-            Some(ins) if ins.status >= Status::Committed => {
-                if ins.seq != msg.seq || ins.deps != msg.deps {
-                    debug!(?id, ins_seq=?ins.seq, msg_seq=?msg.seq, ins_deps=?ins.deps, msg_deps=?msg.deps,"consistency incorrect");
-                    assert_eq!(ins.seq, msg.seq);
-                    assert_eq!(ins.deps, msg.deps);
+        let status = self.log.with_cached_ins(id, |ins|match ins {
+                Some(ins) if ins.status >= Status::Committed => {
+                    if ins.seq != msg.seq || ins.deps != msg.deps {
+                        debug!(?id, ins_seq=?ins.seq, msg_seq=?msg.seq, ins_deps=?ins.deps, msg_deps=?msg.deps,"consistency incorrect");
+                        assert_eq!(ins.seq, msg.seq);
+                        assert_eq!(ins.deps, msg.deps);
+                    }
+                    ins.status
                 }
-                ins.status
-            }
-            _ => Status::Committed,
-        };
+                _ => Status::Committed,
+            }).await;
 
         let seq = msg.seq;
         let deps = msg.deps;
@@ -1055,10 +1038,10 @@ where
         {
             clone!(cmd, deps);
             let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
-            s.log.save(id, ins, mode).await?
+            self.log.save(id, ins, mode, None).await?
         }
 
-        drop(guard);
+        drop(ins_guard);
 
         self.graph.sync_watermark(id.0);
         self.spawn_execute(id, cmd, seq, deps, status);
@@ -1088,42 +1071,57 @@ where
             }
 
             let mut rx = {
-                let mut guard = self.lock_state().await;
-                let s = &mut *guard;
+                let ins_guard = self.log.lock_instance(id).await;
 
                 if self.propose_tx.contains_key(&id) {
                     continue;
                 }
 
-                s.log.load(id).await?;
+                self.log.load(id).await?;
 
-                if let Some(ins) = s.log.get_cached_ins(id) {
-                    if ins.status >= Status::Committed {
-                        let cmd = ins.cmd.clone();
-                        let seq = ins.seq;
-                        let deps = ins.deps.clone();
-                        let status = ins.status;
-                        let _ = self.graph.init_node(id, cmd, seq, deps, status);
-                        return Ok(());
-                    }
+                let is_committed = self
+                    .log
+                    .with_cached_ins(id, |ins| {
+                        if let Some(ins) = ins {
+                            if ins.status >= Status::Committed {
+                                let cmd = ins.cmd.clone();
+                                let seq = ins.seq;
+                                let deps = ins.deps.clone();
+                                let status = ins.status;
+                                return Some((id, cmd, seq, deps, status));
+                            }
+                        }
+                        None
+                    })
+                    .await;
+
+                if let Some((id, cmd, seq, deps, status)) = is_committed {
+                    let _ = self.graph.init_node(id, cmd, seq, deps, status);
+                    return Ok(());
                 }
 
-                let pbal = match s.log.get_cached_pbal(id) {
+                let pbal = match self.log.get_cached_pbal(id).await {
                     Some(Ballot(rnd, _)) => Ballot(rnd.add_one(), self.rid),
                     None => Ballot(Round::ZERO, self.rid),
                 };
 
                 debug!(?pbal);
 
-                let known = matches!(s.log.get_cached_ins(id), Some(ins) if ins.cmd.is_nop().not());
+                let known = self
+                    .log
+                    .with_cached_ins(id, |ins: _| matches!(ins, Some(ins) if ins.cmd.is_nop().not()))
+                    .await;
 
-                let mut targets = s.peers.select_all();
+                let mut guard = self.state.lock().await;
+                let s = &mut *guard;
 
-                let rx = self.insert_propose_chan(id, targets.len());
+                let targets = s.peers.select_all();
 
                 drop(guard);
 
-                let _ = targets.insert(self.rid);
+                let rx = self.insert_propose_chan(id, targets.len());
+
+                drop(ins_guard);
 
                 {
                     let sender = self.rid;
@@ -1179,18 +1177,16 @@ where
                         continue;
                     }
 
-                    let mut guard = self.lock_state().await;
-                    let s = &mut *guard;
-
                     match msg {
                         PrepareReply::Ok(ref msg) => assert_eq!(id, msg.id),
                         PrepareReply::Nack(ref msg) => assert_eq!(id, msg.id),
                         PrepareReply::Unchosen(ref msg) => assert_eq!(id, msg.id),
                     };
 
-                    s.log.load(id).await?;
+                    let ins_guard = self.log.lock_instance(id).await;
+                    self.log.load(id).await?;
                     if let PrepareReply::Ok(ref msg) = msg {
-                        if s.log.should_ignore_pbal(id, msg.pbal) {
+                        if self.log.should_ignore_pbal(id, msg.pbal).await {
                             continue;
                         }
                     }
@@ -1200,8 +1196,8 @@ where
                             let _ = received.insert(msg.sender);
                         }
                         PrepareReply::Nack(msg) => {
-                            s.log.save_pbal(id, msg.pbal).await?;
-                            drop(guard);
+                            self.log.save_pbal(id, msg.pbal).await?;
+                            drop(ins_guard);
                             break;
                         }
                         PrepareReply::Ok(msg) => {
@@ -1235,7 +1231,13 @@ where
 
                     debug!(?id, received_len = ?received.len(), "received prepare reply: tuples: {:?}", tuples);
 
+                    let mut guard = self.lock_state().await;
+                    let s = &mut *guard;
+
                     let cluster_size = s.peers.cluster_size();
+
+                    drop(guard);
+
                     if has_one_commit.not() && received.len() <= cluster_size / 2 {
                         continue;
                     }
@@ -1245,7 +1247,7 @@ where
                         None => continue,
                     };
 
-                    let pbal = s.log.get_cached_pbal(id).expect("pbal should exist");
+                    let pbal = self.log.get_cached_pbal(id).await.expect("pbal should exist");
 
                     debug!(?pbal, ?tuples, "recover succeeded");
                     with_mutex(&self.metrics, |m| {
@@ -1255,10 +1257,13 @@ where
                     let _ = self.recovering.remove(&id);
 
                     let acc = {
-                        let mut acc = match s.log.get_cached_ins(id) {
-                            Some(ins) => MutableAcc::clone(ins.acc.as_ref()),
-                            None => MutableAcc::default(),
-                        };
+                        let mut acc = self
+                            .log
+                            .with_cached_ins(id, |ins| match ins {
+                                Some(ins) => MutableAcc::clone(ins.acc.as_ref()),
+                                None => MutableAcc::default(),
+                            })
+                            .await;
                         for (_, _, _, _, a) in tuples.iter() {
                             acc.union(a.as_ref());
                         }
@@ -1268,14 +1273,14 @@ where
                     for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
                         if status >= Status::Committed {
                             let deps = mem::take(deps);
-                            return self.phase_commit(guard, id, pbal, cmd, seq, deps, acc).await;
+                            return self.phase_commit(ins_guard, id, pbal, cmd, seq, deps, acc).await;
                         }
                     }
 
                     for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
                         if status == Status::Accepted {
                             let deps = mem::take(deps);
-                            return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                            return self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc).await;
                         }
                     }
 
@@ -1304,30 +1309,34 @@ where
                             if let Some(attr) = max_cnt_attr {
                                 let seq = attr.0;
                                 let deps = mem::take(attr.1);
-                                return self.phase_accept(guard, id, pbal, cmd, seq, deps, acc).await;
+                                return self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc).await;
                             }
                         }
                     }
 
                     if tuples.is_empty().not() {
-                        return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
+                        return self.phase_preaccept(ins_guard, id, pbal, cmd, acc).await;
                     }
 
-                    let (cmd, acc) = match s.log.get_cached_ins(id) {
-                        Some(_) => (None, acc),
-                        None => {
-                            with_mutex(&self.metrics, |m| {
-                                m.recover_nop_count = m.recover_nop_count.wrapping_add(1);
-                            });
-                            (Some(C::create_nop()), Acc::default())
-                        }
-                    };
+                    let (cmd, acc) = self
+                        .log
+                        .with_cached_ins(id, |ins| match ins {
+                            Some(_) => (None, acc),
+                            None => (Some(C::create_nop()), Acc::default()),
+                        })
+                        .await;
 
-                    return self.phase_preaccept(guard, id, pbal, cmd, acc).await;
+                    if cmd.is_some() {
+                        with_mutex(&self.metrics, |m| {
+                            m.recover_nop_count = m.recover_nop_count.wrapping_add(1);
+                        });
+                    }
+
+                    return self.phase_preaccept(ins_guard, id, pbal, cmd, acc).await;
                 }
-
-                self.remove_propose_chan(id);
             }
+
+            self.remove_propose_chan(id);
         }
     }
 
@@ -1361,17 +1370,15 @@ where
 
         debug!(?msg);
 
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
-
         let id = msg.id;
 
-        s.log.load(id).await?;
+        let ins_guard = self.log.lock_instance(id).await;
+        self.log.load(id).await?;
 
         let epoch = self.epoch.load();
 
         let reply: Result<Message<C>> = async {
-            if let Some(pbal) = s.log.get_cached_pbal(id) {
+            if let Some(pbal) = self.log.get_cached_pbal(id).await {
                 if pbal >= msg.pbal {
                     let sender = self.rid;
                     return Ok(Message::PrepareNack(PrepareNack { sender, epoch, id, pbal }));
@@ -1380,43 +1387,49 @@ where
 
             let pbal = msg.pbal;
 
-            s.log.save_pbal(id, pbal).await?;
+            self.log.save_pbal(id, pbal).await?;
 
-            let ins: _ = match s.log.get_cached_ins(id) {
-                Some(ins) => ins,
-                None => {
+            self.log
+                .with_cached_ins(id, |ins| {
+                    let ins = match ins {
+                        Some(ins) => ins,
+                        None => {
+                            let sender = self.rid;
+                            return Ok(Message::PrepareUnchosen(PrepareUnchosen { sender, epoch, id }));
+                        }
+                    };
+
+                    let cmd = if msg.known && ins.cmd.is_nop().not() {
+                        None
+                    } else {
+                        Some(ins.cmd.clone())
+                    };
+
+                    let seq = ins.seq;
+                    let deps = ins.deps.clone();
+                    let abal = ins.abal;
+                    let status = ins.status;
+                    let acc = ins.acc.clone();
+
                     let sender = self.rid;
-                    return Ok(Message::PrepareUnchosen(PrepareUnchosen { sender, epoch, id }));
-                }
-            };
-
-            let cmd = if msg.known && ins.cmd.is_nop().not() {
-                None
-            } else {
-                Some(ins.cmd.clone())
-            };
-
-            let seq = ins.seq;
-            let deps = ins.deps.clone();
-            let abal = ins.abal;
-            let status = ins.status;
-            let acc = ins.acc.clone();
-
-            let sender = self.rid;
-            Ok(Message::PrepareOk(PrepareOk {
-                sender,
-                epoch,
-                id,
-                pbal,
-                cmd,
-                seq,
-                deps,
-                abal,
-                status,
-                acc,
-            }))
+                    Ok(Message::PrepareOk(PrepareOk {
+                        sender,
+                        epoch,
+                        id,
+                        pbal,
+                        cmd,
+                        seq,
+                        deps,
+                        abal,
+                        status,
+                        acc,
+                    }))
+                })
+                .await
         }
         .await;
+
+        drop(ins_guard);
 
         let reply = reply?;
 
@@ -1589,11 +1602,11 @@ where
     }
 
     pub async fn run_sync_known(self: &Arc<Self>) -> Result<()> {
+        self.log.update_bounds();
+        let known_up_to = self.log.known_up_to();
+
         let mut guard = self.lock_state().await;
         let s = &mut *guard;
-
-        s.log.update_bounds();
-        let known_up_to = s.log.known_up_to();
 
         let target = match s.peers.select_one() {
             Some(t) => t,
@@ -1614,11 +1627,8 @@ where
     async fn handle_ask_log(self: &Arc<Self>, msg: AskLog) -> Result<()> {
         self.network.join(msg.sender, msg.addr);
 
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
-
-        s.log.update_bounds();
-        let local_known_up_to = s.log.known_up_to();
+        self.log.update_bounds();
+        let local_known_up_to = self.log.known_up_to();
 
         let target = msg.sender;
         let sender = self.rid;
@@ -1641,9 +1651,13 @@ where
             for lid in LocalInstanceId::range_inclusive(lower.add_one(), higher) {
                 let id = InstanceId(rid, lid);
 
-                s.log.load(id).await?;
+                let ins_guard = self.log.lock_instance(id).await;
+                self.log.load(id).await?;
+                let ins = self.log.with_cached_ins(id, |ins| ins.cloned()).await;
 
-                if let Some(ins) = s.log.get_cached_ins(id) {
+                drop(ins_guard);
+
+                if let Some(ins) = ins {
                     instances.push((id, ins.clone()));
                     if instances.len() >= limit {
                         send_log(mem::take(&mut instances))
@@ -1656,26 +1670,25 @@ where
             }
         }
 
-        drop(guard);
-
         Ok(())
     }
 
     pub async fn run_sync_committed(self: &Arc<Self>) -> Result<bool> {
         let (rxs, quorum) = {
+            self.log.update_bounds();
+            let local_bounds = self.log.committed_up_to();
+
             let mut guard = self.lock_state().await;
             let s = &mut *guard;
-
-            s.log.update_bounds();
-
-            let local_bounds = s.log.committed_up_to();
             let peer_bounds = s.peer_status_bounds.committed_up_to();
 
-            let mut rxs = Vec::new();
-
             let targets = s.peers.select_all();
+
+            drop(guard);
+
             let sender = self.rid;
-            let mut send_log = |s: &mut State<_, _>, instances| {
+            let mut rxs = Vec::new();
+            let mut send_log = |s: &mut State, instances| {
                 let sync_id = s.sync_id_head.gen_next();
                 let (tx, rx) = mpsc::channel(targets.len());
                 let _ = self.sync_tx.insert(sync_id, tx);
@@ -1695,27 +1708,35 @@ where
 
                 for lid in LocalInstanceId::range_inclusive(lower.add_one(), higher) {
                     let id: _ = InstanceId(rid, lid);
+                    let _ins_guard = self.log.lock_instance(id).await;
 
-                    s.log.load(id).await?;
+                    self.log.load(id).await?;
 
-                    let ins = match s.log.get_cached_ins(id) {
-                        Some(ins) if ins.status >= Status::Committed => ins,
-                        _ => continue,
-                    };
+                    let ins = self
+                        .log
+                        .with_cached_ins(id, |ins| match ins {
+                            Some(ins) if ins.status >= Status::Committed => Some(ins.clone()),
+                            _ => None,
+                        })
+                        .await;
 
-                    instances.push((id, ins.clone()));
+                    if let Some(ins) = ins {
+                        instances.push((id, ins.clone()));
 
-                    if instances.len() >= limit {
-                        send_log(s, mem::take(&mut instances));
+                        if instances.len() >= limit {
+                            let mut guard = self.state.lock().await;
+                            let s = &mut *guard;
+                            send_log(s, mem::take(&mut instances));
+                        }
                     }
                 }
 
                 if instances.is_empty().not() {
+                    let mut guard = self.state.lock().await;
+                    let s = &mut *guard;
                     send_log(s, instances);
                 }
             }
-
-            drop(guard);
 
             (rxs, targets.len())
         };
@@ -1752,43 +1773,50 @@ where
     }
 
     async fn handle_sync_log(self: &Arc<Self>, msg: SyncLog<C>) -> Result<()> {
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
-
         for (id, mut ins) in msg.instances {
-            s.log.load(id).await?;
-            match s.log.get_cached_ins(id) {
-                None => {
-                    s.log.save(id, ins, UpdateMode::Full).await?;
-                }
-                Some(saved_ins) => {
-                    if saved_ins.status < Status::Committed && ins.status >= Status::Committed {
-                        max_assign(&mut ins.pbal, saved_ins.pbal);
-                        max_assign(&mut ins.abal, saved_ins.abal);
-                        ins.status = Status::Committed;
+            let _ins_guard = self.log.lock_instance(id).await;
 
-                        ins.acc.cow_insert(self.rid);
-                        let mode = if saved_ins.cmd.is_nop() != ins.cmd.is_nop() {
-                            UpdateMode::Full
+            self.log.load(id).await?;
+
+            let opt = self
+                .log
+                .with_cached_ins(id, |saved_ins| match saved_ins {
+                    None => Some((UpdateMode::Full, ins.status >= Status::Committed)),
+                    Some(saved_ins) => {
+                        if saved_ins.status < Status::Committed && ins.status >= Status::Committed {
+                            max_assign(&mut ins.pbal, saved_ins.pbal);
+                            max_assign(&mut ins.abal, saved_ins.abal);
+                            ins.status = Status::Committed;
+
+                            ins.acc.cow_insert(self.rid);
+                            let mode = if saved_ins.cmd.is_nop() != ins.cmd.is_nop() {
+                                UpdateMode::Full
+                            } else {
+                                UpdateMode::Partial
+                            };
+
+                            Some((mode, true))
                         } else {
-                            UpdateMode::Partial
-                        };
-
-                        {
-                            let cmd = ins.cmd.clone();
-                            let seq = ins.seq;
-                            let deps = ins.deps.clone();
-                            let status = ins.status;
-
-                            s.log.save(id, ins, mode).await?;
-                            self.spawn_execute(id, cmd, seq, deps, status);
+                            None
                         }
                     }
+                })
+                .await;
+
+            if let Some((mode, needs_exec)) = opt {
+                if needs_exec {
+                    let cmd = ins.cmd.clone();
+                    let seq = ins.seq;
+                    let deps = ins.deps.clone();
+                    let status = ins.status;
+
+                    self.log.save(id, ins, mode, None).await?;
+                    self.spawn_execute(id, cmd, seq, deps, status);
+                } else {
+                    self.log.save(id, ins, mode, None).await?;
                 }
             }
         }
-
-        drop(guard);
 
         if msg.sync_id != SyncId::ZERO {
             let target = msg.sender;
@@ -1813,12 +1841,13 @@ where
         let mut guard = self.lock_state().await;
         let s = &mut *guard;
 
-        let committed_up_to = Some(s.log.committed_up_to());
-        let executed_up_to = Some(s.log.executed_up_to());
-
         let targets = s.peers.select_all();
 
         drop(guard);
+
+        let bounds = self.log.saved_status_bounds();
+        let committed_up_to = Some(bounds.committed_up_to);
+        let executed_up_to = Some(bounds.executed_up_to);
 
         {
             let sender = self.rid;
@@ -2106,9 +2135,8 @@ where
             let status = notify.status();
 
             {
-                let mut guard = self.lock_state().await;
-                let s = &mut *guard;
-                s.log.update_status(id, status).await?;
+                let _ins_guard = self.log.lock_instance(id).await;
+                self.log.update_status(id, status).await?;
             }
 
             node.estatus(|es| match status {
@@ -2126,9 +2154,8 @@ where
 
         if prev_status < Status::Executed {
             {
-                let mut guard = self.lock_state().await;
-                let s = &mut *guard;
-                s.log.update_status(id, Status::Executed).await?;
+                let _ins_guard = self.log.lock_instance(id).await;
+                self.log.update_status(id, Status::Executed).await?;
             }
             node.estatus(|es| *es = ExecStatus::Executed);
         }
@@ -2173,12 +2200,13 @@ where
         let mut prev_status = Vec::with_capacity(handles.len());
         let mut is_all_executed = true;
         {
-            let mut guard = self.lock_state().await;
-            let s = &mut *guard;
             for (&(id, ref node), n) in scc.iter().zip(handles.iter()) {
                 let status = n.status();
-                s.log.update_status(id, status).await?;
 
+                {
+                    let _ins_guard = self.log.lock_instance(id).await;
+                    self.log.update_status(id, status).await?;
+                }
                 node.estatus(|es| {
                     match status {
                         Status::Issued => *es = ExecStatus::Issued,
@@ -2197,14 +2225,13 @@ where
                 n.wait_executed().await;
             }
 
-            {
-                let mut guard = self.lock_state().await;
-                let s = &mut *guard;
-                for (&(id, ref node), &prev) in scc.iter().zip(prev_status.iter()) {
-                    if Status::Executed > prev {
-                        s.log.update_status(id, Status::Executed).await?;
-                        node.estatus(|es| *es = ExecStatus::Executed);
+            for (&(id, ref node), &prev) in scc.iter().zip(prev_status.iter()) {
+                if prev < Status::Executed {
+                    {
+                        let _ins_guard = self.log.lock_instance(id).await;
+                        self.log.update_status(id, Status::Executed).await?;
                     }
+                    node.estatus(|es| *es = ExecStatus::Executed);
                 }
             }
         }
@@ -2221,10 +2248,9 @@ where
                 task.abort()
             }
         }
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
         for id in iter {
-            s.log.retire_instance(id);
+            let _ins_guard = self.log.lock_instance(id).await;
+            self.log.retire_instance(id).await;
         }
         debug!("retire instances")
     }
@@ -2232,17 +2258,12 @@ where
     #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_clear_key_map(self: &Arc<Self>) {
         debug!("run_clear_key_map");
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
-        let garbage = s.log.clear_key_map();
-        drop(guard);
+        let garbage = self.log.clear_key_map().await;
         drop(garbage);
     }
 
     #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_save_bounds(self: &Arc<Self>) -> Result<()> {
-        let mut guard = self.lock_state().await;
-        let s = &mut *guard;
-        s.log.save_bounds().await
+        self.log.save_bounds().await
     }
 }

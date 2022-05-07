@@ -266,15 +266,20 @@ where
         self.status_bounds.lock().executed_up_to()
     }
 
-    pub async fn save_bounds(&self) -> Result<()> {
-        let saved_status_bounds = with_mutex(&self.status_bounds, |status_bounds: _| {
+    #[must_use]
+    pub fn saved_status_bounds(&self) -> SavedStatusBounds {
+        with_mutex(&self.status_bounds, |status_bounds: _| {
             status_bounds.update_bounds();
             SavedStatusBounds {
                 known_up_to: status_bounds.known_up_to(),
                 committed_up_to: status_bounds.committed_up_to(),
                 executed_up_to: status_bounds.executed_up_to(),
             }
-        });
+        })
+    }
+
+    pub async fn save_bounds(&self) -> Result<()> {
+        let saved_status_bounds = self.saved_status_bounds();
         let attr_bounds = self.with(|cache| cache.calc_attr_bounds()).await;
         self.log_store.save_bounds(attr_bounds, saved_status_bounds).await??;
         Ok(())
