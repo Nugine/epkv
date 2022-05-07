@@ -7,6 +7,7 @@ use crate::status::Status;
 use epkv_utils::asc::Asc;
 
 use std::future::Future;
+use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::sync::oneshot;
@@ -39,5 +40,5 @@ pub enum UpdateMode {
 
 pub trait DataStore<C>: Send + Sync + 'static {
     type Future<'a>: Future<Output = Result<()>> + Send + 'a;
-    fn issue(&self, id: InstanceId, cmd: C, notify: Asc<ExecNotify>) -> Self::Future<'_>;
+    fn issue<'a>(self: &'a Arc<Self>, id: InstanceId, cmd: C, notify: Asc<ExecNotify>) -> Self::Future<'a>;
 }

@@ -44,7 +44,7 @@ use tracing::debug;
 use tracing::error;
 use wgp::WaitGroup;
 
-type EpkvReplica = Replica<BatchedCommand, Arc<LogDb>, Arc<DataDb>, TcpNetwork<BatchedCommand>>;
+type EpkvReplica = Replica<BatchedCommand, Arc<LogDb>, DataDb, TcpNetwork<BatchedCommand>>;
 
 pub struct Server {
     replica: Arc<EpkvReplica>,

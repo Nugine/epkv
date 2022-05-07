@@ -69,7 +69,7 @@ where
     sync_tx: DashMap<SyncId, mpsc::Sender<SyncLogOk>>,
 
     graph: Graph<C>,
-    data_store: D,
+    data_store: Arc<D>,
 
     network: N,
 
@@ -163,7 +163,12 @@ where
     D: DataStore<C>,
     N: Network<C>,
 {
-    pub async fn new(meta: ReplicaMeta, mut log_store: L, data_store: D, network: N) -> Result<Arc<Self>> {
+    pub async fn new(
+        meta: ReplicaMeta,
+        mut log_store: L,
+        data_store: Arc<D>,
+        network: N,
+    ) -> Result<Arc<Self>> {
         let rid = meta.rid;
         let public_peer_addr = meta.public_peer_addr;
         let epoch = meta.epoch;
@@ -357,12 +362,9 @@ where
 
     async fn lock_state(&self) -> StateGuard<'_, C, L> {
         debug!("start to lock state");
-
         let t0 = Instant::now();
         let guard = self.state.lock().await;
-
         debug!(elapsed_us = ?t0.elapsed().as_micros(), "locked state");
-
         let t1 = Instant::now();
         StateGuard { guard, t1 }
     }

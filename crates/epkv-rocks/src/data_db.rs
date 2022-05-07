@@ -88,9 +88,14 @@ impl DataDb {
 
 type IssueFuture = impl Future<Output = Result<()>> + Send + 'static;
 
-impl DataStore<BatchedCommand> for Arc<DataDb> {
+impl DataStore<BatchedCommand> for DataDb {
     type Future<'a> = IssueFuture;
-    fn issue(&self, id: InstanceId, cmd: BatchedCommand, notify: Asc<ExecNotify>) -> Self::Future<'_> {
+    fn issue<'a>(
+        self: &'a Arc<Self>,
+        id: InstanceId,
+        cmd: BatchedCommand,
+        notify: Asc<ExecNotify>,
+    ) -> Self::Future<'a> {
         debug!(?id, "issuing cmd");
         let this = Arc::clone(self);
         let task = move || {
