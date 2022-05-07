@@ -1,27 +1,26 @@
 use crate::bounds::{AttrBounds, SavedStatusBounds, StatusBounds};
-use crate::cmd::{CommandLike, Keys};
-use crate::deps::MutableDeps;
+use crate::cache::LogCache;
+use crate::cmd::CommandLike;
+use crate::deps::Deps;
 use crate::id::{Ballot, InstanceId, LocalInstanceId, ReplicaId, Seq};
 use crate::ins::Instance;
 use crate::status::Status;
 use crate::store::{LogStore, UpdateMode};
 
-use std::collections::{hash_map, HashMap};
-use std::mem;
+use epkv_utils::asc::Asc;
+use epkv_utils::clone;
+use epkv_utils::lock::with_mutex;
+use epkv_utils::vecmap::VecMap;
+
 use std::ops::Not;
 use std::sync::Arc;
 use std::time::Instant;
 
-use epkv_utils::asc::Asc;
-use epkv_utils::clone;
-use epkv_utils::cmp::max_assign;
-use epkv_utils::iter::{copied_map_collect, map_collect};
-use epkv_utils::lock::with_mutex;
-use epkv_utils::vecmap::VecMap;
-
 use anyhow::Result;
-use fnv::FnvHashMap;
+use dashmap::DashMap;
 use parking_lot::Mutex as SyncMutex;
+use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;
 use tracing::debug;
 
 pub struct Log<C, L>
@@ -31,29 +30,22 @@ where
 {
     log_store: Arc<L>,
 
-    max_key_map: HashMap<C::Key, MaxKey>,
-    max_lid_map: VecMap<ReplicaId, MaxLid>,
-    max_seq: MaxSeq,
-
     status_bounds: Asc<SyncMutex<StatusBounds>>,
 
-    ins_cache: VecMap<ReplicaId, FnvHashMap<LocalInstanceId, Instance<C>>>,
-    pbal_cache: FnvHashMap<InstanceId, Ballot>,
+    cache: AsyncMutex<LogCache<C>>,
+
+    ins_locks: DashMap<InstanceId, Arc<AsyncMutex<()>>>,
 }
 
-struct MaxKey {
-    seq: Seq,
-    lids: VecMap<ReplicaId, LocalInstanceId>,
+pub struct InsGuard {
+    _guard: OwnedAsyncMutexGuard<()>,
+    t1: Instant,
 }
 
-struct MaxLid {
-    checkpoint: LocalInstanceId,
-    any: LocalInstanceId,
-}
-
-struct MaxSeq {
-    checkpoint: Seq,
-    any: Seq,
+impl Drop for InsGuard {
+    fn drop(&mut self) {
+        debug!(elapsed_us = ?self.t1.elapsed().as_micros(), "unlock instance");
+    }
 }
 
 impl<C, L> Log<C, L>
@@ -67,149 +59,76 @@ where
         attr_bounds: AttrBounds,
         status_bounds: Asc<SyncMutex<StatusBounds>>,
     ) -> Self {
-        let max_key_map = HashMap::new();
-
-        let max_lid_map = copied_map_collect(attr_bounds.max_lids.iter(), |(rid, lid)| {
-            let max_lid = MaxLid { checkpoint: lid, any: lid };
-            (rid, max_lid)
-        });
-
-        let max_seq = MaxSeq { checkpoint: attr_bounds.max_seq, any: attr_bounds.max_seq };
-
-        let ins_cache = VecMap::new();
-        let pbal_cache = FnvHashMap::default();
-
-        Self {
-            log_store,
-            max_key_map,
-            max_lid_map,
-            max_seq,
-            status_bounds,
-            ins_cache,
-            pbal_cache,
-        }
+        let cache = AsyncMutex::new(LogCache::new(attr_bounds));
+        let ins_locks = DashMap::new();
+        Self { log_store, status_bounds, cache, ins_locks }
     }
 
-    pub fn calc_attributes(&self, id: InstanceId, keys: &C::Keys) -> (Seq, MutableDeps) {
-        let mut deps = MutableDeps::with_capacity(self.max_lid_map.len());
-        let mut seq = Seq::ZERO;
-        let InstanceId(rid, lid) = id;
-
-        if keys.is_unbounded() {
-            let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
-            for &(r, ref m) in others {
-                deps.insert(InstanceId(r, m.any));
-            }
-            max_assign(&mut seq, self.max_seq.any);
-        } else {
-            keys.for_each(|k| {
-                if let Some(m) = self.max_key_map.get(k) {
-                    let others: _ = m.lids.iter().filter(|(r, _)| *r != rid);
-                    for &(r, l) in others {
-                        deps.insert(InstanceId(r, l));
-                    }
-                    max_assign(&mut seq, m.seq);
-                }
-            });
-            let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
-            for &(r, ref m) in others {
-                deps.insert(InstanceId(r, m.checkpoint));
-            }
-            max_assign(&mut seq, self.max_seq.checkpoint);
-        }
-        if lid > LocalInstanceId::ONE {
-            deps.insert(InstanceId(rid, lid.sub_one()));
-        }
-        seq = seq.add_one();
-        (seq, deps)
+    pub async fn lock_instance(&self, id: InstanceId) -> InsGuard {
+        let mutex = self.ins_locks.entry(id).or_insert_with(|| Arc::new(AsyncMutex::new(()))).clone();
+        debug!("start to lock instance {:?}", id);
+        let t0 = Instant::now();
+        let guard = mutex.lock_owned().await;
+        debug!(elapsed_us = ?t0.elapsed().as_micros(), "locked instance");
+        let t1 = Instant::now();
+        InsGuard { _guard: guard, t1 }
     }
 
-    fn update_attrs(&mut self, id: InstanceId, keys: C::Keys, seq: Seq) {
-        let InstanceId(rid, lid) = id;
+    pub async fn calc_and_update_attributes(
+        &self,
+        id: InstanceId,
+        keys: C::Keys,
+        prev_seq: Seq,
+        prev_deps: &Deps,
+    ) -> (Seq, Deps) {
+        let mut guard = self.cache.lock().await;
+        let cache = &mut *guard;
 
-        if keys.is_unbounded() {
-            self.max_lid_map.update(
-                rid,
-                |m| {
-                    max_assign(&mut m.checkpoint, lid);
-                    max_assign(&mut m.any, lid);
-                },
-                || MaxLid { checkpoint: lid, any: lid },
-            );
+        let (seq, mut deps) = cache.calc_attributes(id, &keys);
+        let seq = seq.max(prev_seq);
+        deps.merge(prev_deps.as_ref());
+        let deps = Deps::from_mutable(deps);
 
-            max_assign(&mut self.max_seq.checkpoint, seq);
-            max_assign(&mut self.max_seq.any, seq);
-        } else {
-            keys.for_each(|k| match self.max_key_map.entry(k.clone()) {
-                hash_map::Entry::Occupied(mut e) => {
-                    let m = e.get_mut();
-                    max_assign(&mut m.seq, seq);
-                    m.lids.update(rid, |l| max_assign(l, lid), || lid);
-                }
-                hash_map::Entry::Vacant(e) => {
-                    let mut lids = VecMap::new();
-                    let _ = lids.insert(rid, lid);
-                    e.insert(MaxKey { seq, lids });
-                }
-            });
-            self.max_lid_map.update(
-                rid,
-                |m| max_assign(&mut m.any, lid),
-                || MaxLid { checkpoint: lid, any: lid },
-            );
-
-            max_assign(&mut self.max_seq.any, seq);
-        }
-    }
-
-    pub fn clear_key_map(&mut self) -> impl Send + Sync + 'static {
-        let cap = self.max_key_map.capacity() / 2;
-        let new_key_map = HashMap::with_capacity(cap);
-
-        let garbage = mem::replace(&mut self.max_key_map, new_key_map);
-
-        for (_, m) in &mut self.max_lid_map {
-            m.checkpoint = m.any;
-        }
-        {
-            let m = &mut self.max_seq;
-            m.checkpoint = m.any;
-        }
-
-        garbage
-    }
-
-    fn ins_cache_get(&self, id: InstanceId) -> Option<&Instance<C>> {
-        let row = self.ins_cache.get(&id.0)?;
-        row.get(&id.1)
-    }
-
-    fn ins_cache_get_mut(&mut self, id: InstanceId) -> Option<&mut Instance<C>> {
-        let row = self.ins_cache.get_mut(&id.0)?;
-        row.get_mut(&id.1)
-    }
-
-    fn ins_cache_contains(&self, id: InstanceId) -> bool {
-        match self.ins_cache.get(&id.0) {
-            Some(row) => row.contains_key(&id.1),
-            None => false,
-        }
-    }
-
-    fn cache_insert(&mut self, id: InstanceId, ins: Instance<C>) {
-        let (_, row) = self.ins_cache.init_with(id.0, FnvHashMap::default);
-        if row.insert(id.1, ins).is_none() {
-            self.pbal_cache.remove(&id);
-        }
-    }
-
-    pub async fn save(&mut self, id: InstanceId, ins: Instance<C>, mode: UpdateMode) -> Result<()> {
-        let needs_update_attrs = if let Some(saved) = self.ins_cache_get(id) {
-            saved.seq != ins.seq || saved.deps != ins.deps
+        let needs_update_attrs = if let Some(saved) = cache.get_ins(id) {
+            saved.seq != seq || saved.deps != deps
         } else {
             true
         };
 
+        if needs_update_attrs {
+            let t0 = Instant::now();
+            cache.update_attrs(id, keys, seq);
+            debug!(elapsed_us = ?t0.elapsed().as_micros(), "updated attrs id: {:?}", id);
+        }
+
+        (seq, deps)
+    }
+
+    pub async fn update_attrs(&self, id: InstanceId, keys: C::Keys, seq: Seq) {
+        let mut guard = self.cache.lock().await;
+        let cache = &mut *guard;
+        cache.update_attrs(id, keys, seq)
+    }
+
+    pub async fn clear_key_map(&self) -> impl Send + Sync + 'static {
+        let mut guard = self.cache.lock().await;
+        let cache = &mut *guard;
+        cache.clear_key_map()
+    }
+
+    async fn with<R>(&self, f: impl FnOnce(&mut LogCache<C>) -> R) -> R {
+        let mut guard = self.cache.lock().await;
+        let cache = &mut *guard;
+        f(&mut *cache)
+    }
+
+    pub async fn save(
+        &self,
+        id: InstanceId,
+        ins: Instance<C>,
+        mode: UpdateMode,
+        needs_update_attrs: Option<bool>,
+    ) -> Result<()> {
         {
             clone!(ins);
             let t0 = Instant::now();
@@ -217,103 +136,118 @@ where
             debug!(elapsed_us = ?t0.elapsed().as_micros(), "saved instance id: {:?}, mode: {:?}", id, mode);
         }
 
-        if needs_update_attrs {
-            let t0 = Instant::now();
-            self.update_attrs(id, ins.cmd.keys(), ins.seq);
-            debug!(elapsed_us = ?t0.elapsed().as_micros(), "updated attrs id: {:?}", id);
-        }
+        let ins_status = ins.status;
 
-        self.status_bounds.lock().set(id, ins.status);
+        self.with(|cache| {
+            let needs_update_attrs = needs_update_attrs.unwrap_or_else(|| {
+                if let Some(saved) = cache.get_ins(id) {
+                    saved.seq != ins.seq || saved.deps != ins.deps
+                } else {
+                    true
+                }
+            });
 
-        self.cache_insert(id, ins);
+            if needs_update_attrs {
+                let t0 = Instant::now();
+                cache.update_attrs(id, ins.cmd.keys(), ins.seq);
+                debug!(elapsed_us = ?t0.elapsed().as_micros(), "updated attrs id: {:?}", id);
+            }
+            cache.insert_ins(id, ins);
+        })
+        .await;
+
+        self.status_bounds.lock().set(id, ins_status);
 
         Ok(())
     }
 
-    pub async fn load(&mut self, id: InstanceId) -> Result<()> {
-        if self.ins_cache_contains(id).not() {
+    pub async fn load(&self, id: InstanceId) -> Result<()> {
+        let needs_load = self.with(|cache| cache.contains_ins(id).not()).await;
+
+        if needs_load {
             let t0 = Instant::now();
             let result = self.log_store.load(id).await?;
             debug!(elapsed_us = ?t0.elapsed().as_micros(), "loaded instance id: {:?}", id);
 
-            if let Some(ins) = result? {
-                self.status_bounds.lock().set(id, ins.status);
-                self.cache_insert(id, ins);
-            } else if self.pbal_cache.contains_key(&id).not() {
-                if let Some(pbal) = self.log_store.load_pbal(id).await?? {
-                    let _ = self.pbal_cache.insert(id, pbal);
+            match result? {
+                Some(ins) => {
+                    self.status_bounds.lock().set(id, ins.status);
+                    self.with(|cache| cache.insert_ins(id, ins)).await;
+                }
+                None => {
+                    let needs_load_pbal = self.with(|cache| cache.contains_orphan_pbal(id).not()).await;
+                    if needs_load_pbal {
+                        if let Some(pbal) = self.log_store.load_pbal(id).await?? {
+                            self.with(|cache| cache.insert_orphan_pbal(id, pbal)).await;
+                        }
+                    }
                 }
             }
         }
         Ok(())
     }
 
-    pub async fn save_pbal(&mut self, id: InstanceId, pbal: Ballot) -> Result<()> {
+    pub async fn save_pbal(&self, id: InstanceId, pbal: Ballot) -> Result<()> {
         self.log_store.save_pbal(id, pbal).await??;
 
-        match self.ins_cache_get_mut(id) {
-            Some(ins) => {
-                ins.pbal = pbal;
-            }
-            None => {
-                let _ = self.pbal_cache.insert(id, pbal);
-            }
-        }
+        self.with(|cache| match cache.get_mut_ins(id) {
+            Some(ins) => ins.pbal = pbal,
+            None => cache.insert_orphan_pbal(id, pbal),
+        })
+        .await;
 
         Ok(())
     }
 
-    pub async fn update_status(&mut self, id: InstanceId, status: Status) -> Result<()> {
+    pub async fn update_status(&self, id: InstanceId, status: Status) -> Result<()> {
         self.log_store.update_status(id, status).await??;
-        if let Some(ins) = self.ins_cache_get_mut(id) {
-            if ins.status >= Status::Committed && status < Status::Committed {
-                debug!(?id, ins_status=?ins.status, new_status=?status, "consistency incorrect");
-                panic!("consistency incorrect")
+        self.with(|cache| {
+            if let Some(ins) = cache.get_mut_ins(id) {
+                if ins.status >= Status::Committed && status < Status::Committed {
+                    debug!(?id, ins_status=?ins.status, new_status=?status, "consistency incorrect");
+                    panic!("consistency incorrect")
+                }
+                ins.status = status;
             }
-            ins.status = status;
-        }
+        })
+        .await;
         self.status_bounds.lock().set(id, status);
         Ok(())
     }
 
-    #[must_use]
-    pub fn get_cached_pbal(&self, id: InstanceId) -> Option<Ballot> {
-        if let Some(ins) = self.ins_cache_get(id) {
-            return Some(ins.pbal);
-        }
-        self.pbal_cache.get(&id).copied()
+    pub async fn get_cached_pbal(&self, id: InstanceId) -> Option<Ballot> {
+        self.with(|cache| cache.get_pbal(id)).await
     }
 
-    #[must_use]
-    pub fn get_cached_ins(&self, id: InstanceId) -> Option<&Instance<C>> {
-        self.ins_cache_get(id)
+    pub async fn with_cached_ins<R>(&self, id: InstanceId, f: impl FnOnce(Option<&Instance<C>>) -> R) -> R {
+        self.with(|cache| f(cache.get_ins(id))).await
     }
 
-    #[must_use]
-    pub fn should_ignore_pbal(&self, id: InstanceId, pbal: Ballot) -> bool {
-        if let Some(saved_pbal) = self.get_cached_pbal(id) {
+    pub async fn should_ignore_pbal(&self, id: InstanceId, pbal: Ballot) -> bool {
+        if let Some(saved_pbal) = self.get_cached_pbal(id).await {
             if saved_pbal != pbal {
                 return true;
             }
         }
-
         false
     }
 
-    #[must_use]
-    pub fn should_ignore_status(&self, id: InstanceId, pbal: Ballot, next_status: Status) -> bool {
-        if let Some(ins) = self.get_cached_ins(id) {
-            let abal = ins.abal;
-            let status = ins.status;
+    pub async fn should_ignore_status(&self, id: InstanceId, pbal: Ballot, next_status: Status) -> bool {
+        self.with_cached_ins(id, |ins| {
+            if let Some(ins) = ins {
+                let abal = ins.abal;
+                let status = ins.status;
 
-            if (pbal, next_status) <= (abal, status) {
-                return true;
+                if (pbal, next_status) <= (abal, status) {
+                    return true;
+                }
             }
-        }
-        false
+            false
+        })
+        .await
     }
 
-    pub fn update_bounds(&mut self) {
+    pub fn update_bounds(&self) {
         self.status_bounds.lock().update_bounds();
     }
 
@@ -332,7 +266,7 @@ where
         self.status_bounds.lock().executed_up_to()
     }
 
-    pub async fn save_bounds(&mut self) -> Result<()> {
+    pub async fn save_bounds(&self) -> Result<()> {
         let saved_status_bounds = with_mutex(&self.status_bounds, |status_bounds: _| {
             status_bounds.update_bounds();
             SavedStatusBounds {
@@ -341,23 +275,12 @@ where
                 executed_up_to: status_bounds.executed_up_to(),
             }
         });
-        let attr_bounds = AttrBounds {
-            max_seq: self.max_seq.any,
-            max_lids: map_collect(&self.max_lid_map, |&(rid, ref m)| (rid, m.any)),
-        };
+        let attr_bounds = self.with(|cache| cache.calc_attr_bounds()).await;
         self.log_store.save_bounds(attr_bounds, saved_status_bounds).await??;
         Ok(())
     }
 
-    fn cache_remove(&mut self, id: InstanceId) {
-        if let Some(row) = self.ins_cache.get_mut(&id.0) {
-            if row.remove(&id.1).is_none() {
-                self.pbal_cache.remove(&id);
-            }
-        }
-    }
-
-    pub fn retire_instance(&mut self, id: InstanceId) {
-        self.cache_remove(id);
+    pub async fn retire_instance(&self, id: InstanceId) {
+        self.with(|cache| cache.remove_ins(id)).await
     }
 }
