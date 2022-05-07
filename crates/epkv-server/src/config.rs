@@ -54,6 +54,7 @@ pub struct BatchingConfig {
     pub chan_size: usize,
     pub batch_initial_capacity: usize,
     pub batch_max_size: usize,
+    pub batch_interval_us: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

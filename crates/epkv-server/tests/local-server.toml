@@ -37,7 +37,7 @@ max_task_num = 256
 
 [network]
 inbound_chan_size = 4096
-outbound_chan_size = 256
+outbound_chan_size = 4096
 initial_reconnect_timeout_us = 10_000 # 10 ms
 max_reconnect_timeout_us = 1_000_000  # 1s
 max_frame_length = 16777216           # 16 MiB
@@ -55,6 +55,7 @@ max_task_num = 1_000_000
 chan_size = 8192
 batch_initial_capacity = 64
 batch_max_size = 4096
+batch_interval_us = 5_000   # 5ms
 
 [interval]
 probe_rtt_interval_us = 10_000_000       # 10 s

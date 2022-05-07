@@ -32,6 +32,7 @@ use epkv_utils::cast::NumericCast;
 use epkv_utils::lock::with_mutex;
 
 use std::future::Future;
+use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -327,50 +328,56 @@ impl Server {
     async fn cmd_batcher(self: Arc<Self>, mut rx: mpsc::Receiver<Command>) -> Result<()> {
         let initial_capacity = self.config.batching.batch_initial_capacity;
         let max_size = self.config.batching.batch_max_size;
+        let mut interval =
+            tokio::time::interval(Duration::from_micros(self.config.batching.batch_interval_us));
+
+        let mut batch = Vec::with_capacity(initial_capacity);
 
         loop {
+            interval.tick().await;
+
             if self.is_waiting_shutdown.get() {
                 break;
             }
 
-            let cmd = match rx.recv().await {
-                Some(cmd) => cmd,
-                None => break,
-            };
-
-            let mut batch = Vec::with_capacity(initial_capacity);
-            batch.push(cmd.into_mutable());
-
             loop {
-                if batch.len() >= max_size {
-                    break;
-                }
-
                 match rx.try_recv() {
                     Ok(cmd) => batch.push(cmd.into_mutable()),
                     Err(_) => break,
                 }
+
+                if batch.len() >= max_size {
+                    break;
+                }
+            }
+
+            if batch.is_empty() {
+                continue;
             }
 
             {
-                let cnt: u64 = batch.len().numeric_cast();
-                with_mutex(&self.metrics, |m| {
-                    m.single_cmd_count = m.single_cmd_count.wrapping_add(cnt);
-                    m.batched_cmd_count = m.batched_cmd_count.wrapping_add(1);
+                {
+                    let cnt: u64 = batch.len().numeric_cast();
+                    with_mutex(&self.metrics, |m| {
+                        m.single_cmd_count = m.single_cmd_count.wrapping_add(cnt);
+                        m.batched_cmd_count = m.batched_cmd_count.wrapping_add(1);
+                    });
+                }
+
+                let batch = mem::replace(&mut batch, Vec::with_capacity(initial_capacity));
+
+                let this = Arc::clone(&self);
+                let permit: _ = self.propose_limit.clone().acquire_owned().await.unwrap();
+                let working = self.waitgroup.working();
+                spawn(async move {
+                    let cmd = BatchedCommand::from_vec(batch);
+                    if let Err(err) = this.handle_batched_command(cmd).await {
+                        error!(?err, "handle batched command")
+                    }
+                    drop(working);
+                    drop(permit);
                 });
             }
-
-            let this = Arc::clone(&self);
-            let permit: _ = self.propose_limit.clone().acquire_owned().await.unwrap();
-            let working = self.waitgroup.working();
-            spawn(async move {
-                let cmd = BatchedCommand::from_vec(batch);
-                if let Err(err) = this.handle_batched_command(cmd).await {
-                    error!(?err, "handle batched command")
-                }
-                drop(working);
-                drop(permit);
-            });
         }
 
         Ok(())
