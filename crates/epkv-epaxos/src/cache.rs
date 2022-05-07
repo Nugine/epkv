@@ -181,6 +181,7 @@ where
         self.pbal_cache.insert(id, pbal);
     }
 
+    #[must_use]
     pub fn contains_orphan_pbal(&self, id: InstanceId) -> bool {
         self.pbal_cache.contains_key(&id)
     }
@@ -201,6 +202,7 @@ where
         }
     }
 
+    #[must_use]
     pub fn calc_attr_bounds(&self) -> AttrBounds {
         AttrBounds {
             max_seq: self.max_seq.any,
