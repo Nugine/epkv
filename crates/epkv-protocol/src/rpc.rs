@@ -108,7 +108,7 @@ where
             Err(_) => Err(anyhow!("rpc failed: no response")),
         };
 
-        let _ = scopeguard::ScopeGuard::into_inner(cancel_guard);
+        scopeguard::ScopeGuard::into_inner(cancel_guard);
 
         result
     }
