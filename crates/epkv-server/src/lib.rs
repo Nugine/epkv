@@ -64,8 +64,8 @@ pub struct Server {
 
 #[derive(Clone)]
 struct Metrics {
-    single_cmd_count: u64,
-    batched_cmd_count: u64,
+    proposed_single_cmd_count: u64,
+    proposed_batched_cmd_count: u64,
 }
 
 impl Server {
@@ -103,7 +103,8 @@ impl Server {
         let (cmd_tx, cmd_rx) = mpsc::channel(config.batching.chan_size);
 
         let server = {
-            let metrics = SyncMutex::new(Metrics { single_cmd_count: 0, batched_cmd_count: 0 });
+            let metrics =
+                SyncMutex::new(Metrics { proposed_single_cmd_count: 0, proposed_batched_cmd_count: 0 });
 
             let propose_limit = Arc::new(Semaphore::new(config.server.propose_limit.numeric_cast()));
 
@@ -313,8 +314,8 @@ impl Server {
         Ok(cs::GetMetricsOutput {
             network_msg_total_size: network.msg_total_size,
             network_msg_count: network.msg_count,
-            server_single_cmd_count: server.single_cmd_count,
-            server_batched_cmd_count: server.batched_cmd_count,
+            proposed_single_cmd_count: server.proposed_single_cmd_count,
+            proposed_batched_cmd_count: server.proposed_batched_cmd_count,
             replica_rid: self.replica.rid(),
             replica_preaccept_fast_path: replica.preaccept_fast_path,
             replica_preaccept_slow_path: replica.preaccept_slow_path,
@@ -377,8 +378,8 @@ impl Server {
     async fn handle_batched_command(self: &Arc<Self>, cmd: BatchedCommand) -> Result<()> {
         let cnt: u64 = cmd.as_slice().len().numeric_cast();
         with_mutex(&self.metrics, |m| {
-            m.single_cmd_count = m.single_cmd_count.wrapping_add(cnt);
-            m.batched_cmd_count = m.batched_cmd_count.wrapping_add(1);
+            m.proposed_single_cmd_count = m.proposed_single_cmd_count.wrapping_add(cnt);
+            m.proposed_batched_cmd_count = m.proposed_batched_cmd_count.wrapping_add(1);
         });
         debug!("batch len: {:?}", cnt);
         self.replica.run_propose(cmd).await

@@ -62,8 +62,8 @@ pub struct GetMetricsArgs {}
 pub struct GetMetricsOutput {
     pub network_msg_total_size: u64,
     pub network_msg_count: u64,
-    pub server_single_cmd_count: u64,
-    pub server_batched_cmd_count: u64,
+    pub proposed_single_cmd_count: u64,
+    pub proposed_batched_cmd_count: u64,
     pub replica_rid: ReplicaId,
     pub replica_preaccept_fast_path: u64,
     pub replica_preaccept_slow_path: u64,

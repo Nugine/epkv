@@ -256,8 +256,8 @@ fn diff_cluster_metrics(
         let lhs = &before[name];
         msg_count += rhs.network_msg_count - lhs.network_msg_count;
         msg_total_size += rhs.network_msg_total_size - lhs.network_msg_total_size;
-        batched_cmd_count += rhs.server_batched_cmd_count - lhs.server_batched_cmd_count;
-        single_cmd_count += rhs.server_single_cmd_count - lhs.server_single_cmd_count;
+        batched_cmd_count += rhs.proposed_batched_cmd_count - lhs.proposed_batched_cmd_count;
+        single_cmd_count += rhs.proposed_single_cmd_count - lhs.proposed_single_cmd_count;
         preaccept_fast_path += rhs.replica_preaccept_fast_path - lhs.replica_preaccept_fast_path;
         preaccept_slow_path += rhs.replica_preaccept_slow_path - lhs.replica_preaccept_slow_path;
         recover_nop_count += rhs.replica_recover_nop_count - lhs.replica_recover_nop_count;
