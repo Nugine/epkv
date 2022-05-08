@@ -10,7 +10,6 @@ use std::time::Duration;
 use rand::prelude::SliceRandom;
 
 pub struct Peers {
-    rid: ReplicaId,
     peers: VecSet<ReplicaId>,
     rank: Vec<(u64, ReplicaId)>,
     avg: Avg,
@@ -66,10 +65,10 @@ fn sort_rank(rank: &mut [(u64, ReplicaId)]) {
 
 impl Peers {
     #[must_use]
-    pub fn new(rid: ReplicaId, peers: VecSet<ReplicaId>) -> Self {
+    pub fn new(peers: VecSet<ReplicaId>) -> Self {
         let mut rank: Vec<_> = copied_map_collect(peers.iter(), |peer| (u64::MAX, peer));
         sort_rank(&mut rank);
-        Self { rid, peers, rank, avg: Avg { sum: 0, cnt: 0 } }
+        Self { peers, rank, avg: Avg { sum: 0, cnt: 0 } }
     }
 
     #[must_use]
@@ -130,8 +129,7 @@ impl Peers {
     pub fn select(&self, quorum: usize, acc: &VecSet<ReplicaId>) -> SelectedPeers {
         debug!(?quorum, rank=?self.rank, "select peers");
 
-        let mut acc = acc.clone();
-        let _ = acc.remove(&self.rid);
+        let acc = acc.to_intersection_copied(&self.peers);
 
         let ans_acc = if acc.len() <= quorum {
             acc
