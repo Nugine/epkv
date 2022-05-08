@@ -108,6 +108,18 @@ impl<C> Graph<C> {
         }
     }
 
+    #[allow(clippy::result_unit_err)]
+    pub fn try_get_node(&self, id: InstanceId) -> Result<Option<Asc<InsNode<C>>>, ()> {
+        if self.is_executed(id) {
+            return Ok(None);
+        }
+        match self.nodes.get(&id).as_deref() {
+            Some(Node::InGraph(node)) => Ok(Some(Asc::clone(node))),
+            Some(Node::Waiting(_)) => Err(()),
+            None => Err(()),
+        }
+    }
+
     pub async fn wait_node(&self, id: InstanceId) -> Option<Asc<InsNode<C>>> {
         if self.is_executed(id) {
             return None;
