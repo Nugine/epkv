@@ -1,5 +1,5 @@
 use crate::acc::{Acc, MutableAcc};
-use crate::bounds::PeerStatusBounds;
+use crate::bounds::{PeerStatusBounds, SavedStatusBounds};
 use crate::cmd::CommandLike;
 use crate::config::ReplicaConfig;
 use crate::deps::Deps;
@@ -252,6 +252,12 @@ where
     #[inline]
     pub fn rid(&self) -> ReplicaId {
         self.rid
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn dump_saved_status_bounds(&self) -> SavedStatusBounds {
+        self.log.saved_status_bounds()
     }
 
     #[tracing::instrument(skip_all, fields(rid = ?self.rid, epoch = ?self.epoch.load()))]

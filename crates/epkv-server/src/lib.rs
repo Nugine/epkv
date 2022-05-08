@@ -310,17 +310,20 @@ impl Server {
         let server = with_mutex(&self.metrics, |m: _| m.clone());
         let replica = self.replica.metrics();
         let data_db = self.replica.data_store().metrics();
+        let status_bounds = self.replica.dump_saved_status_bounds();
+        let replica_rid = self.replica.rid();
 
         Ok(cs::GetMetricsOutput {
             network_msg_total_size: network.msg_total_size,
             network_msg_count: network.msg_count,
             proposed_single_cmd_count: server.proposed_single_cmd_count,
             proposed_batched_cmd_count: server.proposed_batched_cmd_count,
-            replica_rid: self.replica.rid(),
+            replica_rid,
             replica_preaccept_fast_path: replica.preaccept_fast_path,
             replica_preaccept_slow_path: replica.preaccept_slow_path,
             replica_recover_nop_count: replica.recover_nop_count,
             replica_recover_success_count: replica.recover_success_count,
+            replica_status_bounds: status_bounds,
             executed_single_cmd_count: data_db.executed_single_cmd_count,
             executed_batched_cmd_count: data_db.executed_batched_cmd_count,
         })
