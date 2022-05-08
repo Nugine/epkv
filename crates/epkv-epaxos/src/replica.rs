@@ -1972,7 +1972,7 @@ where
                     }
                 }
 
-                {
+                if id.1 > LocalInstanceId::ONE {
                     let InstanceId(rid, lid) = id;
 
                     let wm = self.graph.watermark(rid);
@@ -1993,7 +1993,8 @@ where
                         let _ = spawn_recover_up_to.insert(rid, lid);
                     }
 
-                    debug!(?rid, level=?wm.level(), ?lid, ?start, ?end, "bfs waiting watermark");
+                    let cnt = lid.raw_value().saturating_sub(start.raw_value());
+                    debug!(?rid, level=?wm.level(), ?lid, ?start, ?end, ?cnt, "bfs waiting watermark");
                     wm.until(lid.raw_value()).wait().await;
                 }
 
