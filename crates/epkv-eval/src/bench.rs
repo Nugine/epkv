@@ -4,7 +4,7 @@ use epkv_utils::cast::NumericCast;
 use epkv_utils::clone;
 use epkv_utils::config::read_config_file;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -330,21 +330,6 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
 
     let wg = WaitGroup::new();
 
-    {
-        clone!(latency_us_queue);
-        spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1));
-            loop {
-                interval.tick().await;
-                println!("received {}", latency_us_queue.len());
-            }
-        });
-    }
-
-    let cluster_metrics_before = get_cluster_metrics(config).await?;
-
-    let t0 = Instant::now();
-
     let mut tasks = Vec::with_capacity(args.cmd_count);
 
     for server in servers {
@@ -371,6 +356,27 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
             tasks.push((server, key, value));
         }
     }
+
+    if args.conflict_rate == 0 {
+        #[allow(clippy::mutable_key_type)] // false positive
+        let set: HashSet<Bytes> = tasks.iter().map(|(_, k, _)| k.clone()).collect();
+        assert_eq!(set.len(), tasks.len());
+    }
+
+    {
+        clone!(latency_us_queue);
+        spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+                println!("received {}", latency_us_queue.len());
+            }
+        });
+    }
+
+    let cluster_metrics_before = get_cluster_metrics(config).await?;
+
+    let t0 = Instant::now();
 
     for (server, key, value) in tasks {
         clone!(latency_us_queue);
