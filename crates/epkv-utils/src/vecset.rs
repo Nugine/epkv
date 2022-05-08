@@ -157,31 +157,30 @@ impl<T: Ord> VecSet<T> {
     }
 
     #[inline]
-    pub fn intersection_copied(&mut self, other: &Self)
+    #[must_use]
+    pub fn to_intersection_copied(&self, other: &Self) -> Self
     where
         T: Copy,
     {
-        let lhs = &mut self.0;
+        let lhs = &self.0;
         let rhs = &other.0;
 
         let ans_cap = lhs.len().min(rhs.len());
-        lhs.reserve(ans_cap);
+        let mut ans = Vec::with_capacity(ans_cap);
 
         unsafe {
             let p1 = lhs.as_ptr();
             let p2 = rhs.as_ptr();
-            let p3 = lhs.as_mut_ptr().add(lhs.len());
+            let p3 = ans.as_mut_ptr();
             let e1 = p1.add(lhs.len());
             let e2 = p2.add(rhs.len());
 
             let end = raw_intersection_copied(p1, p2, p3, e1, e2);
-
-            let dst = lhs.as_mut_ptr();
-            let src = dst.add(lhs.len());
-            let cnt = end.offset_from(src) as usize;
-            ptr::copy(src, dst, cnt);
-            lhs.set_len(cnt)
+            let cnt = end.offset_from(p3) as usize;
+            ans.set_len(cnt)
         }
+
+        Self(ans)
     }
 
     #[inline]
@@ -451,10 +450,10 @@ mod tests {
 
     #[test]
     fn intersection() {
-        let mut s1 = VecSet::<u64>::from_vec(vec![1, 2, 3, 5]);
+        let s1 = VecSet::<u64>::from_vec(vec![1, 2, 3, 5]);
         let s2 = VecSet::<u64>::from_vec(vec![2, 4, 5, 6]);
-        s1.intersection_copied(&s2);
-        assert_eq!(s1.as_slice(), &[2, 5])
+        let s3 = s1.to_intersection_copied(&s2);
+        assert_eq!(s3.as_slice(), &[2, 5])
     }
 
     #[test]
