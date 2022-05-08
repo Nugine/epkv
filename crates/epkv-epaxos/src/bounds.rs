@@ -8,7 +8,7 @@ use epkv_utils::vecmap::VecMap;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct AttrBounds {
     pub max_seq: Seq,
     pub max_lids: VecMap<ReplicaId, LocalInstanceId>,

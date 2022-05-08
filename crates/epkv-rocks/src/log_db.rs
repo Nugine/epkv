@@ -300,6 +300,8 @@ impl LogDb {
 
         status_bounds.update_bounds();
 
+        debug!(?attr_bounds);
+
         Ok((attr_bounds, status_bounds))
     }
 }
