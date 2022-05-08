@@ -15,3 +15,16 @@ pub struct Instance<C> {
     pub status: Status,
     pub acc: Acc,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::mem;
+
+    #[test]
+    fn instance_size() {
+        let baseline_type_size = mem::size_of::<Instance<()>>();
+        assert_eq!(baseline_type_size, 64); // track instance size
+    }
+}
