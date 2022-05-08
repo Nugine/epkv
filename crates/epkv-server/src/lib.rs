@@ -333,35 +333,27 @@ impl Server {
 
         let mut batch = Vec::with_capacity(initial_capacity);
 
-        loop {
+        'interval: loop {
             interval.tick().await;
 
-            if self.is_waiting_shutdown.get() {
-                break;
-            }
-
             loop {
-                match rx.try_recv() {
-                    Ok(cmd) => batch.push(cmd.into_mutable()),
-                    Err(_) => break,
+                if self.is_waiting_shutdown.get() {
+                    break 'interval;
                 }
 
-                if batch.len() >= max_size {
-                    break;
+                loop {
+                    match rx.try_recv() {
+                        Ok(cmd) => batch.push(cmd.into_mutable()),
+                        Err(_) => break,
+                    }
+
+                    if batch.len() >= max_size {
+                        break;
+                    }
                 }
-            }
 
-            if batch.is_empty() {
-                continue;
-            }
-
-            {
-                {
-                    let cnt: u64 = batch.len().numeric_cast();
-                    with_mutex(&self.metrics, |m| {
-                        m.single_cmd_count = m.single_cmd_count.wrapping_add(cnt);
-                        m.batched_cmd_count = m.batched_cmd_count.wrapping_add(1);
-                    });
+                if batch.is_empty() {
+                    continue 'interval;
                 }
 
                 let batch = mem::replace(&mut batch, Vec::with_capacity(initial_capacity));
@@ -379,11 +371,16 @@ impl Server {
                 });
             }
         }
-
         Ok(())
     }
 
     async fn handle_batched_command(self: &Arc<Self>, cmd: BatchedCommand) -> Result<()> {
+        let cnt: u64 = cmd.as_slice().len().numeric_cast();
+        with_mutex(&self.metrics, |m| {
+            m.single_cmd_count = m.single_cmd_count.wrapping_add(cnt);
+            m.batched_cmd_count = m.batched_cmd_count.wrapping_add(1);
+        });
+        debug!("batch len: {:?}", cnt);
         self.replica.run_propose(cmd).await
     }
 
