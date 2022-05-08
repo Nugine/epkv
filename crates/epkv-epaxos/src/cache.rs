@@ -84,7 +84,9 @@ where
             });
             let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
             for &(r, ref m) in others {
-                deps.insert(InstanceId(r, m.checkpoint));
+                if m.checkpoint > LocalInstanceId::ZERO {
+                    deps.insert(InstanceId(r, m.checkpoint));
+                }
             }
             max_assign(&mut seq, self.max_seq.checkpoint);
         }
@@ -118,15 +120,14 @@ where
                     m.lids.update(rid, |l| max_assign(l, lid), || lid);
                 }
                 hash_map::Entry::Vacant(e) => {
-                    let mut lids = VecMap::new();
-                    let _ = lids.insert(rid, lid);
+                    let lids = VecMap::from_single(rid, lid);
                     e.insert(MaxKey { seq, lids });
                 }
             });
             self.max_lid_map.update(
                 rid,
                 |m| max_assign(&mut m.any, lid),
-                || MaxLid { checkpoint: lid, any: lid },
+                || MaxLid { checkpoint: LocalInstanceId::ZERO, any: lid },
             );
 
             max_assign(&mut self.max_seq.any, seq);
