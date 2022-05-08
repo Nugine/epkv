@@ -1348,14 +1348,14 @@ where
 
     #[allow(clippy::float_arithmetic)]
     fn spawn_recover_timeout(self: &Arc<Self>, id: InstanceId, avg_rtt: Option<Duration>) {
-        let conf = &self.config.recover_timeout;
-        let duration = conf.with(avg_rtt, |d| {
-            let base = Self::random_time(Duration::from_micros(conf.default_us), 0.5..1.5);
-            let delta = Self::random_time(d, 4.0..6.0);
-            base + delta
-        });
-
         if let dashmap::mapref::entry::Entry::Vacant(e) = self.recovering.entry(id) {
+            let conf = &self.config.recover_timeout;
+            let duration = conf.with(avg_rtt, |d| {
+                let base = Self::random_time(Duration::from_micros(conf.default_us), 0.5..1.5);
+                let delta = Self::random_time(d, 4.0..6.0);
+                base + delta
+            });
+
             let this = Arc::clone(self);
             let task = spawn(async move {
                 sleep(duration).await;
@@ -1933,6 +1933,7 @@ where
 
             let mut vis: _ = FnvHashSet::<InstanceId>::default();
             let mut q = DepsQueue::new(root);
+            let mut spawn_recover_up_to = VecMap::<ReplicaId, LocalInstanceId>::new();
 
             let t0 = Instant::now();
 
@@ -1942,12 +1943,59 @@ where
                 }
                 vis.insert(id);
 
-                debug!("bfs waiting node {:?}", id);
+                let node = match self.graph.try_get_node(id) {
+                    Ok(Some(node)) => node,
+                    Ok(None) => continue, // executed node
+                    Err(_) => {
+                        // needs wait
+                        self.spawn_recover_timeout(id, None);
 
-                let node = match self.graph.wait_node(id).await {
-                    Some(node) => node,
-                    None => continue, // executed node
+                        debug!("bfs waiting node {:?}", id);
+
+                        let node = match self.graph.wait_node(id).await {
+                            Some(node) => node,
+                            None => continue, // executed node
+                        };
+
+                        if let Some((_, task)) = self.recovering.remove(&id) {
+                            task.abort()
+                        }
+
+                        node
+                    }
                 };
+
+                {
+                    let needs_skip = node.estatus(|es| *es > ExecStatus::Committed);
+                    if needs_skip {
+                        continue;
+                    }
+                }
+
+                {
+                    let InstanceId(rid, lid) = id;
+
+                    let wm = self.graph.watermark(rid);
+
+                    let mut start = LocalInstanceId::from(wm.level().saturating_add(1));
+                    let (_, up_to) = spawn_recover_up_to.init_with(rid, || start);
+                    start = start.max(up_to.add_one());
+
+                    let end = lid.sub_one();
+
+                    if start <= end {
+                        for l in LocalInstanceId::range_inclusive(start, end) {
+                            let id = InstanceId(rid, l);
+                            if vis.contains(&id).not() {
+                                self.spawn_recover_timeout(id, None)
+                            }
+                        }
+                        let _ = spawn_recover_up_to.insert(rid, lid);
+                    }
+
+                    debug!(?rid, level=?wm.level(), ?lid, ?start, ?end, "bfs waiting watermark");
+                    wm.until(lid.raw_value()).wait().await;
+                }
 
                 {
                     let needs_skip = node.estatus(|es| *es > ExecStatus::Committed);
@@ -1958,32 +2006,6 @@ where
 
                 debug!(?id, seq=?node.seq, deps=?node.deps, "local graph add node");
                 local_graph.add_node(id, Asc::clone(&node));
-
-                let InstanceId(rid, lid) = id;
-
-                let wm = self.graph.watermark(rid);
-
-                {
-                    let start = LocalInstanceId::from(wm.level().saturating_add(1));
-                    let end = lid.sub_one();
-
-                    if start <= end {
-                        let mut guard = self.lock_state().await;
-                        let s = &mut *guard;
-                        let avg_rtt = s.peers.get_avg_rtt();
-                        drop(guard);
-
-                        for l in LocalInstanceId::range_inclusive(start, end) {
-                            let id = InstanceId(rid, l);
-                            if vis.contains(&id).not() {
-                                self.spawn_recover_timeout(id, avg_rtt)
-                            }
-                        }
-                    }
-                }
-
-                debug!(?rid, level=?wm.level(), ?lid, "bfs waiting watermark");
-                wm.until(lid.raw_value()).wait().await;
 
                 for d in node.deps.elements() {
                     if vis.contains(&d) {
