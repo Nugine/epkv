@@ -305,8 +305,8 @@ fn save_result(output: &Utf8Path, value: &serde_json::Value) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::integer_arithmetic, clippy::float_arithmetic, clippy::as_conversions)]
 pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
-    #[allow(clippy::integer_arithmetic)]
     {
         ensure!(args.cmd_count % config.servers.len() == 0);
         ensure!((0..=100).contains(&args.conflict_rate));
@@ -397,7 +397,6 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
 
     let cluster_metrics_after = get_cluster_metrics(config).await?;
 
-    #[allow(clippy::float_arithmetic)]
     let time_ms = (t1 - t0).as_secs_f64() * 1000.0;
 
     let diff = diff_cluster_metrics(&cluster_metrics_before, &cluster_metrics_after)?;
@@ -411,29 +410,45 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
         v
     };
 
-    #[allow(clippy::integer_arithmetic, clippy::float_arithmetic, clippy::as_conversions)]
-    let latency = {
-        let min = latency_us.first().copied().unwrap();
-        let p25 = latency_us[args.cmd_count / 4];
-        let p50 = latency_us[args.cmd_count / 2];
-        let p75 = latency_us[args.cmd_count * 3 / 4];
-        let p99 = latency_us[args.cmd_count * 99 / 100];
-        let p999 = latency_us[args.cmd_count * 999 / 1000];
-        let max = latency_us.last().copied().unwrap();
+    let min = latency_us.first().copied().unwrap();
+    let p25 = latency_us[args.cmd_count / 4];
+    let p50 = latency_us[args.cmd_count / 2];
+    let p75 = latency_us[args.cmd_count * 3 / 4];
+    let p99 = latency_us[args.cmd_count * 99 / 100];
+    let p99_9 = latency_us[args.cmd_count * 999 / 1000];
+    let max = latency_us.last().copied().unwrap();
 
+    let latency = {
+        let min_ms = min as f64 / 1000.0;
+        let p25_ms = p25 as f64 / 1000.0; // ms
+        let p50_ms = p50 as f64 / 1000.0; // ms
+        let p75_ms = p75 as f64 / 1000.0; // ms
+        let p99_ms = p99 as f64 / 1000.0; // ms
+        let p99_9_ms = p99_9 as f64 / 1000.0; // ms
+        let max_ms = max as f64 / 1000.0;
         json!({
-            "min": min as f64 / 1000.0, // ms
-            "p25": p25 as f64 / 1000.0, // ms
-            "p50": p50 as f64 / 1000.0, // ms
-            "p75": p75 as f64 / 1000.0, // ms
-            "p99": p99 as f64 / 1000.0, // ms
-            "p999": p999 as f64 / 1000.0, // ms
-            "max": max as f64 / 1000.0, // ms
+            "min": min_ms,
+            "p25": p25_ms,
+            "p50": p50_ms,
+            "p75": p75_ms,
+            "p99": p99_ms,
+            "p99_9": p99_9_ms,
+            "max": max_ms,
         })
     };
 
-    #[allow(clippy::float_arithmetic, clippy::as_conversions)]
-    let estimated_qps = args.cmd_count as f64 / time_ms * 1000.0;
+    let estimated_qps = {
+        let by_p25 = (args.cmd_count / 4) as f64 / (p25 as f64) * 1e6;
+        let by_p50 = (args.cmd_count / 2) as f64 / (p50 as f64) * 1e6;
+        let by_p75 = (args.cmd_count * 3 / 4) as f64 / (p75 as f64) * 1e6;
+        let by_wall_time = args.cmd_count as f64 / time_ms * 1000.0;
+        json!({
+            "by_p25": by_p25,
+            "by_p50": by_p50,
+            "by_p75": by_p75,
+            "by_wall_time": by_wall_time,
+        })
+    };
 
     let result = json!({
         "args": args,
