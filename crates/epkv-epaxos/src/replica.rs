@@ -17,7 +17,7 @@ use crate::store::{DataStore, LogStore, UpdateMode};
 use epkv_utils::asc::Asc;
 use epkv_utils::box_ext::BoxExt;
 use epkv_utils::cast::NumericCast;
-use epkv_utils::chan::recv_timeout;
+use epkv_utils::chan::{self, recv_timeout};
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::flag_group::FlagGroup;
@@ -398,7 +398,7 @@ where
         debug!(?id, reply_variant_name=?msg.variant_name());
         let tx = self.propose_tx.get(&id).as_deref().cloned();
         if let Some(tx) = tx {
-            let _ = tx.send(msg).await;
+            let _ = chan::send(&tx, msg).await;
         }
         Ok(())
     }
@@ -1561,7 +1561,7 @@ where
     async fn resume_join(self: &Arc<Self>, msg: JoinOk) -> Result<()> {
         let tx = self.join_tx.lock().clone();
         if let Some(tx) = tx {
-            let _ = tx.send(msg).await;
+            let _ = chan::send(&tx, msg).await;
         }
         Ok(())
     }
@@ -1850,7 +1850,7 @@ where
     async fn resume_sync(self: &Arc<Self>, msg: SyncLogOk) -> Result<()> {
         let tx = self.sync_tx.get(&msg.sync_id).as_deref().cloned();
         if let Some(tx) = tx {
-            let _ = tx.send(msg).await;
+            let _ = chan::send(&tx, msg).await;
         }
         Ok(())
     }

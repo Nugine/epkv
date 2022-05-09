@@ -1,3 +1,4 @@
+use epkv_utils::chan;
 use epkv_utils::clone;
 use epkv_utils::codec;
 
@@ -92,14 +93,14 @@ where
         let rpc_id = self.next_rpc_id.fetch_add(1, Ordering::Relaxed);
         let op = Operation::Send { rpc_id, args, callback };
 
-        let send_result = self.op_tx.send(op).await;
+        let send_result = chan::send(&self.op_tx, op).await;
         assert!(send_result.is_ok(), "driver task has been dropped");
 
         let cancel_guard = scopeguard::guard((), |()| {
             let tx = self.op_tx.clone();
             spawn(async move {
                 let op = Operation::Cancel { rpc_id };
-                let _ = tx.send(op).await;
+                let _ = chan::send(&tx, op).await;
             });
         });
 
@@ -173,7 +174,7 @@ where
                         break 'forward;
                     }
                 };
-                match read_tx.send(item).await {
+                match chan::send(&read_tx, item).await {
                     Ok(()) => {}
                     Err(_) => {
                         error!("forward_read: read_tx error");
@@ -236,7 +237,7 @@ where
                         } => {
                             inflight.insert(rpc_id, callback);
                             let req = RpcRequest { rpc_id, args };
-                            if write_tx.send(req).await.is_err() {
+                            if chan::send(write_tx, req).await.is_err() {
                                 error!("client_driver: write_tx send error");
                                 break 'drive
                             }

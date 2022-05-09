@@ -6,6 +6,7 @@ use epkv_epaxos::msg::Message;
 use epkv_epaxos::net::Network;
 
 use epkv_utils::cast::NumericCast;
+use epkv_utils::chan;
 use epkv_utils::codec::{self, bytes_sink, bytes_stream};
 use epkv_utils::lock::{with_mutex, with_read_lock, with_write_lock};
 use epkv_utils::vecmap::VecMap;
@@ -115,7 +116,7 @@ where
             });
         }
         spawn(async move {
-            let futures: _ = txs.iter().map(|tx: _| tx.send(msg_bytes.clone()));
+            let futures: _ = txs.iter().map(|tx: _| chan::send(tx, msg_bytes.clone()));
             let _ = join_all(futures).await;
         });
     }
@@ -134,7 +135,7 @@ where
                 });
             }
             spawn(async move {
-                let _ = tx.send(msg_bytes).await;
+                let _ = chan::send(&tx, msg_bytes).await;
             });
         }
     }
@@ -278,7 +279,7 @@ impl<C> TcpNetwork<C> {
                                 break;
                             }
                         };
-                        match tx.send(item).await {
+                        match chan::send(&tx, item).await {
                             Ok(()) => {}
                             Err(_) => break,
                         }

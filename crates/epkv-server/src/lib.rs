@@ -29,6 +29,7 @@ use epkv_rocks::log_db::LogDb;
 use epkv_utils::asc::Asc;
 use epkv_utils::atomic_flag::AtomicFlag;
 use epkv_utils::cast::NumericCast;
+use epkv_utils::chan;
 use epkv_utils::lock::with_mutex;
 
 use std::future::Future;
@@ -276,7 +277,7 @@ impl Server {
             kind: CommandKind::Get(Get { key: args.key, tx: Some(tx) }),
             notify: None,
         });
-        self.cmd_tx.send(cmd).await.map_err(|_| anyhow!("failed to send command"))?;
+        chan::send(&self.cmd_tx, cmd).await.map_err(|_| anyhow!("failed to send command"))?;
         match rx.recv().await {
             Some(value) => Ok(cs::GetOutput { value }),
             None => Err(anyhow!("failed to receive command output")),
@@ -289,7 +290,7 @@ impl Server {
             kind: CommandKind::Set(Set { key: args.key, value: args.value }),
             notify: Some(Asc::clone(&notify)),
         });
-        self.cmd_tx.send(cmd).await.map_err(|_| anyhow!("failed to send command"))?;
+        chan::send(&self.cmd_tx, cmd).await.map_err(|_| anyhow!("failed to send command"))?;
         notify.wait_committed().await;
         Ok(cs::SetOutput {})
     }
@@ -300,7 +301,7 @@ impl Server {
             kind: CommandKind::Del(Del { key: args.key }),
             notify: Some(Asc::clone(&notify)),
         });
-        self.cmd_tx.send(cmd).await.map_err(|_| anyhow!("failed to send command"))?;
+        chan::send(&self.cmd_tx, cmd).await.map_err(|_| anyhow!("failed to send command"))?;
         notify.wait_committed().await;
         Ok(cs::DelOutput {})
     }
@@ -487,11 +488,22 @@ impl Server {
 mod tests {
     use super::*;
 
+    use epkv_epaxos::msg::Message;
+    use epkv_utils::chan;
     use epkv_utils::func::output_size;
+
+    use std::mem;
 
     #[test]
     fn replica_future_size() {
         assert_eq!(output_size(&EpkvReplica::handle_message), 424);
         assert_eq!(output_size(&EpkvReplica::run_propose), 376);
+    }
+
+    #[test]
+    fn mpsc_future_size() {
+        assert_eq!(mem::size_of::<Message<BatchedCommand>>(), 144);
+        assert_eq!(output_size(&chan::send::<Message<BatchedCommand>>), 240);
+        assert_eq!(output_size(&mpsc::Sender::<Message<BatchedCommand>>::send), 400);
     }
 }
