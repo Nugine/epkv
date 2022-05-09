@@ -9,7 +9,6 @@
     clippy::missing_const_for_fn
 )]
 //
-#![feature(new_uninit)]
 
 #[macro_export]
 macro_rules! clone {
@@ -23,7 +22,6 @@ macro_rules! clone {
 pub mod asc;
 pub mod atomic_flag;
 pub mod bits;
-pub mod box_ext;
 pub mod bytes_str;
 pub mod cast;
 pub mod chan;
