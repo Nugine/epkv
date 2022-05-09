@@ -3,16 +3,17 @@ pub trait OutputSize<A> {
 }
 
 macro_rules! impl_output_size {
-    (($($ty:tt,)+)) => {
-        impl<$($ty,)+ F, R> OutputSize<($($ty,)+)> for F
+    (($($ty:tt,)*)) => {
+        impl<$($ty,)* F, R> OutputSize<($($ty,)*)> for F
         where
-            F: Fn($($ty,)+) -> R ,
+            F: Fn($($ty,)*) -> R ,
         {
             type Output = R;
         }
     };
 }
 
+impl_output_size!(());
 impl_output_size!((A0,));
 impl_output_size!((A0, A1,));
 impl_output_size!((A0, A1, A2,));
