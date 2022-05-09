@@ -15,6 +15,7 @@ use crate::status::{ExecStatus, Status};
 use crate::store::{DataStore, LogStore, UpdateMode};
 
 use epkv_utils::asc::Asc;
+use epkv_utils::box_ext::BoxExt;
 use epkv_utils::cast::NumericCast;
 use epkv_utils::chan::recv_timeout;
 use epkv_utils::clone;
@@ -260,84 +261,86 @@ where
         self.log.saved_status_bounds()
     }
 
+    fn countdown_probe_rtt(self: &Arc<Self>) {
+        let countdown = self.probe_rtt_countdown.fetch_sub(1, Relaxed).saturating_sub(1);
+        if countdown == 0 {
+            let this = Arc::clone(self);
+            spawn(async move {
+                debug!("probe_rtt_countdown");
+                if let Err(err) = this.run_probe_rtt().await {
+                    error!(?err)
+                }
+            });
+            let count = self.config.optimization.probe_rtt_per_msg_count;
+            self.probe_rtt_countdown.store(count, Relaxed);
+        }
+    }
+
     #[tracing::instrument(skip_all, fields(rid = ?self.rid, epoch = ?self.epoch.load()))]
     pub async fn handle_message(self: &Arc<Self>, msg: Message<C>) -> Result<()> {
         debug!(msg_variant_name = ?msg.variant_name());
 
-        {
-            let countdown = self.probe_rtt_countdown.fetch_sub(1, Relaxed).saturating_sub(1);
-            if countdown == 0 {
-                let this = Arc::clone(self);
-                spawn(async move {
-                    debug!("probe_rtt_countdown");
-                    if let Err(err) = this.run_probe_rtt().await {
-                        error!(?err)
-                    }
-                });
-                let count = self.config.optimization.probe_rtt_per_msg_count;
-                self.probe_rtt_countdown.store(count, Relaxed);
-            }
-        }
+        self.countdown_probe_rtt();
 
         let t0 = Instant::now();
 
         let result = match msg {
             Message::PreAccept(msg) => {
-                self.handle_preaccept(msg).await //
+                Box::pin_with(|| self.handle_preaccept(msg)).await //
             }
             Message::PreAcceptOk(PreAcceptOk { id, .. }) => {
-                self.resume_propose(id, msg).await //
+                Box::pin_with(|| self.resume_propose(id, msg)).await //
             }
             Message::PreAcceptDiff(PreAcceptDiff { id, .. }) => {
-                self.resume_propose(id, msg).await //
+                Box::pin_with(|| self.resume_propose(id, msg)).await //
             }
             Message::Accept(msg) => {
-                self.handle_accept(msg).await //
+                Box::pin_with(|| self.handle_accept(msg)).await //
             }
             Message::AcceptOk(AcceptOk { id, .. }) => {
-                self.resume_propose(id, msg).await //
+                Box::pin_with(|| self.resume_propose(id, msg)).await //
             }
             Message::Commit(msg) => {
-                self.handle_commit(msg).await //
+                Box::pin_with(|| self.handle_commit(msg)).await //
             }
             Message::Prepare(msg) => {
-                self.handle_prepare(msg).await //
+                Box::pin_with(|| self.handle_prepare(msg)).await //
             }
             Message::PrepareOk(PrepareOk { id, .. }) => {
-                self.resume_propose(id, msg).await //
+                Box::pin_with(|| self.resume_propose(id, msg)).await //
             }
             Message::PrepareNack(PrepareNack { id, .. }) => {
-                self.resume_propose(id, msg).await //
+                Box::pin_with(|| self.resume_propose(id, msg)).await //
             }
             Message::PrepareUnchosen(PrepareUnchosen { id, .. }) => {
-                self.resume_propose(id, msg).await //
+                Box::pin_with(|| self.resume_propose(id, msg)).await //
             }
             Message::Join(msg) => {
-                self.handle_join(msg).await //
+                Box::pin_with(|| self.handle_join(msg)).await //
             }
             Message::JoinOk(msg) => {
-                self.resume_join(msg).await //
+                Box::pin_with(|| self.resume_join(msg)).await //
             }
             Message::Leave(msg) => {
-                self.handle_leave(msg).await //
+                Box::pin_with(|| self.handle_leave(msg)).await //
             }
             Message::ProbeRtt(msg) => {
-                self.handle_probe_rtt(msg).await //
+                Box::pin_with(|| self.handle_probe_rtt(msg)).await //
             }
             Message::ProbeRttOk(msg) => {
-                self.handle_probe_rtt_ok(msg).await //
+                Box::pin_with(|| self.handle_probe_rtt_ok(msg)).await //
             }
             Message::AskLog(msg) => {
-                self.handle_ask_log(msg).await //
+                Box::pin_with(|| self.handle_ask_log(msg)).await //
             }
             Message::SyncLog(msg) => {
-                self.handle_sync_log(msg).await //
+                Box::pin_with(|| self.handle_sync_log(msg)).await //
             }
             Message::SyncLogOk(msg) => {
-                self.resume_sync(msg).await //
+                Box::pin_with(|| self.resume_sync(msg)).await //
             }
             Message::PeerBounds(msg) => {
-                self.handle_peer_bounds(msg).await //
+                Box::pin_with(|| self.handle_peer_bounds(msg)).await //
             }
         };
 
@@ -416,7 +419,7 @@ where
 
         let ins_guard = self.log.lock_instance(id).await;
 
-        self.phase_preaccept(ins_guard, id, pbal, Some(cmd), acc).await
+        Box::pin_with(|| self.phase_preaccept(ins_guard, id, pbal, Some(cmd), acc)).await
     }
 
     #[tracing::instrument(skip_all, fields(id = ?id, pbal=?pbal))]
@@ -623,10 +626,16 @@ where
 
                         if is_fast_path {
                             debug!("fast path");
-                            return self.phase_commit(ins_guard, id, pbal, cmd, seq, deps, acc).await;
+                            return Box::pin_with(|| {
+                                self.phase_commit(ins_guard, id, pbal, cmd, seq, deps, acc)
+                            })
+                            .await;
                         } else {
                             debug!("slow path");
-                            return self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc).await;
+                            return Box::pin_with(|| {
+                                self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc)
+                            })
+                            .await;
                         }
                     }
                     Ok(None) => break,
@@ -666,7 +675,8 @@ where
                             m.preaccept_slow_path = m.preaccept_slow_path.wrapping_add(1);
                         });
 
-                        return self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc).await;
+                        return Box::pin_with(|| self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc))
+                            .await;
                     }
                 }
             }
@@ -871,7 +881,7 @@ where
                     })
                     .await;
 
-                return self.phase_commit(ins_guard, id, pbal, cmd, seq, deps, acc).await;
+                return Box::pin_with(|| self.phase_commit(ins_guard, id, pbal, cmd, seq, deps, acc)).await;
             }
         }
 
@@ -1140,14 +1150,7 @@ where
                         Message::Prepare(Prepare { sender, epoch, id, pbal, known }),
                     );
 
-                    let this = Arc::clone(self);
-                    spawn(async move {
-                        if let Err(err) =
-                            this.handle_prepare(Prepare { sender, epoch, id, pbal, known }).await
-                        {
-                            error!(?id, ?err)
-                        }
-                    });
+                    self.spawn_handle_prepare(Prepare { sender, epoch, id, pbal, known });
                 }
 
                 rx
@@ -1279,14 +1282,20 @@ where
                     for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
                         if status >= Status::Committed {
                             let deps = mem::take(deps);
-                            return self.phase_commit(ins_guard, id, pbal, cmd, seq, deps, acc).await;
+                            return Box::pin_with(|| {
+                                self.phase_commit(ins_guard, id, pbal, cmd, seq, deps, acc)
+                            })
+                            .await;
                         }
                     }
 
                     for &mut (_, seq, ref mut deps, status, _) in tuples.iter_mut() {
                         if status == Status::Accepted {
                             let deps = mem::take(deps);
-                            return self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc).await;
+                            return Box::pin_with(|| {
+                                self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc)
+                            })
+                            .await;
                         }
                     }
 
@@ -1315,13 +1324,16 @@ where
                             if let Some(attr) = max_cnt_attr {
                                 let seq = attr.0;
                                 let deps = mem::take(attr.1);
-                                return self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc).await;
+                                return Box::pin_with(|| {
+                                    self.phase_accept(ins_guard, id, pbal, cmd, seq, deps, acc)
+                                })
+                                .await;
                             }
                         }
                     }
 
                     if tuples.is_empty().not() {
-                        return self.phase_preaccept(ins_guard, id, pbal, cmd, acc).await;
+                        return Box::pin_with(|| self.phase_preaccept(ins_guard, id, pbal, cmd, acc)).await;
                     }
 
                     let (cmd, acc) = self
@@ -1338,7 +1350,7 @@ where
                         });
                     }
 
-                    return self.phase_preaccept(ins_guard, id, pbal, cmd, acc).await;
+                    return Box::pin_with(|| self.phase_preaccept(ins_guard, id, pbal, cmd, acc)).await;
                 }
             }
 
@@ -1441,7 +1453,7 @@ where
 
         let target = msg.sender;
         if target == self.rid {
-            self.spawn_handle_message(reply);
+            Box::pin_with(|| self.resume_propose(id, reply)).await?
         } else {
             self.network.send_one(target, reply)
         }
@@ -1449,11 +1461,12 @@ where
         Ok(())
     }
 
-    fn spawn_handle_message(self: &Arc<Self>, msg: Message<C>) {
+    fn spawn_handle_prepare(self: &Arc<Self>, msg: Prepare) {
         let this = Arc::clone(self);
         spawn(async move {
-            if let Err(err) = this.handle_message(msg).await {
-                error!(?err)
+            let id = msg.id;
+            if let Err(err) = this.handle_prepare(msg).await {
+                error!(?id, ?err)
             }
         });
     }
