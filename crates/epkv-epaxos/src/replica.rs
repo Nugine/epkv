@@ -1787,10 +1787,15 @@ where
 
             self.log.load(id).await?;
 
+            let saved_pbal = self.log.get_cached_pbal(id).await;
+
             let opt = self
                 .log
                 .with_cached_ins(id, |saved_ins| match saved_ins {
-                    None => Some((UpdateMode::Full, ins.status >= Status::Committed)),
+                    None => match saved_pbal {
+                        Some(saved_pbal) if saved_pbal > ins.abal => None,
+                        _ => Some((UpdateMode::Full, ins.status >= Status::Committed)),
+                    },
                     Some(saved_ins) => {
                         if saved_ins.status < Status::Committed && ins.status >= Status::Committed {
                             max_assign(&mut ins.pbal, saved_ins.pbal);
