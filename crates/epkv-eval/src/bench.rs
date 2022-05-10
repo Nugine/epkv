@@ -5,7 +5,7 @@ use epkv_utils::config::read_config_file;
 use std::collections::BTreeMap;
 use std::fs;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -485,7 +485,7 @@ pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
     {
         clone!(server, completed, result_queue);
         spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            let mut interval = tokio::time::interval(Duration::from_millis(250));
             let t0 = Instant::now();
             let mut prev_completed = 0;
             loop {
@@ -511,17 +511,24 @@ pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
             }
         });
     }
+    let stopped = Arc::new(AtomicBool::new(false));
+    let wg = WaitGroup::new();
     {
         let interval = tokio::time::interval(Duration::from_millis(args.interval_ms));
         let count = args.cmds_per_interval;
         let gen = RandomCmds::new(args.value_size, args.conflict_rate);
+        let working = wg.working();
+        clone!(stopped);
         spawn(async move {
             let mut interval = interval;
             let mut cmds = gen.take(count).collect::<Vec<_>>();
             loop {
                 interval.tick().await;
+                if stopped.load(Ordering::SeqCst) {
+                    break;
+                }
 
-                clone!(server, completed);
+                clone!(server, completed, working);
                 spawn(async move {
                     let futures: _ = cmds.into_iter().map(|set_args| {
                         let server = &server;
@@ -536,14 +543,18 @@ pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
                     for result in results {
                         result.unwrap();
                     }
+                    drop(working)
                 });
 
                 cmds = gen.take(count).collect::<Vec<_>>();
             }
+            drop(working);
         });
     }
     {
         tokio::signal::ctrl_c().await.unwrap();
+        stopped.store(true, Ordering::SeqCst);
+        wg.wait().await;
     }
     let mut data = Vec::with_capacity(result_queue.len());
     while let Some(result) = result_queue.pop() {
