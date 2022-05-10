@@ -13,7 +13,7 @@ use anyhow::{ensure, Context, Result};
 use asc::Asc;
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
-use crossbeam_queue::{ArrayQueue, SegQueue};
+use crossbeam_queue::SegQueue;
 use futures_util::future::join_all;
 use numeric_cast::NumericCast;
 use rand::Rng;
@@ -95,6 +95,10 @@ pub struct Case3 {
     cmd_count: usize,
     #[clap(long)]
     conflict_rate: usize,
+    #[clap(long)]
+    interval_ms: u64,
+    #[clap(long)]
+    interval_count: u64,
 }
 
 pub async fn run(opt: Opt) -> Result<()> {
@@ -327,21 +331,10 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
 
     let mut gen = &RandomCmds::new(args.value_size, args.conflict_rate);
 
-    let latency_us_queue: _ = Asc::new(ArrayQueue::<u64>::new(args.cmd_count));
+    let latency_us_queue: _ = Asc::new(SegQueue::<u64>::new());
 
     let wg = WaitGroup::new();
 
-    let mut tasks = Vec::with_capacity(args.cmd_count);
-
-    for server in servers {
-        let server_cmd_count = args.cmd_count.wrapping_div(config.servers.len());
-
-        for _ in 0..server_cmd_count {
-            let cs::SetArgs { key, value } = gen.next().unwrap();
-            clone!(server);
-            tasks.push((server, key, value));
-        }
-    }
     {
         clone!(latency_us_queue);
         spawn(async move {
@@ -353,21 +346,38 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
         });
     }
 
-    let cluster_metrics_before = get_cluster_metrics(config).await?;
+    let mut interval = tokio::time::interval(Duration::from_millis(args.interval_ms));
 
+    let cluster_metrics_before = get_cluster_metrics(config).await?;
     let t0 = Instant::now();
 
-    for (server, key, value) in tasks {
-        clone!(latency_us_queue);
-        let working = wg.working();
+    for _ in 0..args.interval_count {
+        interval.tick().await;
 
-        spawn(async move {
-            let t0 = Instant::now();
-            server.set(cs::SetArgs { key, value }).await.unwrap();
-            let t1 = Instant::now();
-            latency_us_queue.push((t1 - t0).as_micros().numeric_cast()).unwrap();
-            drop(working);
-        });
+        let mut tasks = Vec::with_capacity(args.cmd_count);
+
+        for server in &servers {
+            let server_cmd_count = args.cmd_count.wrapping_div(config.servers.len());
+
+            for _ in 0..server_cmd_count {
+                let cs::SetArgs { key, value } = gen.next().unwrap();
+                clone!(server);
+                tasks.push((server, key, value));
+            }
+        }
+
+        for (server, key, value) in tasks {
+            clone!(latency_us_queue);
+            let working = wg.working();
+
+            spawn(async move {
+                let t0 = Instant::now();
+                server.set(cs::SetArgs { key, value }).await.unwrap();
+                let t1 = Instant::now();
+                latency_us_queue.push((t1 - t0).as_micros().numeric_cast());
+                drop(working);
+            });
+        }
     }
 
     wg.wait_owned().await;

@@ -140,7 +140,7 @@ bench-local-case2 which key_size value_size cmd_count batch_size:
             --cmd-count {{cmd_count}} \
             --batch-size {{batch_size}}
 
-bench-local-case3 which value_size cmd_count conflict_rate:
+bench-local-case3 which value_size cmd_count conflict_rate interval_ms interval_count:
     #!/bin/bash -ex
     cd {{justfile_directory()}}
 
@@ -155,7 +155,9 @@ bench-local-case3 which value_size cmd_count conflict_rate:
         case3 \
             --value-size {{value_size}} \
             --cmd-count {{cmd_count}} \
-            --conflict-rate {{conflict_rate}}
+            --conflict-rate {{conflict_rate}} \
+            --interval-ms {{interval_ms}} \
+            --interval-count {{interval_count}}
 
 bench-local-case4 which:
     #!/bin/bash -ex
