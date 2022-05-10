@@ -426,18 +426,18 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
         })
     };
 
-    let estimated_qps = {
-        let by_p25 = (args.cmd_count / 4) as f64 / (p25 as f64) * 1e6;
-        let by_p50 = (args.cmd_count / 2) as f64 / (p50 as f64) * 1e6;
-        let by_p75 = (args.cmd_count * 3 / 4) as f64 / (p75 as f64) * 1e6;
-        let by_wall_time = args.cmd_count as f64 / time_ms * 1000.0;
-        json!({
-            "by_p25": by_p25,
-            "by_p50": by_p50,
-            "by_p75": by_p75,
-            "by_wall_time": by_wall_time,
-        })
-    };
+    // let estimated_qps = {
+    //     let by_p25 = (args.cmd_count / 4) as f64 / (p25 as f64) * 1e6;
+    //     let by_p50 = (args.cmd_count / 2) as f64 / (p50 as f64) * 1e6;
+    //     let by_p75 = (args.cmd_count * 3 / 4) as f64 / (p75 as f64) * 1e6;
+    //     let by_wall_time = args.cmd_count as f64 / time_ms * 1000.0;
+    //     json!({
+    //         "by_p25": by_p25,
+    //         "by_p50": by_p50,
+    //         "by_p75": by_p75,
+    //         "by_wall_time": by_wall_time,
+    //     })
+    // };
 
     let result = json!({
         "args": args,
@@ -448,7 +448,7 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
         },
         "diff": diff,
         "latency": latency,
-        "estimated_qps": estimated_qps,
+        // "estimated_qps": estimated_qps,
     });
 
     Ok(result)
