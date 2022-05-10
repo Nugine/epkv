@@ -301,7 +301,7 @@ fn diff_cluster_metrics(
 fn save_result(output: &Utf8Path, value: &serde_json::Value) -> Result<()> {
     let content = crate::pretty_json(&value)?;
 
-    println!("{}", content);
+    // println!("{}", content);
 
     fs::write(output, content).with_context(|| format!("failed to write result file {output}"))?;
 
