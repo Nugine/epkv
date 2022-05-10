@@ -170,3 +170,22 @@ bench-local-case4 which:
         --config $CONFIG \
         --output $OUTPUT \
         case4
+
+bench-local-case5 which value_size conflict_rate interval cmds server_name:
+    #!/bin/bash -ex
+    cd {{justfile_directory()}}
+
+    mkdir -p target/local-cluster/bench
+    TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
+    CONFIG=crates/epkv-eval/tests/local-bench-{{which}}.json
+    OUTPUT=target/local-cluster/bench/$TIME-case5.json
+
+    ./target/release/epkv-eval bench \
+        --config $CONFIG \
+        --output $OUTPUT \
+        case5 \
+        --value-size {{value_size}} \
+        --conflict-rate {{conflict_rate}} \
+        --cmds-per-interval {{cmds}} \
+        --interval-ms {{interval}} \
+        --server-name {{server_name}}

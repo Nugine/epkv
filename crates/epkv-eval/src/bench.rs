@@ -4,16 +4,17 @@ use epkv_utils::cast::NumericCast;
 use epkv_utils::clone;
 use epkv_utils::config::read_config_file;
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{ensure, Context, Result};
 use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
-use crossbeam_queue::ArrayQueue;
+use crossbeam_queue::{ArrayQueue, SegQueue};
 use futures_util::future::join_all;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -39,6 +40,7 @@ pub enum Command {
     Case2(Case2),
     Case3(Case3),
     Case4,
+    Case5(Case5),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -111,6 +113,7 @@ pub async fn run(opt: Opt) -> Result<()> {
             let cluster_metrics: _ = get_cluster_metrics(&config).await?;
             serde_json::to_value(&cluster_metrics)?
         }
+        Command::Case5(args) => case5(&config, args).await?,
     };
 
     save_result(&opt.output, &result)?;
@@ -322,9 +325,7 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
         servers
     };
 
-    let common_key = rand::random::<u64>();
-    let unique_key_gen = Asc::new(AtomicU64::new(common_key));
-    let value = crate::random_bytes(args.value_size);
+    let mut gen = &RandomCmds::new(args.value_size, args.conflict_rate);
 
     let latency_us_queue: _ = Asc::new(ArrayQueue::<u64>::new(args.cmd_count));
 
@@ -334,35 +335,13 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
 
     for server in servers {
         let server_cmd_count = args.cmd_count.wrapping_div(config.servers.len());
-        let rate = args.conflict_rate;
 
         for _ in 0..server_cmd_count {
-            let key = if rate == 0 {
-                unique_key_gen.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
-            } else if rate == 100 {
-                common_key
-            } else {
-                let magic: usize = rand::thread_rng().gen_range(0..100);
-                if magic < rate {
-                    common_key
-                } else {
-                    unique_key_gen.fetch_add(1, Ordering::Relaxed).wrapping_add(1)
-                }
-            };
-
-            let key = Bytes::copy_from_slice(&key.to_be_bytes());
-            let value = value.clone();
+            let cs::SetArgs { key, value } = gen.next().unwrap();
             clone!(server);
             tasks.push((server, key, value));
         }
     }
-
-    if args.conflict_rate == 0 {
-        #[allow(clippy::mutable_key_type)] // false positive
-        let set: HashSet<Bytes> = tasks.iter().map(|(_, k, _)| k.clone()).collect();
-        assert_eq!(set.len(), tasks.len());
-    }
-
     {
         clone!(latency_us_queue);
         spawn(async move {
@@ -463,4 +442,140 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
     });
 
     Ok(result)
+}
+
+#[derive(Debug, Serialize, Deserialize, clap::Args)]
+pub struct Case5 {
+    #[clap(long)]
+    server_name: String,
+    #[clap(long)]
+    value_size: usize,
+    #[clap(long)]
+    conflict_rate: usize,
+    #[clap(long)]
+    interval_ms: u64,
+    #[clap(long)]
+    cmds_per_interval: usize,
+}
+
+#[allow(clippy::integer_arithmetic)]
+pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
+    {
+        ensure!((0..=100).contains(&args.conflict_rate));
+    }
+    let server = {
+        let conf = &config.servers[&args.server_name];
+        let remote_addr = SocketAddr::from((conf.ip, conf.client_port));
+        let rpc_client_config = crate::default_rpc_client_config();
+        Arc::new(cs::Server::connect(remote_addr, &rpc_client_config).await?)
+    };
+
+    let completed = Arc::new(AtomicU64::new(0));
+    let result_queue = Arc::new(SegQueue::<serde_json::Value>::new());
+    {
+        clone!(server, completed, result_queue);
+        spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            let t0 = Instant::now();
+            let mut prev_completed = 0;
+            loop {
+                interval.tick().await;
+
+                let completed = completed.load(Ordering::SeqCst);
+                let t = t0.elapsed();
+                let time_us: u64 = t.as_micros().numeric_cast();
+
+                let metrics = server.get_metrics(cs::GetMetricsArgs {}).await.unwrap();
+                let delta = completed - prev_completed;
+
+                result_queue.push(json!({
+                    "time_us": time_us,
+                    "completed": completed,
+                    "completed_delta": delta,
+                    "metrics": metrics,
+                }));
+
+                let time_s = t.as_secs_f64();
+                println!("time: {time_s:>10.6}s, completed: {completed:>10}, delta: {delta:>10}");
+                prev_completed = completed;
+            }
+        });
+    }
+    {
+        let interval = tokio::time::interval(Duration::from_millis(args.interval_ms));
+        let count = args.cmds_per_interval;
+        let gen = RandomCmds::new(args.value_size, args.conflict_rate);
+        spawn(async move {
+            let mut interval = interval;
+            let mut cmds = gen.take(count).collect::<Vec<_>>();
+            loop {
+                interval.tick().await;
+
+                clone!(server, completed);
+                spawn(async move {
+                    let futures: _ = cmds.into_iter().map(|set_args| {
+                        let server = &server;
+                        let completed = &completed;
+                        async move {
+                            let result = server.set(set_args).await;
+                            completed.fetch_add(1, Ordering::Relaxed);
+                            result
+                        }
+                    });
+                    let results: _ = join_all(futures).await;
+                    for result in results {
+                        result.unwrap();
+                    }
+                });
+
+                cmds = gen.take(count).collect::<Vec<_>>();
+            }
+        });
+    }
+    {
+        tokio::signal::ctrl_c().await.unwrap();
+    }
+    let mut ans = Vec::with_capacity(result_queue.len());
+    while let Some(result) = result_queue.pop() {
+        ans.push(result);
+    }
+    Ok(ans.into())
+}
+
+struct RandomCmds {
+    rate: usize,
+    value: Bytes,
+    common_key: u64,
+    unique_key_gen: AtomicU64,
+}
+
+impl RandomCmds {
+    fn new(value_size: usize, conflict_rate: usize) -> Self {
+        let common_key = rand::random::<u64>();
+        let unique_key_gen = AtomicU64::new(common_key);
+        let value = crate::random_bytes(value_size);
+        Self { rate: conflict_rate, value, common_key, unique_key_gen }
+    }
+}
+
+impl Iterator for &'_ RandomCmds {
+    type Item = cs::SetArgs;
+    #[allow(clippy::integer_arithmetic)]
+    fn next(&mut self) -> Option<cs::SetArgs> {
+        let key = if self.rate == 0 {
+            self.unique_key_gen.fetch_add(1, Ordering::Relaxed) + 1
+        } else if self.rate == 100 {
+            self.common_key
+        } else {
+            let magic: usize = rand::thread_rng().gen_range(0..100);
+            if magic < self.rate {
+                self.common_key
+            } else {
+                self.unique_key_gen.fetch_add(1, Ordering::Relaxed) + 1
+            }
+        };
+        let key = Bytes::copy_from_slice(&key.to_be_bytes());
+        let value = self.value.clone();
+        Some(cs::SetArgs { key, value })
+    }
 }

@@ -25,8 +25,8 @@ use serde::Serialize;
 fn default_rpc_client_config() -> RpcClientConfig {
     RpcClientConfig {
         max_frame_length: 16777216, // 16 MiB
-        op_chan_size: 1024,
-        forward_chan_size: 1024,
+        op_chan_size: 65536,
+        forward_chan_size: 65536,
     }
 }
 
