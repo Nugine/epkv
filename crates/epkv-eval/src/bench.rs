@@ -535,11 +535,15 @@ pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
     {
         tokio::signal::ctrl_c().await.unwrap();
     }
-    let mut ans = Vec::with_capacity(result_queue.len());
+    let mut data = Vec::with_capacity(result_queue.len());
     while let Some(result) = result_queue.pop() {
-        ans.push(result);
+        data.push(result);
     }
-    Ok(ans.into())
+    let result = json!({
+        "args": args,
+        "data": data,
+    });
+    Ok(result)
 }
 
 struct RandomCmds {
