@@ -483,7 +483,7 @@ pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
     let completed = Arc::new(AtomicU64::new(0));
     let result_queue = Arc::new(SegQueue::<serde_json::Value>::new());
     {
-        clone!(server, completed, result_queue);
+        clone!(completed, result_queue);
         spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_millis(250));
             let t0 = Instant::now();
@@ -495,14 +495,14 @@ pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
                 let t = t0.elapsed();
                 let time_us: u64 = t.as_micros().numeric_cast();
 
-                let metrics = server.get_metrics(cs::GetMetricsArgs {}).await.unwrap();
+                // let metrics = server.get_metrics(cs::GetMetricsArgs {}).await.unwrap();
                 let delta = completed - prev_completed;
 
                 result_queue.push(json!({
                     "time_us": time_us,
                     "completed": completed,
                     "completed_delta": delta,
-                    "metrics": metrics,
+                    // "metrics": metrics,
                 }));
 
                 let time_s = t.as_secs_f64();
