@@ -6,8 +6,8 @@ edition = "2021"
 [dependencies]
 anyhow = { version = "1.0.57", features = ["backtrace"] }
 bytes = "1.1.0"
-camino = { version = "1.0.7", features = ["serde1"] }
-clap = { version = "3.1.17", features = ["derive"] }
+camino = { version = "1.0.8", features = ["serde1"] }
+clap = { version = "3.1.18", features = ["derive"] }
 crossbeam-queue = "0.3.5"
 epkv-protocol = { path = "../epkv-protocol" }
 epkv-server = { path = "../epkv-server" }
@@ -18,5 +18,5 @@ serde = { version = "1.0.137", features = ["derive"] }
 serde_json = "1.0.81"
 simdutf8 = "0.1.4"
 tikv-jemallocator = "0.4.3"
-tokio = { version = "1.18.1", features = ["full"] }
+tokio = { version = "1.18.2", features = ["full"] }
 wgp = "0.2.0"
