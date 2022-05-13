@@ -18,7 +18,7 @@ impl<T> Asc<T> {
     }
 
     #[inline]
-    pub fn try_into_inner(self) -> Result<T, Self> {
+    pub fn try_unwrap(self) -> Result<T, Self> {
         triomphe::Arc::try_unwrap(self.0).map_err(|a| Self(a))
     }
 }

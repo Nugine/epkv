@@ -45,7 +45,7 @@ impl Deps {
 
     #[must_use]
     pub fn into_mutable(self) -> MutableDeps {
-        match Asc::try_into_inner(self.0) {
+        match Asc::try_unwrap(self.0) {
             Ok(d) => d,
             Err(a) => MutableDeps::clone(&*a),
         }

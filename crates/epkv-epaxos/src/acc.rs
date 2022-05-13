@@ -43,7 +43,7 @@ impl Acc {
 
     #[must_use]
     pub fn into_mutable(self) -> MutableAcc {
-        match Asc::try_into_inner(self.0) {
+        match Asc::try_unwrap(self.0) {
             Ok(a) => a,
             Err(a) => MutableAcc::clone(&*a),
         }
