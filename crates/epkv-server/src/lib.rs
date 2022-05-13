@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn replica_future_size() {
-        assert_eq!(output_size(&EpkvReplica::handle_message), 424);
+        assert_eq!(output_size(&EpkvReplica::handle_message), 408);
         assert_eq!(output_size(&EpkvReplica::run_propose), 376);
     }
 
