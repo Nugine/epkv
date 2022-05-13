@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use std::{mem::MaybeUninit, ops::Deref};
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,12 @@ impl<T> Asc<T> {
     #[inline]
     pub fn try_unwrap(self) -> Result<T, Self> {
         triomphe::Arc::try_unwrap(self.0).map_err(|a| Self(a))
+    }
+
+    #[inline]
+    pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
+        #[allow(clippy::as_conversions)]
+        &mut *(triomphe::Arc::as_ptr(&self.0) as *mut T)
     }
 }
 
