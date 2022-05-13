@@ -1,5 +1,7 @@
 #![allow(unsafe_code)]
 
+use crate::asc::Asc;
+
 use std::cell::Cell;
 use std::cell::UnsafeCell;
 use std::mem;
@@ -11,10 +13,10 @@ use std::ptr;
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::*;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::thread;
 use std::thread::Thread;
+
+use parking_lot::Mutex;
 
 macro_rules! const_assert_eq {
     ($lhs: expr, $rhs: expr) => {{
@@ -284,7 +286,7 @@ struct Inner<T> {
 
 impl<T> Inner<T> {
     fn acquire(&self) -> NonNull<Entry> {
-        let mut guard = self.meta.lock().unwrap();
+        let mut guard = self.meta.lock();
         let meta = &mut *guard;
 
         let active = meta.active;
@@ -321,7 +323,7 @@ impl<T> Inner<T> {
     }
 
     unsafe fn release(&self, entry: NonNull<Entry>) {
-        let mut guard = self.meta.lock().unwrap();
+        let mut guard = self.meta.lock();
         let meta = &mut *guard;
 
         let prev = entry.as_ref().link.prev.get();
@@ -351,16 +353,16 @@ impl<T> Inner<T> {
 }
 
 pub struct CstMutex<T> {
-    inner: Arc<Inner<T>>,
+    inner: Asc<Inner<T>>,
 }
 
 pub struct CstMutexPermit<T> {
-    inner: Arc<Inner<T>>,
+    inner: Asc<Inner<T>>,
     entry: NonNull<Entry>,
 }
 
 pub struct CstMutexGuard<T> {
-    inner: Arc<Inner<T>>,
+    inner: Asc<Inner<T>>,
     entry: NonNull<Entry>,
 }
 
@@ -377,7 +379,7 @@ impl<T> CstMutex<T> {
     #[inline]
     #[must_use]
     pub fn new(val: T) -> Self {
-        let inner = Arc::<Inner<T>>::new(Inner {
+        let inner = Asc::<Inner<T>>::new(Inner {
             link: Link::dangling(),
             meta: Mutex::new(Meta { active: 0, pool: EntryPool::new() }),
             data: UnsafeCell::new(val),
@@ -393,7 +395,7 @@ impl<T> CstMutex<T> {
     #[inline]
     #[must_use]
     pub fn acquire(&self) -> CstMutexPermit<T> {
-        let inner = Arc::clone(&self.inner);
+        let inner = Asc::clone(&self.inner);
         let entry = self.inner.acquire();
         CstMutexPermit { inner, entry }
     }
@@ -401,7 +403,7 @@ impl<T> CstMutex<T> {
     #[inline]
     pub fn shrink_to(&self, min_capacity: usize) {
         let garbage = {
-            let mut guard = self.inner.meta.lock().unwrap();
+            let mut guard = self.inner.meta.lock();
             let meta = &mut *guard;
             meta.pool.split_off(min_capacity)
         };
@@ -413,7 +415,7 @@ impl<T> CstMutex<T> {
         let mut delta = EntryPool::new();
         delta.reserve(additional);
         {
-            let mut guard = self.inner.meta.lock().unwrap();
+            let mut guard = self.inner.meta.lock();
             let meta = &mut *guard;
             meta.pool.merge(delta);
         }
@@ -468,6 +470,8 @@ impl<T> DerefMut for CstMutexGuard<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::Arc;
 
     #[test]
     fn simple() {
