@@ -24,10 +24,22 @@ impl<T> Asc<T> {
         triomphe::Arc::try_unwrap(self.0).map_err(|a| Self(a))
     }
 
+    /// # Safety
+    /// TODO
     #[inline]
     pub unsafe fn get_mut_unchecked(&mut self) -> &mut T {
         #[allow(clippy::as_conversions)]
         &mut *(triomphe::Arc::as_ptr(&self.0) as *mut T)
+    }
+}
+
+impl<T> Asc<MaybeUninit<T>> {
+    /// # Safety
+    /// TODO
+    #[inline]
+    #[must_use]
+    pub unsafe fn assume_init(self) -> Asc<T> {
+        Asc(triomphe::Arc::<MaybeUninit<T>>::assume_init(self.0))
     }
 }
 
