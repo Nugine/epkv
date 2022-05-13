@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{mem::MaybeUninit, ops::Deref};
 
 use serde::{Deserialize, Serialize};
 
@@ -9,6 +9,12 @@ impl<T> Asc<T> {
     #[inline]
     pub fn new(val: T) -> Self {
         Self(triomphe::Arc::new(val))
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn new_uninit() -> Asc<MaybeUninit<T>> {
+        Asc(triomphe::Arc::new_uninit())
     }
 
     #[inline]
