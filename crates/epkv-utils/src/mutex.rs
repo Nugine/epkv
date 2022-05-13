@@ -471,7 +471,7 @@ impl<T> DerefMut for CstMutexGuard<T> {
 mod tests {
     use super::*;
 
-    use std::sync::Arc;
+    use std::cmp::Ordering;
 
     #[test]
     fn simple() {
@@ -491,18 +491,17 @@ mod tests {
     fn multi() {
         for n in 1..5 {
             for m in 1..7 {
-                let keys: Arc<[_]> = {
+                let keys = {
                     let mut keys = Vec::new();
                     keys.resize_with(m, || CstMutex::new(Vec::<char>::new()));
-                    Arc::from(keys)
+                    keys
                 };
 
                 let mut threads = Vec::new();
 
                 for c in ('A'..='Z').take(n) {
-                    let keys = keys.clone();
+                    let permits: Vec<_> = keys.iter().map(|mtx| mtx.acquire()).collect();
                     let handle = thread::spawn(move || {
-                        let permits: Vec<_> = keys.iter().map(|mtx| mtx.acquire()).collect();
                         for permit in permits {
                             let mut guard = permit.wait();
                             let v = &mut *guard;
@@ -516,14 +515,10 @@ mod tests {
                     th.join().unwrap();
                 }
 
-                let mut order: Option<Vec<char>> = None;
                 for k in &*keys {
                     let mut guard = k.acquire().wait();
                     let v = &mut *guard;
-                    match order {
-                        Some(ref expected) => assert_eq!(*v, *expected),
-                        None => order = Some(mem::take(v)),
-                    }
+                    assert_eq!(v.iter().copied().cmp(('A'..='Z').take(n)), Ordering::Equal);
                 }
             }
         }
