@@ -63,7 +63,7 @@ impl Default for Stepper {
 mod tests {
     use super::*;
 
-    use crate::asc::Asc;
+    use asc::Asc;
 
     use tokio::spawn;
     use tokio::time::{sleep, Duration};

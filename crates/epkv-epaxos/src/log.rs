@@ -7,7 +7,7 @@ use crate::ins::Instance;
 use crate::status::Status;
 use crate::store::{LogStore, UpdateMode};
 
-use epkv_utils::asc::Asc;
+use asc::Asc;
 use epkv_utils::clone;
 use epkv_utils::lock::with_mutex;
 use epkv_utils::vecmap::VecMap;

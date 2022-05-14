@@ -1,6 +1,6 @@
 use crate::id::ReplicaId;
 
-use epkv_utils::asc::Asc;
+use asc::Asc;
 use epkv_utils::vecset::VecSet;
 
 use std::fmt;

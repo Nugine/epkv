@@ -19,7 +19,6 @@ macro_rules! clone {
     };
 }
 
-pub mod asc;
 pub mod atomic_flag;
 pub mod bits;
 pub mod bytes_str;

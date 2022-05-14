@@ -1,6 +1,6 @@
 #![allow(unsafe_code)]
 
-use crate::asc::Asc;
+use asc::Asc;
 
 use std::cell::Cell;
 use std::cell::UnsafeCell;

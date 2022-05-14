@@ -4,7 +4,7 @@ use crate::id::{Ballot, InstanceId};
 use crate::ins::Instance;
 use crate::status::Status;
 
-use epkv_utils::asc::Asc;
+use asc::Asc;
 
 use std::future::Future;
 use std::sync::Arc;

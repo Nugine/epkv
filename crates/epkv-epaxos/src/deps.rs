@@ -1,6 +1,6 @@
 use crate::id::{InstanceId, LocalInstanceId, ReplicaId};
 
-use epkv_utils::asc::Asc;
+use asc::Asc;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
 

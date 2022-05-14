@@ -1,7 +1,7 @@
 use super::kinds::*;
 use super::notify::CommandNotify;
 
-use epkv_utils::asc::Asc;
+use asc::Asc;
 
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
