@@ -25,13 +25,13 @@ impl SelectedPeers {
     #[must_use]
     pub fn into_merged(self) -> VecSet<ReplicaId> {
         let mut peers = self.acc;
-        peers.union_copied(&self.others);
+        peers.union_copied_inplace(&self.others);
         peers
     }
 
     #[must_use]
     pub fn to_merged(&self) -> VecSet<ReplicaId> {
-        self.acc.to_union_copied(&self.others)
+        self.acc.union_copied(&self.others)
     }
 }
 
@@ -129,7 +129,7 @@ impl Peers {
     pub fn select(&self, quorum: usize, acc: &VecSet<ReplicaId>) -> SelectedPeers {
         debug!(?quorum, rank=?self.rank, "select peers");
 
-        let acc = acc.to_intersection_copied(&self.peers);
+        let acc = acc.intersection_copied(&self.peers);
 
         let ans_acc = if acc.len() <= quorum {
             acc

@@ -644,7 +644,7 @@ where
 
                             let no_reply_targets = {
                                 let mut all_targets = targets;
-                                all_targets.difference_copied(&received);
+                                all_targets.difference_copied_inplace(&received);
                                 all_targets
                             };
 

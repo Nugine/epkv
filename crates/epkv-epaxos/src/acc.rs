@@ -23,7 +23,7 @@ impl MutableAcc {
     }
 
     pub fn union(&mut self, other: &Self) {
-        self.0.union_copied(&other.0)
+        self.0.union_copied_inplace(&other.0)
     }
 }
 

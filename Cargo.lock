@@ -408,6 +408,7 @@ dependencies = [
  "futures-util",
  "numeric_cast",
  "once_cell",
+ "ordered-vecmap",
  "parking_lot",
  "roaring",
  "serde",
@@ -745,6 +746,15 @@ name = "once_cell"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
+
+[[package]]
+name = "ordered-vecmap"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c524f58bf415865bea79a6068bd78904fa6183065d87ec5c3f616c3caa4dd22"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "os_str_bytes"
