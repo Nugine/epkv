@@ -31,7 +31,6 @@ pub mod flag_group;
 pub mod func;
 pub mod iter;
 pub mod lock;
-pub mod mutex;
 pub mod onemap;
 pub mod radixmap;
 pub mod stepper;
