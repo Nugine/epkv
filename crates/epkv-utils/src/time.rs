@@ -1,7 +1,6 @@
-use numeric_cast::NumericCast;
-
 use std::time::{Duration, Instant};
 
+use numeric_cast::NumericCast;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 

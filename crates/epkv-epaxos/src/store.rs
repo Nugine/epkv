@@ -4,12 +4,11 @@ use crate::id::{Ballot, InstanceId};
 use crate::ins::Instance;
 use crate::status::Status;
 
-use asc::Asc;
-
 use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::Result;
+use asc::Asc;
 use tokio::sync::oneshot;
 
 pub trait LogStore<C>: Send + Sync + 'static {

@@ -10,7 +10,6 @@ use epkv_utils::codec::{self, bytes_sink, bytes_stream};
 use epkv_utils::lock::{with_mutex, with_read_lock, with_write_lock};
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
-use numeric_cast::NumericCast;
 
 use std::marker::PhantomData;
 use std::net::SocketAddr;
@@ -20,6 +19,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use futures_util::future::join_all;
 use futures_util::{SinkExt, StreamExt};
+use numeric_cast::NumericCast;
 use parking_lot::Mutex as SyncMutex;
 use parking_lot::RwLock as SyncRwLock;
 use serde::de::DeserializeOwned;

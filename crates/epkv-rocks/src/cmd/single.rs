@@ -2,7 +2,6 @@ use super::kinds::*;
 use super::notify::CommandNotify;
 
 use asc::Asc;
-
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 

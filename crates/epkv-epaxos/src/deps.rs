@@ -1,12 +1,12 @@
 use crate::id::{InstanceId, LocalInstanceId, ReplicaId};
 
-use asc::Asc;
 use epkv_utils::cmp::max_assign;
 use epkv_utils::vecmap::VecMap;
 
 use std::fmt;
 use std::hash::Hash;
 
+use asc::Asc;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 

@@ -7,7 +7,6 @@ use crate::ins::Instance;
 use crate::status::Status;
 use crate::store::{LogStore, UpdateMode};
 
-use asc::Asc;
 use epkv_utils::clone;
 use epkv_utils::lock::with_mutex;
 use epkv_utils::vecmap::VecMap;
@@ -17,6 +16,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Result;
+use asc::Asc;
 use dashmap::DashMap;
 use parking_lot::Mutex as SyncMutex;
 use tokio::sync::Mutex as AsyncMutex;

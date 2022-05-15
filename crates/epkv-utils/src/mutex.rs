@@ -1,7 +1,5 @@
 #![allow(unsafe_code)]
 
-use asc::Asc;
-
 use std::cell::Cell;
 use std::cell::UnsafeCell;
 use std::mem;
@@ -16,6 +14,7 @@ use std::sync::atomic::Ordering::*;
 use std::thread;
 use std::thread::Thread;
 
+use asc::Asc;
 use parking_lot::Mutex;
 
 macro_rules! const_assert_eq {

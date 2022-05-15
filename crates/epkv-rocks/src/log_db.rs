@@ -402,9 +402,10 @@ mod tests {
 
     use epkv_utils::codec;
     use epkv_utils::vecset::VecSet;
-    use numeric_cast::NumericCast;
 
     use std::io;
+
+    use numeric_cast::NumericCast;
 
     #[test]
     fn tuple_ref_serde() {

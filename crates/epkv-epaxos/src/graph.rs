@@ -6,7 +6,6 @@ use crate::id::Seq;
 use crate::status::ExecStatus;
 use crate::status::Status;
 
-use asc::Asc;
 use epkv_utils::cmp::min_assign;
 use epkv_utils::lock::with_mutex;
 use epkv_utils::watermark::WaterMark;
@@ -16,6 +15,7 @@ use std::fmt;
 use std::hash::Hash;
 use std::ops::Not;
 
+use asc::Asc;
 use dashmap::DashMap;
 use fnv::{FnvHashMap, FnvHashSet};
 use parking_lot::Mutex as SyncMutex;

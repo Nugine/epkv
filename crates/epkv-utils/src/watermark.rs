@@ -1,9 +1,9 @@
 use crate::lock::with_mutex;
 use crate::radixmap::RadixMap;
-use asc::Asc;
 
 use std::sync::atomic::{AtomicU64, Ordering::*};
 
+use asc::Asc;
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 

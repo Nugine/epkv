@@ -14,7 +14,6 @@ use crate::peers::Peers;
 use crate::status::{ExecStatus, Status};
 use crate::store::{DataStore, LogStore, UpdateMode};
 
-use asc::Asc;
 use epkv_utils::chan::{self, recv_timeout};
 use epkv_utils::clone;
 use epkv_utils::cmp::max_assign;
@@ -24,7 +23,6 @@ use epkv_utils::lock::with_mutex;
 use epkv_utils::time::LocalInstant;
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
-use numeric_cast::NumericCast;
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -37,9 +35,11 @@ use std::time::{Duration, Instant};
 use std::{mem, ops};
 
 use anyhow::{ensure, Result};
+use asc::Asc;
 use dashmap::DashMap;
 use fnv::FnvHashSet;
 use futures_util::future::join_all;
+use numeric_cast::NumericCast;
 use parking_lot::Mutex as SyncMutex;
 use rand::Rng;
 use tokio::spawn;

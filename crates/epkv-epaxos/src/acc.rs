@@ -1,11 +1,11 @@
 use crate::id::ReplicaId;
 
-use asc::Asc;
 use epkv_utils::vecset::VecSet;
 
 use std::fmt;
 use std::hash::Hash;
 
+use asc::Asc;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 

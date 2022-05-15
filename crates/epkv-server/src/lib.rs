@@ -26,11 +26,9 @@ use epkv_rocks::cmd::{BatchedCommand, Command, CommandKind, CommandNotify, Del, 
 use epkv_rocks::data_db::DataDb;
 use epkv_rocks::log_db::LogDb;
 
-use asc::Asc;
 use epkv_utils::atomic_flag::AtomicFlag;
 use epkv_utils::chan;
 use epkv_utils::lock::with_mutex;
-use numeric_cast::NumericCast;
 
 use std::future::Future;
 use std::mem;
@@ -38,6 +36,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use asc::Asc;
+use numeric_cast::NumericCast;
 use parking_lot::Mutex as SyncMutex;
 use tokio::net::TcpListener;
 use tokio::spawn;
