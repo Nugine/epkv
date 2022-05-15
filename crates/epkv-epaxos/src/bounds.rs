@@ -51,7 +51,7 @@ impl StatusBounds {
     pub fn set(&mut self, id: InstanceId, status: Status) {
         debug!(?id, ?status, "set status");
         let InstanceId(rid, lid) = id;
-        let (_, m) = self.0.init_with(rid, StatusMap::default);
+        let m = self.0.entry(rid).or_insert_with(StatusMap::default);
         m.known.set(lid.raw_value());
         if status >= Status::Committed {
             m.committed.set(lid.raw_value());

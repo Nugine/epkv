@@ -1986,7 +1986,7 @@ where
                     let wm = self.graph.watermark(rid);
 
                     let mut start = LocalInstanceId::from(wm.level().saturating_add(1));
-                    let (_, up_to) = spawn_recover_up_to.init_with(rid, || start);
+                    let up_to = spawn_recover_up_to.entry(rid).or_insert(start);
                     start = start.max(up_to.add_one());
 
                     let end = lid.sub_one();

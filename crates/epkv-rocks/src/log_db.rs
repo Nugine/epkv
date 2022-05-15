@@ -227,7 +227,7 @@ impl LogDb {
             let mut merge: _ = |map: &VecMap<ReplicaId, LocalInstanceId>,
                                 project: fn(&mut StatusMap) -> &mut OneMap| {
                 for &(rid, lid) in map {
-                    let (_, m) = maps.init_with(rid, create_default);
+                    let m = maps.entry(rid).or_insert_with(create_default);
                     ((project)(m)).set_bound(lid.raw_value());
                 }
             };
@@ -289,7 +289,7 @@ impl LogDb {
                 let seq: Seq = codec::deserialize_owned(iter.value().unwrap())?;
 
                 max_assign(&mut attr_bounds.max_seq, seq);
-                attr_bounds.max_lids.update(rid, |l| max_assign(l, lid), || lid);
+                attr_bounds.max_lids.entry(rid).and_modify(|l: _| max_assign(l, lid)).or_insert(lid);
                 status_bounds.set(InstanceId(rid, lid), status);
 
                 lid = lid.add_one();

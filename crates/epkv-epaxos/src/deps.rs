@@ -21,7 +21,7 @@ impl MutableDeps {
 
     pub fn insert(&mut self, id: InstanceId) {
         let InstanceId(rid, lid) = id;
-        self.0.update(rid, |prev| max_assign(prev, lid), || lid);
+        self.0.entry(rid).and_modify(|prev: _| max_assign(prev, lid)).or_insert(lid);
     }
 
     pub fn merge(&mut self, other: &Self) {

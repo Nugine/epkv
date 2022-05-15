@@ -101,14 +101,13 @@ where
         let InstanceId(rid, lid) = id;
 
         if keys.is_unbounded() {
-            self.max_lid_map.update(
-                rid,
-                |m| {
+            self.max_lid_map
+                .entry(rid)
+                .and_modify(|m| {
                     max_assign(&mut m.checkpoint, lid);
                     max_assign(&mut m.any, lid);
-                },
-                || MaxLid { checkpoint: lid, any: lid },
-            );
+                })
+                .or_insert_with(|| MaxLid { checkpoint: lid, any: lid });
 
             max_assign(&mut self.max_seq.checkpoint, seq);
             max_assign(&mut self.max_seq.any, seq);
@@ -117,18 +116,18 @@ where
                 hash_map::Entry::Occupied(mut e) => {
                     let m = e.get_mut();
                     max_assign(&mut m.seq, seq);
-                    m.lids.update(rid, |l| max_assign(l, lid), || lid);
+                    m.lids.entry(rid).and_modify(|l| max_assign(l, lid)).or_insert(lid);
                 }
                 hash_map::Entry::Vacant(e) => {
                     let lids = VecMap::from_single(rid, lid);
                     e.insert(MaxKey { seq, lids });
                 }
             });
-            self.max_lid_map.update(
-                rid,
-                |m| max_assign(&mut m.any, lid),
-                || MaxLid { checkpoint: LocalInstanceId::ZERO, any: lid },
-            );
+
+            self.max_lid_map
+                .entry(rid)
+                .and_modify(|m| max_assign(&mut m.any, lid))
+                .or_insert_with(|| MaxLid { checkpoint: LocalInstanceId::ZERO, any: lid });
 
             max_assign(&mut self.max_seq.any, seq);
         }
@@ -172,7 +171,7 @@ where
     }
 
     pub fn insert_ins(&mut self, id: InstanceId, ins: Instance<C>) {
-        let (_, row) = self.ins_cache.init_with(id.0, FnvHashMap::default);
+        let row: _ = self.ins_cache.entry(id.0).or_insert_with(FnvHashMap::default);
         if row.insert(id.1, ins).is_none() {
             self.pbal_cache.remove(&id);
         }

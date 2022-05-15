@@ -45,7 +45,7 @@ impl<T> RadixMap<T> {
     #[inline]
     pub fn init_with(&mut self, key: u64, g: impl FnOnce() -> T) -> (bool, &mut T) {
         let (prefix, idx) = split(key);
-        let (_, bucket) = self.map.init_with(prefix, Bucket::new_boxed);
+        let bucket = self.map.entry(prefix).or_insert_with(Bucket::new_boxed);
         unsafe { bucket.init_with(idx, g) }
     }
 
