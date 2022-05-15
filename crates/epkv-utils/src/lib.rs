@@ -22,7 +22,6 @@ macro_rules! clone {
 pub mod atomic_flag;
 pub mod bits;
 pub mod bytes_str;
-pub mod cast;
 pub mod chan;
 pub mod cmp;
 pub mod codec;
