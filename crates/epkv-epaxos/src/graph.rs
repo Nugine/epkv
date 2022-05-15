@@ -379,9 +379,10 @@ mod tests {
     use super::*;
 
     use epkv_utils::iter::map_collect;
-    use epkv_utils::vecset::VecSet;
 
     use std::fmt;
+
+    use ordered_vecmap::VecSet;
 
     #[derive(Debug, Clone)]
     struct TestNode {

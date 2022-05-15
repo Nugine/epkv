@@ -21,8 +21,6 @@ use epkv_utils::flag_group::FlagGroup;
 use epkv_utils::iter::map_collect;
 use epkv_utils::lock::with_mutex;
 use epkv_utils::time::LocalInstant;
-use epkv_utils::vecmap::VecMap;
-use epkv_utils::vecset::VecSet;
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -40,6 +38,8 @@ use dashmap::DashMap;
 use fnv::FnvHashSet;
 use futures_util::future::join_all;
 use numeric_cast::NumericCast;
+use ordered_vecmap::VecMap;
+use ordered_vecmap::VecSet;
 use parking_lot::Mutex as SyncMutex;
 use rand::Rng;
 use tokio::spawn;

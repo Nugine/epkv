@@ -37,6 +37,4 @@ pub mod stepper;
 pub mod time;
 pub mod tracing;
 pub mod utf8;
-pub mod vecmap;
-pub mod vecset;
 pub mod watermark;

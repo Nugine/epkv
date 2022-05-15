@@ -9,7 +9,6 @@ use crate::store::{LogStore, UpdateMode};
 
 use epkv_utils::clone;
 use epkv_utils::lock::with_mutex;
-use epkv_utils::vecmap::VecMap;
 
 use std::ops::Not;
 use std::sync::Arc;
@@ -18,6 +17,7 @@ use std::time::Instant;
 use anyhow::Result;
 use asc::Asc;
 use dashmap::DashMap;
+use ordered_vecmap::VecMap;
 use parking_lot::Mutex as SyncMutex;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::OwnedMutexGuard as OwnedAsyncMutexGuard;

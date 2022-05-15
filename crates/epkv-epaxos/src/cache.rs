@@ -6,12 +6,12 @@ use crate::ins::Instance;
 
 use epkv_utils::cmp::max_assign;
 use epkv_utils::iter::{copied_map_collect, map_collect};
-use epkv_utils::vecmap::VecMap;
 
 use std::collections::{hash_map, HashMap};
 use std::mem;
 
 use fnv::FnvHashMap;
+use ordered_vecmap::VecMap;
 
 pub struct LogCache<C>
 where

@@ -1,12 +1,11 @@
 use crate::id::ReplicaId;
 
-use epkv_utils::vecset::VecSet;
-
 use std::fmt;
 use std::hash::Hash;
 
 use asc::Asc;
 use once_cell::sync::Lazy;
+use ordered_vecmap::VecSet;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]

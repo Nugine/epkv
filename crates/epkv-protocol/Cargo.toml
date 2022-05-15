@@ -11,6 +11,7 @@ epkv-rocks = { path = "../epkv-rocks" }
 epkv-utils = { path = "../epkv-utils" }
 fnv = "1.0.7"
 futures-util = { version = "0.3.21", features = ["sink"] }
+ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 scopeguard = "1.1.0"
 serde = { version = "1.0.137", features = ["derive"] }
 tokio = { version = "1.18.2", features = ["full"] }

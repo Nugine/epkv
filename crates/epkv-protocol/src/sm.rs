@@ -3,11 +3,11 @@
 use crate::rpc::{RpcClientConfig, RpcConnection};
 
 use epkv_epaxos::id::{Epoch, ReplicaId};
-use epkv_utils::vecmap::VecMap;
 
 use std::net::SocketAddr;
 
 use anyhow::Result;
+use ordered_vecmap::VecMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

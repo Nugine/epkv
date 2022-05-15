@@ -1,13 +1,13 @@
 use crate::id::ReplicaId;
 
 use epkv_utils::iter::copied_map_collect;
-use epkv_utils::vecset::VecSet;
-use tracing::debug;
 
 use std::ops::Not;
 use std::time::Duration;
 
+use ordered_vecmap::VecSet;
 use rand::prelude::SliceRandom;
+use tracing::debug;
 
 pub struct Peers {
     peers: VecSet<ReplicaId>,

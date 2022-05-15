@@ -1,11 +1,11 @@
 #![allow(unsafe_code, clippy::as_conversions)]
 
-use crate::vecmap::VecMap;
-
 use std::alloc::{alloc, handle_alloc_error, Layout};
 use std::mem::MaybeUninit;
 use std::ops::Not;
 use std::ptr;
+
+use ordered_vecmap::VecMap;
 
 #[derive(Default)]
 pub struct RadixMap<T> {

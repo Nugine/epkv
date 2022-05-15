@@ -5,10 +5,10 @@ use crate::ins::Instance;
 use crate::status::Status;
 
 use epkv_utils::time::LocalInstant;
-use epkv_utils::vecmap::VecMap;
 
 use std::net::SocketAddr;
 
+use ordered_vecmap::VecMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

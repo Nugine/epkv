@@ -15,8 +15,6 @@ use epkv_epaxos::store::{LogStore, UpdateMode};
 use epkv_utils::cmp::max_assign;
 use epkv_utils::codec;
 use epkv_utils::onemap::OneMap;
-use epkv_utils::vecmap::VecMap;
-use tokio::sync::oneshot;
 
 use std::ops::Not;
 use std::sync::Arc;
@@ -26,7 +24,9 @@ use anyhow::{ensure, Result};
 use bytemuck::bytes_of;
 use bytemuck::checked::{from_bytes, try_from_bytes};
 use camino::Utf8Path;
+use ordered_vecmap::VecMap;
 use rocksdb::{DBRawIterator, WriteBatch, DB};
+use tokio::sync::oneshot;
 use tracing::debug;
 
 pub struct LogDb {
@@ -401,7 +401,7 @@ mod tests {
     use epkv_epaxos::status::Status;
 
     use epkv_utils::codec;
-    use epkv_utils::vecset::VecSet;
+    use ordered_vecmap::VecSet;
 
     use std::io;
 

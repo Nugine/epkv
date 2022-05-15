@@ -1,10 +1,9 @@
 use crate::id::ReplicaId;
 
-use epkv_utils::vecmap::VecMap;
-
 use std::net::SocketAddr;
 
 use fnv::FnvHashMap;
+use ordered_vecmap::VecMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

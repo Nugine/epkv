@@ -1,10 +1,10 @@
 use crate::id::ReplicaId;
 use crate::msg::{Accept, Commit, Message, PreAccept};
 
-use epkv_utils::vecset::VecSet;
-
 use std::net::SocketAddr;
 use std::ops::Not;
+
+use ordered_vecmap::VecSet;
 
 pub trait Network<C>: Send + Sync + 'static {
     fn broadcast(&self, targets: VecSet<ReplicaId>, msg: Message<C>);
