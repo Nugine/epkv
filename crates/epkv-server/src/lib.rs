@@ -28,9 +28,9 @@ use epkv_rocks::log_db::LogDb;
 
 use asc::Asc;
 use epkv_utils::atomic_flag::AtomicFlag;
-use epkv_utils::cast::NumericCast;
 use epkv_utils::chan;
 use epkv_utils::lock::with_mutex;
+use numeric_cast::NumericCast;
 
 use std::future::Future;
 use std::mem;

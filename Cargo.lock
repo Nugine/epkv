@@ -280,6 +280,7 @@ dependencies = [
  "epkv-utils",
  "fnv",
  "futures-util",
+ "numeric_cast",
  "once_cell",
  "parking_lot",
  "rand",
@@ -303,6 +304,7 @@ dependencies = [
  "epkv-server",
  "epkv-utils",
  "futures-util",
+ "numeric_cast",
  "rand",
  "serde",
  "serde_json",
@@ -361,6 +363,7 @@ dependencies = [
  "camino",
  "epkv-epaxos",
  "epkv-utils",
+ "numeric_cast",
  "parking_lot",
  "rocksdb",
  "serde",
@@ -382,6 +385,7 @@ dependencies = [
  "epkv-rocks",
  "epkv-utils",
  "futures-util",
+ "numeric_cast",
  "parking_lot",
  "serde",
  "tikv-jemallocator",
@@ -402,6 +406,7 @@ dependencies = [
  "bytes",
  "camino",
  "futures-util",
+ "numeric_cast",
  "once_cell",
  "parking_lot",
  "roaring",
@@ -719,6 +724,12 @@ checksum = "2819ce041d2ee131036f4fc9d6ae7ae125a3a40e97ba64d04fe799ad9dabbb44"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "numeric_cast"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d914f4e291e98842917e94bf80c2ea88351e9cc308c757c8d5a6404511122d8d"
 
 [[package]]
 name = "object"

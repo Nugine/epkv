@@ -400,9 +400,9 @@ mod tests {
     use epkv_epaxos::id::{Ballot, InstanceId, ReplicaId, Round};
     use epkv_epaxos::status::Status;
 
-    use epkv_utils::cast::NumericCast;
     use epkv_utils::codec;
     use epkv_utils::vecset::VecSet;
+    use numeric_cast::NumericCast;
 
     use std::io;
 

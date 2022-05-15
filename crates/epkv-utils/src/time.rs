@@ -1,4 +1,4 @@
-use crate::cast::NumericCast;
+use numeric_cast::NumericCast;
 
 use std::time::{Duration, Instant};
 

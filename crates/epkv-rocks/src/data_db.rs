@@ -4,8 +4,8 @@ use asc::Asc;
 use epkv_epaxos::exec::ExecNotify;
 use epkv_epaxos::id::InstanceId;
 use epkv_epaxos::store::DataStore;
-use epkv_utils::cast::NumericCast;
 use epkv_utils::lock::with_mutex;
+use numeric_cast::NumericCast;
 
 use std::future::Future;
 use std::sync::Arc;

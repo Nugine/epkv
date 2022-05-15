@@ -1,8 +1,8 @@
 use asc::Asc;
 use epkv_protocol::cs;
-use epkv_utils::cast::NumericCast;
 use epkv_utils::clone;
 use epkv_utils::config::read_config_file;
+use numeric_cast::NumericCast;
 
 use std::collections::BTreeMap;
 use std::fs;

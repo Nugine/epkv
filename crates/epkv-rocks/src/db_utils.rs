@@ -1,5 +1,5 @@
-use epkv_utils::cast::NumericCast;
 use epkv_utils::codec;
+use numeric_cast::NumericCast;
 
 use std::io;
 

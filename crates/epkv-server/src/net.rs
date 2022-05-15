@@ -5,12 +5,12 @@ use epkv_epaxos::id::ReplicaId;
 use epkv_epaxos::msg::Message;
 use epkv_epaxos::net::Network;
 
-use epkv_utils::cast::NumericCast;
 use epkv_utils::chan;
 use epkv_utils::codec::{self, bytes_sink, bytes_stream};
 use epkv_utils::lock::{with_mutex, with_read_lock, with_write_lock};
 use epkv_utils::vecmap::VecMap;
 use epkv_utils::vecset::VecSet;
+use numeric_cast::NumericCast;
 
 use std::marker::PhantomData;
 use std::net::SocketAddr;
