@@ -167,7 +167,7 @@ bench-local-case4 which interval_ms="":
     TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
     CONFIG=crates/epkv-eval/tests/local-bench-{{which}}.json
     OUTPUT=target/local-cluster/bench/$TIME-case4.json
-    LOG=target/local-cluster/log/$TIME-case4.log
+    LOG=target/local-cluster/log/case4.log
 
     if [ -z "{{interval_ms}}" ]; then
         ./target/release/epkv-eval bench \

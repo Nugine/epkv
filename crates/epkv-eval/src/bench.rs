@@ -458,10 +458,10 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
 }
 
 pub async fn case4(config: &Config, args: Case4) -> Result<serde_json::Value> {
-    let data = match args.interval_ms {
+    match args.interval_ms {
         None => {
             let cluster_metrics: _ = get_cluster_metrics(config).await?;
-            vec![cluster_metrics]
+            serde_json::to_value(&cluster_metrics).map_err(Into::into)
         }
         Some(interval_ms) => {
             let q = Asc::new(SegQueue::new());
@@ -470,11 +470,19 @@ pub async fn case4(config: &Config, args: Case4) -> Result<serde_json::Value> {
                 let config = config.clone();
                 spawn(async move {
                     let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
+                    let t0 = Instant::now();
                     loop {
                         interval.tick().await;
+
+                        let t1 = Instant::now();
                         let cluster_metrics: _ = get_cluster_metrics(&config).await.unwrap();
-                        let line = serde_json::to_string(&cluster_metrics).unwrap();
-                        q.push(cluster_metrics);
+                        let t2 = Instant::now();
+
+                        let t = (((t1 - t0) + (t2 - t0)) / 2).as_micros().numeric_cast::<u64>();
+
+                        let result = (t, cluster_metrics);
+                        let line = serde_json::to_string(&result).unwrap();
+                        q.push(result);
                         println!("{}", line);
                     }
                 })
@@ -482,20 +490,17 @@ pub async fn case4(config: &Config, args: Case4) -> Result<serde_json::Value> {
             tokio::signal::ctrl_c().await.ok();
             task.abort();
 
-            let mut results = Vec::new();
+            let mut data = Vec::new();
             while let Some(result) = q.pop() {
-                results.push(result);
+                data.push(result);
             }
-            results
+
+            Ok(json!({
+                "args": args,
+                "data": data,
+            }))
         }
-    };
-
-    let result = json!({
-        "args": args,
-        "data": data,
-    });
-
-    Ok(result)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, clap::Args)]
