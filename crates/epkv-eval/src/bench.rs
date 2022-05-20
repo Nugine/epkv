@@ -39,16 +39,16 @@ pub enum Command {
     Case1(Case1),
     Case2(Case2),
     Case3(Case3),
-    Case4,
+    Case4(Case4),
     Case5(Case5),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub servers: BTreeMap<String, RemoteServerConfig>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteServerConfig {
     pub ip: IpAddr,
     pub client_port: u16,
@@ -101,6 +101,12 @@ pub struct Case3 {
     interval_count: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize, clap::Args)]
+pub struct Case4 {
+    #[clap(long)]
+    interval_ms: Option<u64>,
+}
+
 pub async fn run(opt: Opt) -> Result<()> {
     let config: Config = read_config_file(&opt.config)
         .with_context(|| format!("failed to read config file {}", opt.config))?;
@@ -113,10 +119,7 @@ pub async fn run(opt: Opt) -> Result<()> {
         Command::Case1(args) => case1(&config, args).await?,
         Command::Case2(args) => case2(&config, args).await?,
         Command::Case3(args) => case3(&config, args).await?,
-        Command::Case4 => {
-            let cluster_metrics: _ = get_cluster_metrics(&config).await?;
-            serde_json::to_value(&cluster_metrics)?
-        }
+        Command::Case4(args) => case4(&config, args).await?,
         Command::Case5(args) => case5(&config, args).await?,
     };
 
@@ -449,6 +452,47 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
         "diff": diff,
         "latency": latency,
         // "estimated_qps": estimated_qps,
+    });
+
+    Ok(result)
+}
+
+pub async fn case4(config: &Config, args: Case4) -> Result<serde_json::Value> {
+    let data = match args.interval_ms {
+        None => {
+            let cluster_metrics: _ = get_cluster_metrics(config).await?;
+            vec![cluster_metrics]
+        }
+        Some(interval_ms) => {
+            let q = Asc::new(SegQueue::new());
+            let task = {
+                clone!(q);
+                let config = config.clone();
+                spawn(async move {
+                    let mut interval = tokio::time::interval(Duration::from_millis(interval_ms));
+                    loop {
+                        interval.tick().await;
+                        let cluster_metrics: _ = get_cluster_metrics(&config).await.unwrap();
+                        let line = serde_json::to_string(&cluster_metrics).unwrap();
+                        q.push(cluster_metrics);
+                        println!("{}", line);
+                    }
+                })
+            };
+            tokio::signal::ctrl_c().await.ok();
+            task.abort();
+
+            let mut results = Vec::new();
+            while let Some(result) = q.pop() {
+                results.push(result);
+            }
+            results
+        }
+    };
+
+    let result = json!({
+        "args": args,
+        "data": data,
     });
 
     Ok(result)

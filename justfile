@@ -159,7 +159,7 @@ bench-local-case3 which value_size cmd_count conflict_rate interval_ms interval_
             --interval-ms {{interval_ms}} \
             --interval-count {{interval_count}}
 
-bench-local-case4 which:
+bench-local-case4 which interval_ms="":
     #!/bin/bash -ex
     cd {{justfile_directory()}}
 
@@ -167,11 +167,22 @@ bench-local-case4 which:
     TIME=`date -u +"%Y-%m-%d-%H-%M-%S"`
     CONFIG=crates/epkv-eval/tests/local-bench-{{which}}.json
     OUTPUT=target/local-cluster/bench/$TIME-case4.json
+    LOG=target/local-cluster/log/$TIME-case4.log
 
-    ./target/release/epkv-eval bench \
-        --config $CONFIG \
-        --output $OUTPUT \
-        case4
+    if [ -z "{{interval_ms}}" ]; then
+        ./target/release/epkv-eval bench \
+            --config $CONFIG \
+            --output $OUTPUT \
+            case4
+    else
+        ./target/release/epkv-eval bench \
+            --config $CONFIG \
+            --output $OUTPUT \
+            case4 \
+            --interval-ms {{interval_ms}} \
+            > $LOG
+    fi
+
 
 bench-local-case5 which value_size conflict_rate interval cmds server_name:
     #!/bin/bash -ex
