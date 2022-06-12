@@ -5,21 +5,21 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.57"
-asc = "0.1.0"
+asc = "0.1.1"
 bytes = "1.1.0"
-camino = { version = "1.0.8", features = ["serde1"] }
+camino = { version = "1.0.9", features = ["serde1"] }
 clap = { version = "3.1.18", features = ["derive"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-protocol = { path = "../epkv-protocol" }
 epkv-rocks = { path = "../epkv-rocks" }
 epkv-utils = { path = "../epkv-utils" }
 futures-util = { version = "0.3.21", features = ["sink"] }
-numeric_cast = "0.1.1"
+numeric_cast = "0.1.2"
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
-parking_lot = "0.12.0"
+parking_lot = "0.12.1"
 serde = { version = "1.0.137", features = ["derive", "rc"] }
 tikv-jemallocator = "0.4.3"
-tokio = { version = "1.18.2", features = ["full"] }
+tokio = { version = "1.19.2", features = ["full"] }
 toml = "0.5.9"
-tracing = "0.1.34"
+tracing = "0.1.35"
 wgp = "0.2.0"
