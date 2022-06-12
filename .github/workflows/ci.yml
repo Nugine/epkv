@@ -1,0 +1,31 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+name: CI
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - name: Rust components
+        run: |
+          rustup component add rustfmt
+          rustup component add clippy
+      - name: Rust check
+        run: |
+          cargo fmt
+          cargo check
+          cargo clippy
+          cargo test
+          cargo build --release
