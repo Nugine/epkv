@@ -13,7 +13,7 @@ use epkv_eval::client;
 use epkv_eval::cluster;
 
 use anyhow::Result;
-use clap::StructOpt;
+use clap::Parser;
 
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;

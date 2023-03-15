@@ -15,7 +15,7 @@ use epkv_utils::tracing::setup_tracing;
 
 use anyhow::Result;
 use camino::Utf8PathBuf;
-use clap::StructOpt;
+use clap::Parser;
 use tracing::debug;
 
 #[global_allocator]

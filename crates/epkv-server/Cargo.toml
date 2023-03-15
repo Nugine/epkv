@@ -4,22 +4,22 @@ version = "0.1.0-dev"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.57"
+anyhow = "1.0.69"
 asc = "0.1.1"
-bytes = "1.1.0"
-camino = { version = "1.0.9", features = ["serde1"] }
-clap = { version = "3.1.18", features = ["derive"] }
+bytes = "1.4.0"
+camino = { version = "1.1.4", features = ["serde1"] }
+clap = { version = "4.1.8", features = ["derive"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-protocol = { path = "../epkv-protocol" }
 epkv-rocks = { path = "../epkv-rocks" }
 epkv-utils = { path = "../epkv-utils" }
-futures-util = { version = "0.3.21", features = ["sink"] }
-numeric_cast = "0.1.2"
+futures-util = { version = "0.3.27", features = ["sink"] }
+numeric_cast = "0.2.1"
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 parking_lot = "0.12.1"
-serde = { version = "1.0.137", features = ["derive", "rc"] }
-tikv-jemallocator = "0.4.3"
-tokio = { version = "1.19.2", features = ["full"] }
-toml = "0.5.9"
-tracing = "0.1.35"
+serde = { version = "1.0.156", features = ["derive", "rc"] }
+tikv-jemallocator = "0.5.0"
+tokio = { version = "1.26.0", features = ["full"] }
+toml = "0.7.3"
+tracing = "0.1.37"
 wgp = "0.2.0"

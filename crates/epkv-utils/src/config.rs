@@ -11,8 +11,8 @@ where
 {
     match path.extension() {
         Some("toml") => {
-            let content = fs::read(path)?;
-            let config: T = toml::from_slice(&content)?;
+            let content = fs::read_to_string(path)?;
+            let config: T = toml::from_str(&content)?;
             Ok(config)
         }
         Some("json") => {
