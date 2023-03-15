@@ -8,7 +8,6 @@
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
 //
-#![feature(generic_associated_types)]
 
 pub mod acc;
 pub mod addr_map;

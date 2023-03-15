@@ -9,7 +9,6 @@
 #![warn(clippy::todo, clippy::dbg_macro)]
 //
 #![feature(result_option_inspect)]
-#![feature(generic_associated_types)]
 
 pub mod rpc;
 
