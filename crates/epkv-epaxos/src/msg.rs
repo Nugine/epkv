@@ -276,7 +276,7 @@ mod tests {
     fn message_size() {
         {
             let baseline_type_size = mem::size_of::<Message<()>>();
-            assert_eq!(baseline_type_size, 104); // track message type size
+            assert_eq!(baseline_type_size, 96); // track message type size
         }
 
         {
