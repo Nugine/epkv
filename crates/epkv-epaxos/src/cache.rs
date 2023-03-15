@@ -67,7 +67,7 @@ where
         let InstanceId(rid, lid) = id;
 
         if keys.is_unbounded() {
-            let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
+            let others = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
             for &(r, ref m) in others {
                 deps.insert(InstanceId(r, m.any));
             }
@@ -75,14 +75,14 @@ where
         } else {
             keys.for_each(|k| {
                 if let Some(m) = self.max_key_map.get(k) {
-                    let others: _ = m.lids.iter().filter(|(r, _)| *r != rid);
+                    let others = m.lids.iter().filter(|(r, _)| *r != rid);
                     for &(r, l) in others {
                         deps.insert(InstanceId(r, l));
                     }
                     max_assign(&mut seq, m.seq);
                 }
             });
-            let others: _ = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
+            let others = self.max_lid_map.iter().filter(|(r, _)| *r != rid);
             for &(r, ref m) in others {
                 if m.checkpoint > LocalInstanceId::ZERO {
                     deps.insert(InstanceId(r, m.checkpoint));
@@ -171,7 +171,7 @@ where
     }
 
     pub fn insert_ins(&mut self, id: InstanceId, ins: Instance<C>) {
-        let row: _ = self.ins_cache.entry(id.0).or_insert_with(FnvHashMap::default);
+        let row = self.ins_cache.entry(id.0).or_insert_with(FnvHashMap::default);
         if row.insert(id.1, ins).is_none() {
             self.pbal_cache.remove(&id);
         }

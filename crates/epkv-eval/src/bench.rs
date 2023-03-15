@@ -150,8 +150,8 @@ pub async fn case1(config: &Config, args: Case1) -> Result<serde_json::Value> {
 
     for _ in 0..(args.cmd_count.wrapping_div(args.batch_size)) {
         let set_args = || cs::SetArgs { key: key.clone(), value: value.clone() };
-        let futures: _ = (0..args.batch_size).map(|_| server.set(set_args()));
-        let results: _ = join_all(futures).await;
+        let futures = (0..args.batch_size).map(|_| server.set(set_args()));
+        let results = join_all(futures).await;
         for result in results {
             result?;
         }
@@ -204,8 +204,8 @@ pub async fn case2(config: &Config, args: Case2) -> Result<serde_json::Value> {
     let t0 = Instant::now();
 
     for _ in 0..(args.cmd_count.wrapping_div(args.batch_size)) {
-        let futures: _ = (0..args.batch_size).map(|_| server.get(cs::GetArgs { key: key.clone() }));
-        let results: _ = join_all(futures).await;
+        let futures = (0..args.batch_size).map(|_| server.get(cs::GetArgs { key: key.clone() }));
+        let results = join_all(futures).await;
         for result in results {
             result?;
         }
@@ -334,7 +334,7 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
 
     let mut gen = &RandomCmds::new(args.value_size, args.conflict_rate);
 
-    let latency_us_queue: _ = Asc::new(SegQueue::<u64>::new());
+    let latency_us_queue = Asc::new(SegQueue::<u64>::new());
 
     let wg = WaitGroup::new();
 
@@ -460,8 +460,8 @@ pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
 pub async fn case4(config: &Config, args: Case4) -> Result<serde_json::Value> {
     match args.interval_ms {
         None => {
-            let cluster_metrics: _ = get_cluster_metrics(config).await?;
-            serde_json::to_value(&cluster_metrics).map_err(Into::into)
+            let cluster_metrics = get_cluster_metrics(config).await?;
+            serde_json::to_value(cluster_metrics).map_err(Into::into)
         }
         Some(interval_ms) => {
             let q = Asc::new(SegQueue::new());
@@ -475,7 +475,7 @@ pub async fn case4(config: &Config, args: Case4) -> Result<serde_json::Value> {
                         interval.tick().await;
 
                         let t1 = Instant::now();
-                        let cluster_metrics: _ = get_cluster_metrics(&config).await.unwrap();
+                        let cluster_metrics = get_cluster_metrics(&config).await.unwrap();
                         let t2 = Instant::now();
 
                         let t = (((t1 - t0) + (t2 - t0)) / 2).as_micros().numeric_cast::<u64>();
@@ -579,7 +579,7 @@ pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
 
                 clone!(server, completed, working);
                 spawn(async move {
-                    let futures: _ = cmds.into_iter().map(|set_args| {
+                    let futures = cmds.into_iter().map(|set_args| {
                         let server = &server;
                         let completed = &completed;
                         async move {
@@ -588,7 +588,7 @@ pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
                             result
                         }
                     });
-                    let results: _ = join_all(futures).await;
+                    let results = join_all(futures).await;
                     for result in results {
                         result.unwrap();
                     }

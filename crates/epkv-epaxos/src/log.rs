@@ -268,7 +268,7 @@ where
 
     #[must_use]
     pub fn saved_status_bounds(&self) -> SavedStatusBounds {
-        with_mutex(&self.status_bounds, |status_bounds: _| {
+        with_mutex(&self.status_bounds, |status_bounds| {
             status_bounds.update_bounds();
             SavedStatusBounds {
                 known_up_to: status_bounds.known_up_to(),

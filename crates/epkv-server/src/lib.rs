@@ -75,7 +75,7 @@ impl Server {
             let data_store = DataDb::new(&config.data_db.path)?;
             let net = TcpNetwork::new(&config.network);
 
-            let (rid, epoch, peers): _ = {
+            let (rid, epoch, peers) = {
                 let remote_addr = config.server.monitor_addr;
                 let monitor = sm::Monitor::connect(remote_addr, &config.rpc_client).await?;
 
@@ -307,7 +307,7 @@ impl Server {
 
     async fn client_rpc_get_metrics(self: &Arc<Self>, _: cs::GetMetricsArgs) -> Result<cs::GetMetricsOutput> {
         let network = self.replica.network().metrics();
-        let server = with_mutex(&self.metrics, |m: _| m.clone());
+        let server = with_mutex(&self.metrics, |m| m.clone());
         let replica = self.replica.metrics();
         let data_db = self.replica.data_store().metrics();
         let status_bounds = self.replica.dump_saved_status_bounds();
@@ -363,7 +363,7 @@ impl Server {
                 let batch = mem::replace(&mut batch, Vec::with_capacity(initial_capacity));
 
                 let this = Arc::clone(&self);
-                let permit: _ = self.propose_limit.clone().acquire_owned().await.unwrap();
+                let permit = self.propose_limit.clone().acquire_owned().await.unwrap();
                 let working = self.waitgroup.working();
                 spawn(async move {
                     let cmd = BatchedCommand::from_vec(batch);

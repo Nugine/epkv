@@ -31,9 +31,7 @@ impl WaterMark {
     }
 
     fn flush_queue(&self, lv: u64) {
-        with_mutex(&self.queue, |q: _| {
-            q.drain_less_equal(lv, |_, n| n.notify_waiters())
-        })
+        with_mutex(&self.queue, |q| q.drain_less_equal(lv, |_, n| n.notify_waiters()))
     }
 
     #[inline]
@@ -89,6 +87,7 @@ mod tests {
 
     use tokio::task::spawn;
 
+    #[allow(clippy::redundant_async_block)] // FIXME
     #[tokio::test(flavor = "current_thread")]
     async fn tokio() {
         let wm = Asc::new(WaterMark::new(0));

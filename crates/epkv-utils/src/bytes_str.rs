@@ -16,7 +16,7 @@ impl BytesStr {
     #[inline]
     #[allow(unsafe_code)]
     pub fn as_str(&self) -> &str {
-        unsafe { core::str::from_utf8_unchecked(&*self.0) }
+        unsafe { core::str::from_utf8_unchecked(&self.0) }
     }
 }
 
@@ -72,7 +72,7 @@ impl<'de> Deserialize<'de> for BytesStr {
         D: serde::Deserializer<'de>,
     {
         let bytes = <Bytes as Deserialize<'de>>::deserialize(deserializer)?;
-        match simdutf8::basic::from_utf8(&*bytes) {
+        match simdutf8::basic::from_utf8(&bytes) {
             Ok(_) => Ok(Self(bytes)),
             Err(err) => Err(serde::de::Error::custom(err)),
         }

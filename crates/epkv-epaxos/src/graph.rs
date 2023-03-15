@@ -43,7 +43,7 @@ pub struct InsNode<C> {
 impl<C> InsNode<C> {
     pub fn estatus<R>(&self, f: impl FnOnce(&mut ExecStatus) -> R) -> R {
         let mut guard = self.status.lock();
-        f(&mut *guard)
+        f(&mut guard)
     }
 
     pub fn lock_estatus(&self) -> SyncMutexGuard<'_, ExecStatus> {
@@ -78,7 +78,7 @@ impl<C> Graph<C> {
             _ => panic!("unexpected status: {:?}", status),
         };
 
-        let gen: _ = || Asc::new(InsNode { cmd, seq, deps, status: SyncMutex::new(exec_status) });
+        let gen = || Asc::new(InsNode { cmd, seq, deps, status: SyncMutex::new(exec_status) });
         match self.nodes.entry(id) {
             dashmap::mapref::entry::Entry::Occupied(mut e) => match e.get_mut() {
                 Node::InGraph(_) => {}
@@ -96,7 +96,7 @@ impl<C> Graph<C> {
     }
 
     pub fn sync_watermark(&self, rid: ReplicaId) {
-        let committed_up_to = with_mutex(&self.status_bounds, |status_bounds: _| {
+        let committed_up_to = with_mutex(&self.status_bounds, |status_bounds| {
             let m = status_bounds.as_mut().get_mut(&rid)?;
             m.committed.update_bound();
             Some(m.committed.bound())
@@ -168,8 +168,8 @@ impl<C> Graph<C> {
 
     #[must_use]
     pub fn watermark(&self, rid: ReplicaId) -> Asc<WaterMark> {
-        let bound = with_mutex(&self.status_bounds, |status_bounds: _| {
-            status_bounds.as_ref().get(&rid).map(|m: _| m.committed.bound())
+        let bound = with_mutex(&self.status_bounds, |status_bounds| {
+            status_bounds.as_ref().get(&rid).map(|m| m.committed.bound())
         });
         let gen = || Asc::new(WaterMark::new(bound.unwrap_or(0)));
         self.watermarks.entry(rid).or_insert_with(gen).clone()
@@ -346,12 +346,12 @@ where
 
             if self.attr.contains_key(&v).not() {
                 self.run(v);
-                let low_v: _ = self.attr[&v].low;
-                let low_u: _ = &mut self.attr.get_mut(&u).unwrap().low;
+                let low_v = self.attr[&v].low;
+                let low_u = &mut self.attr.get_mut(&u).unwrap().low;
                 min_assign(low_u, low_v);
             } else if self.stack.contains(v) {
-                let dfn_v: _ = self.attr[&v].dfn;
-                let low_u: _ = &mut self.attr.get_mut(&u).unwrap().low;
+                let dfn_v = self.attr[&v].dfn;
+                let low_u = &mut self.attr.get_mut(&u).unwrap().low;
                 min_assign(low_u, dfn_v);
             } else {
                 // other
@@ -404,10 +404,10 @@ mod tests {
         let mut nodes: FnvHashMap<u64, TestNode> = FnvHashMap::default();
 
         for &(u, v) in edges {
-            let gen: _ = || TestNode { deps: VecSet::new() };
+            let gen = || TestNode { deps: VecSet::new() };
 
             nodes.entry(v).or_insert_with(gen);
-            let u: _ = nodes.entry(u).or_insert_with(gen);
+            let u = nodes.entry(u).or_insert_with(gen);
 
             let is_new_edge = u.deps.insert(v).is_none();
             assert!(is_new_edge, "duplicate edge");
@@ -430,42 +430,42 @@ mod tests {
 
     #[test]
     fn cycle_2() {
-        let graph: _ = build_graph(&[
+        let graph = build_graph(&[
             (1, 2), //
             (2, 1), //
         ]);
 
-        let ans: _ = graph.tarjan_scc(2);
+        let ans = graph.tarjan_scc(2);
         assert_scc(&ans, &[&[1, 2]]);
     }
 
     #[test]
     fn cycle_3() {
-        let graph: _ = build_graph(&[
+        let graph = build_graph(&[
             (1, 2), //
             (2, 3), //
             (3, 1), //
         ]);
 
-        let ans: _ = graph.tarjan_scc(3);
+        let ans = graph.tarjan_scc(3);
         assert_scc(&ans, &[&[1, 2, 3]]);
     }
 
     #[test]
     fn linear() {
-        let graph: _ = build_graph(&[
+        let graph = build_graph(&[
             (4, 3), //
             (3, 2), //
             (2, 1), //
         ]);
 
-        let ans: _ = graph.tarjan_scc(4);
+        let ans = graph.tarjan_scc(4);
         assert_scc(&ans, &[&[1], &[2], &[3], &[4]]);
     }
 
     #[test]
     fn linear_and_cycle() {
-        let graph: _ = build_graph(&[
+        let graph = build_graph(&[
             (702, 701), //
             (703, 702), //
             (802, 801), //
@@ -482,7 +482,7 @@ mod tests {
             (805, 804), //
         ]);
 
-        let ans: _ = graph.tarjan_scc(805);
+        let ans = graph.tarjan_scc(805);
         assert_scc(&ans, &[&[701, 702, 703, 801, 802, 803], &[704, 804], &[805]]);
     }
 
@@ -494,7 +494,7 @@ mod tests {
         ]);
         graph.nodes.remove(&201);
 
-        let ans: _ = graph.tarjan_scc(301);
+        let ans = graph.tarjan_scc(301);
         assert_scc(&ans, &[&[202], &[301]]);
     }
 }

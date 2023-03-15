@@ -81,7 +81,7 @@ impl LogDb {
         // (deps, abal, acc)
         {
             log_key.set_field(InstanceFieldKey::FIELD_OTHERS);
-            let value: _ = (&ins.deps, ins.abal, &ins.acc);
+            let value = (&ins.deps, ins.abal, &ins.acc);
             put_value(&mut wb, bytes_of(&log_key), &mut buf, &value)?;
         }
 
@@ -138,7 +138,7 @@ impl LogDb {
         let others: (Deps, Ballot, Acc) = next_field!(FIELD_OTHERS);
         let (deps, abal, acc) = others;
 
-        let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+        let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
 
         Ok(Some(ins))
     }
@@ -224,8 +224,8 @@ impl LogDb {
                 executed: OneMap::new(0),
             };
 
-            let mut merge: _ = |map: &VecMap<ReplicaId, LocalInstanceId>,
-                                project: fn(&mut StatusMap) -> &mut OneMap| {
+            let mut merge = |map: &VecMap<ReplicaId, LocalInstanceId>,
+                             project: fn(&mut StatusMap) -> &mut OneMap| {
                 for &(rid, lid) in map {
                     let m = maps.entry(rid).or_insert_with(create_default);
                     ((project)(m)).set_bound(lid.raw_value());
@@ -289,7 +289,7 @@ impl LogDb {
                 let seq: Seq = codec::deserialize_owned(iter.value().unwrap())?;
 
                 max_assign(&mut attr_bounds.max_seq, seq);
-                attr_bounds.max_lids.entry(rid).and_modify(|l: _| max_assign(l, lid)).or_insert(lid);
+                attr_bounds.max_lids.entry(rid).and_modify(|l| max_assign(l, lid)).or_insert(lid);
                 status_bounds.set(InstanceId(rid, lid), status);
 
                 lid = lid.add_one();
@@ -422,7 +422,7 @@ mod tests {
 
         let bytes = codec::serialize(input_tuple).unwrap();
 
-        let output_tuple: (Deps, Status, VecSet<ReplicaId>) = codec::deserialize_owned(&*bytes).unwrap();
+        let output_tuple: (Deps, Status, VecSet<ReplicaId>) = codec::deserialize_owned(&bytes).unwrap();
 
         assert_eq!(input_tuple.0, &output_tuple.0);
         assert_eq!(input_tuple.1, output_tuple.1);

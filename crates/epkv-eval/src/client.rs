@@ -44,9 +44,8 @@ pub async fn run(opt: Opt) -> Result<()> {
         Command::Get { key, .. } => {
             let args = cs::GetArgs { key: key.into() };
             let output = server.get(args).await?;
-            match output.value {
-                Some(val) => println!("{}", display_bytes(&*val)),
-                None => {}
+            if let Some(val) = output.value {
+                println!("{}", display_bytes(&val))
             }
         }
         Command::Set { key, value, .. } => {

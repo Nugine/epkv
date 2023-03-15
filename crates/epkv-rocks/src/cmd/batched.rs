@@ -60,7 +60,7 @@ impl BatchedCommand {
     #[inline]
     #[must_use]
     pub fn as_slice(&self) -> &[MutableCommand] {
-        &*self.cmds
+        &self.cmds
     }
 }
 

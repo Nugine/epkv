@@ -10,7 +10,7 @@ pub struct Command(Asc<MutableCommand>);
 
 impl Command {
     fn as_inner(&self) -> &MutableCommand {
-        &*self.0
+        &self.0
     }
 
     pub fn from_mutable(cmd: MutableCommand) -> Self {

@@ -118,7 +118,7 @@ pub fn generate(config_path: &Utf8Path, target_dir: &Utf8Path) -> Result<()> {
         }
 
         let file = fs::File::create(&path)?;
-        let mut serializer: _ = serde_json::Serializer::with_formatter(file, formatter.clone());
+        let mut serializer = serde_json::Serializer::with_formatter(file, formatter.clone());
 
         value.serialize(&mut serializer)?;
 

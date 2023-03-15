@@ -50,7 +50,7 @@ where
 {
     pub async fn recv(&mut self) -> Option<Result<Message<C>>> {
         let bytes = self.rx.recv().await?;
-        Some(codec::deserialize_owned(&*bytes))
+        Some(codec::deserialize_owned(&bytes))
     }
 }
 
@@ -103,7 +103,7 @@ where
         let msg_bytes = codec::serialize(&msg).expect("message should be able to be serialized");
 
         let mut txs = Vec::with_capacity(targets.len());
-        with_read_lock(&self.state, |s: _| {
+        with_read_lock(&self.state, |s| {
             s.conns.apply(&targets, |conn| txs.push(conn.tx.clone()));
         });
         {
@@ -116,16 +116,14 @@ where
             });
         }
         spawn(async move {
-            let futures: _ = txs.iter().map(|tx: _| chan::send(tx, msg_bytes.clone()));
+            let futures = txs.iter().map(|tx| chan::send(tx, msg_bytes.clone()));
             let _ = join_all(futures).await;
         });
     }
 
     fn send_one(&self, target: ReplicaId, msg: Message<C>) {
         let msg_bytes = codec::serialize(&msg).expect("message should be able to be serialized");
-        let tx: _ = with_read_lock(&self.state, |s: _| {
-            s.conns.get(&target).map(|conn| conn.tx.clone())
-        });
+        let tx = with_read_lock(&self.state, |s| s.conns.get(&target).map(|conn| conn.tx.clone()));
         if let Some(tx) = tx {
             {
                 let single_size: u64 = msg_bytes.len().numeric_cast();
@@ -141,7 +139,7 @@ where
     }
 
     fn join(&self, rid: ReplicaId, addr: SocketAddr) -> Option<ReplicaId> {
-        with_write_lock(&self.state, |s: _| {
+        with_write_lock(&self.state, |s| {
             let prev_rid = s.addr_map.update(rid, addr);
 
             if let Some(prev) = prev_rid {
@@ -155,7 +153,7 @@ where
     }
 
     fn leave(&self, rid: ReplicaId) {
-        let conn = with_write_lock(&self.state, |s: _| {
+        let conn = with_write_lock(&self.state, |s| {
             s.addr_map.remove(rid);
             s.conns.remove(&rid)
         });

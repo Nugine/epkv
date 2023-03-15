@@ -32,7 +32,7 @@ pub struct Acc(Asc<MutableAcc>);
 impl Acc {
     #[inline]
     fn as_inner(&self) -> &MutableAcc {
-        &*self.0
+        &self.0
     }
 
     #[must_use]

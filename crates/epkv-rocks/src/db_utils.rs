@@ -59,6 +59,6 @@ where
 {
     match db.get(key)? {
         None => Ok(None),
-        Some(v) => Ok(Some(codec::deserialize_owned(&*v)?)),
+        Some(v) => Ok(Some(codec::deserialize_owned(&v)?)),
     }
 }

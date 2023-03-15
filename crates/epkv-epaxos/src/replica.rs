@@ -103,13 +103,13 @@ impl Deref for StateGuard<'_> {
     type Target = State;
 
     fn deref(&self) -> &Self::Target {
-        &*self.guard
+        &self.guard
     }
 }
 
 impl DerefMut for StateGuard<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.guard
+        &mut self.guard
     }
 }
 
@@ -161,7 +161,7 @@ where
         let epoch = AtomicEpoch::new(epoch);
 
         let (attr_bounds, status_bounds) = log_store.load_bounds().await??;
-        let status_bounds: _ = Asc::new(SyncMutex::new(status_bounds));
+        let status_bounds = Asc::new(SyncMutex::new(status_bounds));
 
         let state = {
             let peers_set: VecSet<_> = map_collect(&peers, |&(p, _)| p);
@@ -379,13 +379,13 @@ where
             return Ok((cmd, UpdateMode::Full));
         }
         self.log.load(id).await?;
-        let cmd: _ = self.log.with_cached_ins(id, |ins: _| ins.unwrap().cmd.clone()).await;
+        let cmd = self.log.with_cached_ins(id, |ins| ins.unwrap().cmd.clone()).await;
         Ok((cmd, UpdateMode::Partial))
     }
 
     async fn is_status_changed(&self, id: InstanceId, expected: Status) -> bool {
         self.log
-            .with_cached_ins(id, |ins: _| {
+            .with_cached_ins(id, |ins| {
                 let ins = ins.unwrap();
                 ins.status != expected
             })
@@ -404,7 +404,7 @@ where
 
     async fn with<R>(&self, f: impl FnOnce(&mut State) -> R) -> R {
         let mut guard = self.lock_state().await;
-        f(&mut *guard)
+        f(&mut guard)
     }
 
     #[tracing::instrument(skip_all, fields(rid=?self.rid))]
@@ -484,7 +484,7 @@ where
                 let sender = self.rid;
                 let epoch = self.epoch.load();
 
-                let msg: _ = PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
+                let msg = PreAccept { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
 
                 if self.config.optimization.enable_acc {
                     net::broadcast_preaccept(&self.network, selected_peers.acc, selected_peers.others, msg);
@@ -719,7 +719,7 @@ where
 
         {
             clone!(deps);
-            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
             self.log.save(id, ins, mode, Some(false)).await?
         }
 
@@ -770,7 +770,7 @@ where
 
             {
                 clone!(cmd, deps, acc);
-                let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+                let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
                 self.log.save(id, ins, mode, None).await?;
             }
 
@@ -916,7 +916,7 @@ where
         let (cmd, mode) = self.determine_update_mode(id, msg.cmd).await?;
 
         {
-            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
             self.log.save(id, ins, mode, None).await?;
         }
 
@@ -969,7 +969,7 @@ where
 
         {
             clone!(cmd, deps, acc);
-            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
             self.log.save(id, ins, mode, None).await?;
         }
 
@@ -984,7 +984,7 @@ where
             let epoch = self.epoch.load();
             clone!(cmd, deps);
 
-            let msg: _ = Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
+            let msg = Commit { sender, epoch, id, pbal, cmd: Some(cmd), seq, deps, acc };
 
             if self.config.optimization.enable_acc {
                 net::broadcast_commit(&self.network, selected_peers.acc, selected_peers.others, msg);
@@ -1047,7 +1047,7 @@ where
 
         {
             clone!(cmd, deps);
-            let ins: _ = Instance { pbal, cmd, seq, deps, abal, status, acc };
+            let ins = Instance { pbal, cmd, seq, deps, abal, status, acc };
             self.log.save(id, ins, mode, None).await?
         }
 
@@ -1119,7 +1119,7 @@ where
 
                 let known = self
                     .log
-                    .with_cached_ins(id, |ins: _| matches!(ins, Some(ins) if ins.cmd.is_nop().not()))
+                    .with_cached_ins(id, |ins| matches!(ins, Some(ins) if ins.cmd.is_nop().not()))
                     .await;
 
                 let mut guard = self.state.lock().await;
@@ -1708,15 +1708,15 @@ where
             };
 
             for &(rid, higher) in local_bounds.iter() {
-                let lower: _ = peer_bounds.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO);
+                let lower = peer_bounds.get(&rid).copied().unwrap_or(LocalInstanceId::ZERO);
 
                 let conf = &self.config.sync_limits;
                 let limit: usize = conf.max_instance_num.numeric_cast();
 
-                let mut instances: _ = <Vec<(InstanceId, Instance<C>)>>::new();
+                let mut instances = <Vec<(InstanceId, Instance<C>)>>::new();
 
                 for lid in LocalInstanceId::range_inclusive(lower.add_one(), higher) {
-                    let id: _ = InstanceId(rid, lid);
+                    let id = InstanceId(rid, lid);
                     let _ins_guard = self.log.lock_instance(id).await;
 
                     self.log.load(id).await?;
@@ -1769,7 +1769,7 @@ where
             sync_ids.push(sync_id);
         }
 
-        let _guard: _ = scopeguard::guard_on_success(sync_ids, |sync_ids: _| {
+        let _guard = scopeguard::guard_on_success(sync_ids, |sync_ids| {
             for sync_id in sync_ids {
                 let _ = self.sync_tx.remove(&sync_id);
             }
@@ -1939,7 +1939,7 @@ where
             let row_guard = row_lock.lock_owned().await;
             debug!("locked row {:?}", root.0);
 
-            let mut vis: _ = FnvHashSet::<InstanceId>::default();
+            let mut vis = FnvHashSet::<InstanceId>::default();
             let mut q = DepsQueue::new(root);
             let mut spawn_recover_up_to = VecMap::<ReplicaId, LocalInstanceId>::new();
 
@@ -2071,10 +2071,10 @@ where
         } else {
             let mut scc_list = local_graph.tarjan_scc(root);
             for scc in &mut scc_list {
-                scc.sort_by_key(|&(InstanceId(rid, lid), ref node): _| (node.seq, lid, rid));
+                scc.sort_by_key(|&(InstanceId(rid, lid), ref node)| (node.seq, lid, rid));
             }
 
-            let scc_total_len: usize = scc_list.iter().map(|scc: _| scc.len()).sum();
+            let scc_total_len: usize = scc_list.iter().map(|scc| scc.len()).sum();
             assert_eq!(scc_total_len, local_graph.nodes_count());
             assert!(scc_list.is_empty().not());
 
@@ -2299,6 +2299,7 @@ where
         drop(garbage);
     }
 
+    #[allow(clippy::redundant_async_block)] // FIXME
     #[tracing::instrument(skip_all, fields(rid=?self.rid))]
     pub async fn run_save_bounds(self: &Arc<Self>) -> Result<()> {
         self.log.save_bounds().await

@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn range() {
-        let mut range: _ = LocalInstanceId::range_inclusive(1.into(), 3.into());
+        let mut range = LocalInstanceId::range_inclusive(1.into(), 3.into());
         assert_eq!(range.next(), Some(1.into()));
         assert_eq!(range.next(), Some(2.into()));
         assert_eq!(range.next(), Some(3.into()));

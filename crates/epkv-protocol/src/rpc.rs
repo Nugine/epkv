@@ -80,7 +80,7 @@ where
         let op_chan_size = config.op_chan_size;
         let forward_chan_size = config.forward_chan_size;
 
-        let conn: _ = <Connection<A, O>>::connect(remote_addr, max_frame_length, forward_chan_size).await?;
+        let conn = <Connection<A, O>>::connect(remote_addr, max_frame_length, forward_chan_size).await?;
         let (op_tx, op_rx) = mpsc::channel(op_chan_size);
         let task = spawn(conn.driver(op_rx));
         let next_rpc_id = AtomicU64::new(1);
@@ -151,11 +151,11 @@ where
             .with_context(|| format!("failed to connect to remote addr {remote_addr}"))?;
 
         let (reader, writer) = stream.into_split();
-        let remote_rx: _ = codec::bytes_stream(reader, max_frame_length);
-        let remote_tx: _ = codec::bytes_sink(writer, max_frame_length);
+        let remote_rx = codec::bytes_stream(reader, max_frame_length);
+        let remote_tx = codec::bytes_sink(writer, max_frame_length);
 
-        let (read_tx, read_rx): _ = mpsc::channel::<RpcResponse<O>>(forward_chan_size);
-        let (write_tx, write_rx): _ = mpsc::channel::<RpcRequest<A>>(forward_chan_size);
+        let (read_tx, read_rx) = mpsc::channel::<RpcResponse<O>>(forward_chan_size);
+        let (write_tx, write_rx) = mpsc::channel::<RpcRequest<A>>(forward_chan_size);
 
         let forward_read_task: JoinHandle<()> = spawn(async move {
             pin_mut!(remote_rx);
@@ -167,7 +167,7 @@ where
                         break 'forward;
                     }
                 };
-                let item = match codec::deserialize_owned::<RpcResponse<O>>(&*bytes) {
+                let item = match codec::deserialize_owned::<RpcResponse<O>>(&bytes) {
                     Ok(x) => x,
                     Err(err) => {
                         error!(?err, "codec deserialize error");
@@ -317,9 +317,9 @@ where
         }
 
         let (reader, writer) = tcp.into_split();
-        let mut remote_stream: _ = codec::bytes_stream(reader, max_frame_length);
-        let mut remote_sink: _ = codec::bytes_sink(writer, max_frame_length);
-        let (res_tx, mut res_rx): _ = mpsc::unbounded_channel::<RpcResponse<S::Output>>();
+        let mut remote_stream = codec::bytes_stream(reader, max_frame_length);
+        let mut remote_sink = codec::bytes_sink(writer, max_frame_length);
+        let (res_tx, mut res_rx) = mpsc::unbounded_channel::<RpcResponse<S::Output>>();
 
         {
             clone!(service, working, limit);
@@ -339,7 +339,7 @@ where
 
                     clone!(service, working, res_tx);
                     spawn(async move {
-                        let req = match codec::deserialize_owned::<RpcRequest<A>>(&*bytes) {
+                        let req = match codec::deserialize_owned::<RpcRequest<A>>(&bytes) {
                             Ok(req) => req,
                             Err(err) => {
                                 error!(?err, "codec deserialize error");

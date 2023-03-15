@@ -21,7 +21,7 @@ impl MutableDeps {
 
     pub fn insert(&mut self, id: InstanceId) {
         let InstanceId(rid, lid) = id;
-        self.0.entry(rid).and_modify(|prev: _| max_assign(prev, lid)).or_insert(lid);
+        self.0.entry(rid).and_modify(|prev| max_assign(prev, lid)).or_insert(lid);
     }
 
     pub fn merge(&mut self, other: &Self) {
@@ -35,7 +35,7 @@ pub struct Deps(Asc<MutableDeps>);
 impl Deps {
     #[inline]
     fn as_inner(&self) -> &MutableDeps {
-        &*self.0
+        &self.0
     }
 
     #[must_use]
@@ -100,8 +100,8 @@ impl FromIterator<(ReplicaId, LocalInstanceId)> for Deps {
 
 impl fmt::Debug for Deps {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let vecmap: _ = &self.as_inner().0;
-        let entries: _ = vecmap.iter().copied().map(|(r, l): _| InstanceId(r, l));
+        let vecmap = &self.as_inner().0;
+        let entries = vecmap.iter().copied().map(|(r, l)| InstanceId(r, l));
         f.debug_set().entries(entries).finish()
     }
 }

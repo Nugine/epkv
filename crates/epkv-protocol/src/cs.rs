@@ -93,7 +93,7 @@ macro_rules! declare_rpc {
 
 impl Server {
     pub async fn connect(remote_addr: SocketAddr, config: &RpcClientConfig) -> Result<Self> {
-        let conn: _ = RpcConnection::connect(remote_addr, config).await?;
+        let conn = RpcConnection::connect(remote_addr, config).await?;
         Ok(Self { conn })
     }
 

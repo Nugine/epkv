@@ -135,7 +135,7 @@ impl Peers {
             acc
         } else {
             let rng = &mut rand::thread_rng();
-            let iter: _ = acc.as_slice().choose_multiple(rng, quorum);
+            let iter = acc.as_slice().choose_multiple(rng, quorum);
             iter.copied().collect()
         };
 

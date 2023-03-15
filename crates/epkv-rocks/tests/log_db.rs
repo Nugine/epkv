@@ -23,7 +23,7 @@ fn log_db() -> Result<()> {
 
     let path = Utf8Path::new("/tmp/epkv-rocks/tests/log_db");
     if path.exists() {
-        fs::remove_dir_all(&path)?;
+        fs::remove_dir_all(path)?;
     }
 
     let log_db = LogDb::new(path)?;

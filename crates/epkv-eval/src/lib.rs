@@ -39,7 +39,7 @@ fn random_bytes(size: usize) -> Bytes {
 fn pretty_json<T: Serialize>(value: &T) -> Result<String> {
     let mut buf = Vec::new();
     let formatter = serde_json::ser::PrettyFormatter::with_indent("    ".as_ref());
-    let mut serializer: _ = serde_json::Serializer::with_formatter(&mut buf, formatter.clone());
+    let mut serializer = serde_json::Serializer::with_formatter(&mut buf, formatter.clone());
     value.serialize(&mut serializer)?;
     let ans = utf8::vec_to_string(buf)?;
     Ok(ans)

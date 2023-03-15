@@ -39,6 +39,7 @@ fn main() -> Result<()> {
     run(config)
 }
 
+#[allow(clippy::redundant_async_block)] // FIXME
 #[tokio::main]
 async fn run(config: Config) -> Result<()> {
     Monitor::run(config).await
