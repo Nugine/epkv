@@ -20,5 +20,5 @@ tracing = "0.1.40"
 
 [dependencies.rocksdb]
 git = "https://github.com/rust-rocksdb/rust-rocksdb.git"
-rev = "6e19f1da84633ba42b69fdfc7e74b72d19f92901"
+rev = "6face7bb142d3d586383a99997e183db363f97fb" # 2024-05-03
 features = ["jemalloc"]
