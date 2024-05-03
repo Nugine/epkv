@@ -86,7 +86,7 @@ impl DataDb {
     }
 }
 
-type IssueFuture = impl Future<Output = Result<()>> + Send + 'static;
+pub type IssueFuture = impl Future<Output = Result<()>> + Send + 'static;
 
 impl DataStore<BatchedCommand> for DataDb {
     type Future<'a> = IssueFuture;

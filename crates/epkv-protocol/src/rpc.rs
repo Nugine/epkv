@@ -221,7 +221,7 @@ where
         Ok(Connection { write_tx, read_rx, forward_read_task, forward_write_task })
     }
 
-    #[allow(clippy::integer_arithmetic)] // tokio::select!
+    #[allow(clippy::arithmetic_side_effects)] // tokio::select!
     async fn driver(mut self, mut op_rx: mpsc::Receiver<Operation<A, O>>) {
         let mut inflight = <InflightMap<O>>::default();
         let read_rx = &mut self.read_rx;

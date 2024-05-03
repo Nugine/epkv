@@ -148,7 +148,7 @@ mod tests {
             assert!(ans.is_empty());
         }
         {
-            let expected = vec![
+            let expected = &[
                 (1001, "a"), //
                 (2002, "c"), //
                 (3002, "e"), //
@@ -166,7 +166,7 @@ mod tests {
             }
         }
         {
-            let expected = vec![(10000, "g")];
+            let expected = &[(10000, "g")];
 
             ans.clear();
             m.drain_less_equal(10000, |k, v| ans.push((k, v)));

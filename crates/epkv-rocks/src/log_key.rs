@@ -98,7 +98,7 @@ impl GlobalFieldKey {
 mod tests {
     use super::*;
 
-    #[allow(clippy::integer_arithmetic)]
+    #[allow(clippy::arithmetic_side_effects)]
     fn assert_nonzero_unique_sorted(arr: &[u8]) {
         assert!(arr.iter().copied().all(|p| p != 0));
         for i in 0..arr.len() {

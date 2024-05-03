@@ -511,7 +511,7 @@ where
             let t = conf.with(avg_rtt, |d| {
                 let base = Self::random_time(Duration::from_micros(conf.default_us), 0.5..1.5);
                 let delta = Self::random_time(d, 2.0..5.0);
-                base + delta
+                base.checked_add(delta).expect("duration should not overflow")
             });
             debug!(?avg_rtt, timeout=?t, "calc preaccept timeout");
 
@@ -1355,7 +1355,7 @@ where
             let duration = conf.with(avg_rtt, |d| {
                 let base = Self::random_time(Duration::from_micros(conf.default_us), 0.5..1.5);
                 let delta = Self::random_time(d, 4.0..6.0);
-                base + delta
+                base.checked_add(delta).expect("duration should not overflow")
             });
 
             let this = Arc::clone(self);

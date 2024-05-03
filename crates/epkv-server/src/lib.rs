@@ -3,7 +3,7 @@
     clippy::all,
     clippy::as_conversions,
     clippy::float_arithmetic,
-    clippy::integer_arithmetic,
+    clippy::arithmetic_side_effects,
     clippy::must_use_candidate
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
@@ -244,7 +244,7 @@ impl Server {
     }
 }
 
-type HandleClientRpcFuture<'a> = impl Future<Output = Result<cs::Output>> + Send + 'a;
+pub type HandleClientRpcFuture<'a> = impl Future<Output = Result<cs::Output>> + Send + 'a;
 
 impl rpc::Service<cs::Args> for Server {
     type Output = cs::Output;
@@ -496,13 +496,13 @@ mod tests {
     #[test]
     fn replica_future_size() {
         assert_eq!(output_size(&EpkvReplica::handle_message), 408);
-        assert_eq!(output_size(&EpkvReplica::run_propose), 384);
+        assert_eq!(output_size(&EpkvReplica::run_propose), 416);
     }
 
     #[test]
     fn mpsc_future_size() {
-        assert_eq!(mem::size_of::<Message<BatchedCommand>>(), 144);
-        assert_eq!(output_size(&chan::send::<Message<BatchedCommand>>), 240);
-        assert_eq!(output_size(&mpsc::Sender::<Message<BatchedCommand>>::send), 400);
+        assert_eq!(mem::size_of::<Message<BatchedCommand>>(), 136);
+        assert_eq!(output_size(&chan::send::<Message<BatchedCommand>>), 264);
+        assert_eq!(output_size(&mpsc::Sender::<Message<BatchedCommand>>::send), 416);
     }
 }

@@ -129,7 +129,7 @@ pub async fn run(opt: Opt) -> Result<()> {
 }
 
 pub async fn case1(config: &Config, args: Case1) -> Result<serde_json::Value> {
-    #[allow(clippy::integer_arithmetic)]
+    #[allow(clippy::arithmetic_side_effects)]
     {
         ensure!(args.cmd_count % args.batch_size == 0);
     }
@@ -148,6 +148,7 @@ pub async fn case1(config: &Config, args: Case1) -> Result<serde_json::Value> {
 
     let t0 = Instant::now();
 
+    #[allow(clippy::arithmetic_side_effects)]
     for _ in 0..(args.cmd_count.wrapping_div(args.batch_size)) {
         let set_args = || cs::SetArgs { key: key.clone(), value: value.clone() };
         let futures = (0..args.batch_size).map(|_| server.set(set_args()));
@@ -161,7 +162,7 @@ pub async fn case1(config: &Config, args: Case1) -> Result<serde_json::Value> {
 
     drop(server);
 
-    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::arithmetic_side_effects, clippy::float_arithmetic)]
     let time_ms = (t1 - t0).as_secs_f64() * 1000.0;
 
     let cluster_metrics_after = get_cluster_metrics(config).await?;
@@ -182,7 +183,7 @@ pub async fn case1(config: &Config, args: Case1) -> Result<serde_json::Value> {
 }
 
 pub async fn case2(config: &Config, args: Case2) -> Result<serde_json::Value> {
-    #[allow(clippy::integer_arithmetic)]
+    #[allow(clippy::arithmetic_side_effects)]
     {
         ensure!(args.cmd_count % args.batch_size == 0);
     }
@@ -203,6 +204,7 @@ pub async fn case2(config: &Config, args: Case2) -> Result<serde_json::Value> {
 
     let t0 = Instant::now();
 
+    #[allow(clippy::arithmetic_side_effects)]
     for _ in 0..(args.cmd_count.wrapping_div(args.batch_size)) {
         let futures = (0..args.batch_size).map(|_| server.get(cs::GetArgs { key: key.clone() }));
         let results = join_all(futures).await;
@@ -215,7 +217,7 @@ pub async fn case2(config: &Config, args: Case2) -> Result<serde_json::Value> {
 
     drop(server);
 
-    #[allow(clippy::float_arithmetic)]
+    #[allow(clippy::arithmetic_side_effects, clippy::float_arithmetic)]
     let time_ms = (t1 - t0).as_secs_f64() * 1000.0;
 
     let cluster_metrics_after = get_cluster_metrics(config).await?;
@@ -246,7 +248,11 @@ async fn get_cluster_metrics(config: &Config) -> Result<BTreeMap<String, cs::Get
     Ok(map)
 }
 
-#[allow(clippy::integer_arithmetic, clippy::float_arithmetic, clippy::as_conversions)]
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::float_arithmetic,
+    clippy::as_conversions
+)]
 fn diff_cluster_metrics(
     before: &BTreeMap<String, cs::GetMetricsOutput>,
     after: &BTreeMap<String, cs::GetMetricsOutput>,
@@ -315,7 +321,11 @@ fn save_result(output: &Utf8Path, value: &serde_json::Value) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::integer_arithmetic, clippy::float_arithmetic, clippy::as_conversions)]
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::float_arithmetic,
+    clippy::as_conversions
+)]
 pub async fn case3(config: &Config, args: Case3) -> Result<serde_json::Value> {
     {
         ensure!(args.cmd_count % config.servers.len() == 0);
@@ -478,6 +488,7 @@ pub async fn case4(config: &Config, args: Case4) -> Result<serde_json::Value> {
                         let cluster_metrics = get_cluster_metrics(&config).await.unwrap();
                         let t2 = Instant::now();
 
+                        #[allow(clippy::arithmetic_side_effects)]
                         let t = (((t1 - t0) + (t2 - t0)) / 2).as_micros().numeric_cast::<u64>();
 
                         let result = (t, cluster_metrics);
@@ -517,7 +528,7 @@ pub struct Case5 {
     cmds_per_interval: usize,
 }
 
-#[allow(clippy::integer_arithmetic)]
+#[allow(clippy::arithmetic_side_effects)]
 pub async fn case5(config: &Config, args: Case5) -> Result<serde_json::Value> {
     {
         ensure!((0..=100).contains(&args.conflict_rate));
@@ -634,7 +645,7 @@ impl RandomCmds {
 
 impl Iterator for &'_ RandomCmds {
     type Item = cs::SetArgs;
-    #[allow(clippy::integer_arithmetic)]
+    #[allow(clippy::arithmetic_side_effects)]
     fn next(&mut self) -> Option<cs::SetArgs> {
         let key = if self.rate == 0 {
             self.unique_key_gen.fetch_add(1, Ordering::Relaxed) + 1

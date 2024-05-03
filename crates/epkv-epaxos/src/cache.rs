@@ -171,7 +171,7 @@ where
     }
 
     pub fn insert_ins(&mut self, id: InstanceId, ins: Instance<C>) {
-        let row = self.ins_cache.entry(id.0).or_insert_with(FnvHashMap::default);
+        let row = self.ins_cache.entry(id.0).or_default();
         if row.insert(id.1, ins).is_none() {
             self.pbal_cache.remove(&id);
         }

@@ -36,7 +36,7 @@ impl OneMap {
     }
 
     #[inline]
-    #[allow(clippy::integer_arithmetic)]
+    #[allow(clippy::arithmetic_side_effects)]
     pub fn update_bound(&mut self) {
         {
             let high = self.bound.saturating_add(2);

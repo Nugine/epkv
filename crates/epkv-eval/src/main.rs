@@ -3,7 +3,7 @@
     clippy::all,
     clippy::as_conversions,
     clippy::float_arithmetic,
-    clippy::integer_arithmetic,
+    clippy::arithmetic_side_effects,
     clippy::must_use_candidate
 )]
 #![warn(clippy::todo, clippy::dbg_macro)]
