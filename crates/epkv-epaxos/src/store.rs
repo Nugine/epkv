@@ -43,6 +43,10 @@ pub enum UpdateMode {
 }
 
 pub trait DataStore<C>: Send + Sync + 'static {
-    type Future<'a>: Future<Output = Result<()>> + Send + 'a;
-    fn issue<'a>(self: &'a Arc<Self>, id: InstanceId, cmd: C, notify: Asc<ExecNotify>) -> Self::Future<'a>;
+    fn issue(
+        self: &Arc<Self>,
+        id: InstanceId,
+        cmd: C,
+        notify: Asc<ExecNotify>,
+    ) -> impl Future<Output = Result<()>> + Send;
 }

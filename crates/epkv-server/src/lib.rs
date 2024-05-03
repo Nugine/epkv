@@ -244,14 +244,10 @@ impl Server {
     }
 }
 
-pub type HandleClientRpcFuture<'a> = impl Future<Output = Result<cs::Output>> + Send + 'a;
-
 impl rpc::Service<cs::Args> for Server {
     type Output = cs::Output;
 
-    type Future<'a> = HandleClientRpcFuture<'a>;
-
-    fn call<'a>(self: &'a Arc<Self>, args: cs::Args) -> Self::Future<'a> {
+    fn call(self: &Arc<Self>, args: cs::Args) -> impl Future<Output = Result<Self::Output>> + Send {
         self.handle_client_rpc(args)
     }
 

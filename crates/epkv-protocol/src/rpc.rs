@@ -277,9 +277,7 @@ where
 pub trait Service<A: Send + 'static>: Send + Sync + 'static {
     type Output: Send + 'static;
 
-    type Future<'a>: Future<Output = Result<Self::Output>> + Send + 'a;
-
-    fn call<'a>(self: &'a Arc<Self>, args: A) -> Self::Future<'a>;
+    fn call(self: &Arc<Self>, args: A) -> impl Future<Output = Result<Self::Output>> + Send;
 
     fn needs_stop(&self) -> bool;
 }

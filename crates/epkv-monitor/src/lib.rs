@@ -175,14 +175,10 @@ impl Monitor {
     }
 }
 
-pub type HandleRpcFuture<'a> = impl Future<Output = Result<sm::Output>> + Send + 'a;
-
 impl rpc::Service<sm::Args> for Monitor {
     type Output = sm::Output;
 
-    type Future<'a> = HandleRpcFuture<'a>;
-
-    fn call<'a>(self: &'a Arc<Self>, args: sm::Args) -> Self::Future<'a> {
+    fn call(self: &Arc<Self>, args: sm::Args) -> impl Future<Output = Result<Self::Output>> + Send {
         self.handle_rpc(args)
     }
 
