@@ -4,10 +4,10 @@ version = "0.1.0-dev"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.82"
+anyhow = "1.0.86"
 asc = "0.1.1"
 bytes = "1.6.0"
-camino = { version = "1.1.6", features = ["serde1"] }
+camino = { version = "1.1.7", features = ["serde1"] }
 clap = { version = "4.5.4", features = ["derive"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-protocol = { path = "../epkv-protocol" }
@@ -16,10 +16,10 @@ epkv-utils = { path = "../epkv-utils" }
 futures-util = { version = "0.3.30", features = ["sink"] }
 numeric_cast = "0.2.1"
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
-parking_lot = "0.12.2"
-serde = { version = "1.0.164", features = ["derive", "rc"] }
+parking_lot = "0.12.3"
+serde = { version = "1.0.203", features = ["derive", "rc"] }
 tikv-jemallocator = "0.5.4"
-tokio = { version = "1.29.1", features = ["full"] }
-toml = "0.8.12"
+tokio = { version = "1.38.0", features = ["full"] }
+toml = "0.8.13"
 tracing = "0.1.40"
 wgp = "0.2.0"
