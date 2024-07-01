@@ -8,7 +8,7 @@ anyhow = "1.0.86"
 asc = "0.1.1"
 bytes = "1.6.0"
 camino = { version = "1.1.7", features = ["serde1"] }
-clap = { version = "4.5.4", features = ["derive"] }
+clap = { version = "4.5.8", features = ["derive"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-protocol = { path = "../epkv-protocol" }
 epkv-rocks = { path = "../epkv-rocks" }
@@ -20,6 +20,6 @@ parking_lot = "0.12.3"
 serde = { version = "1.0.203", features = ["derive", "rc"] }
 tikv-jemallocator = "0.5.4"
 tokio = { version = "1.38.0", features = ["full"] }
-toml = "0.8.13"
+toml = "0.8.14"
 tracing = "0.1.40"
 wgp = "0.2.0"
