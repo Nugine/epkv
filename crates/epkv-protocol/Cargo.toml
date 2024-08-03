@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
-bytes = { version = "1.6.0", features = ["serde"] }
+bytes = { version = "1.7.0", features = ["serde"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-rocks = { path = "../epkv-rocks" }
 epkv-utils = { path = "../epkv-utils" }
@@ -13,7 +13,7 @@ fnv = "1.0.7"
 futures-util = { version = "0.3.30", features = ["sink"] }
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 scopeguard = "1.2.0"
-serde = { version = "1.0.203", features = ["derive"] }
-tokio = { version = "1.38.0", features = ["full"] }
+serde = { version = "1.0.204", features = ["derive"] }
+tokio = { version = "1.39.2", features = ["full"] }
 tracing = "0.1.40"
 wgp = "0.2.0"
