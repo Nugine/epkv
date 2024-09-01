@@ -17,6 +17,6 @@ ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 parking_lot = "0.12.3"
 rand = "0.8.5"
 scopeguard = "1.2.0"
-serde = { version = "1.0.204", features = ["derive"] }
-tokio = { version = "1.39.2", features = ["full"] }
+serde = { version = "1.0.209", features = ["derive"] }
+tokio = { version = "1.40.0", features = ["full"] }
 tracing = "0.1.40"
