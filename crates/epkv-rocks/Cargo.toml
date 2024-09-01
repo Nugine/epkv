@@ -6,16 +6,16 @@ edition = "2021"
 [dependencies]
 anyhow = { version = "1.0.86", features = ["backtrace"] }
 asc = "0.1.1"
-bytemuck = { version = "1.16.3", features = ["derive"] }
-bytes = { version = "1.7.0", features = ["serde"] }
-camino = { version = "1.1.7", features = ["serde"] }
+bytemuck = { version = "1.17.1", features = ["derive"] }
+bytes = { version = "1.7.1", features = ["serde"] }
+camino = { version = "1.1.9", features = ["serde"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-utils = { path = "../epkv-utils" }
 numeric_cast = "0.2.1"
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 parking_lot = "0.12.3"
-serde = { version = "1.0.204", features = ["derive"] }
-tokio = { version = "1.39.2", features = ["full"] }
+serde = { version = "1.0.209", features = ["derive"] }
+tokio = { version = "1.40.0", features = ["full"] }
 tracing = "0.1.40"
 
 [dependencies.rocksdb]
