@@ -74,7 +74,7 @@ macro_rules! impl_add_one {
                 #[inline]
                 #[must_use]
                 #[track_caller]
-                pub fn add_one(self) -> Self {
+                pub const fn add_one(self) -> Self {
                     Self(self.0.checked_add(1).expect(concat!(stringify!($ty), " overflow")))
                 }
             }
@@ -91,7 +91,7 @@ macro_rules! impl_sub_one {
                 #[inline]
                 #[must_use]
                 #[track_caller]
-                pub fn sub_one(self) -> Self {
+                pub const fn sub_one(self) -> Self {
                     Self(self.0.checked_sub(1).expect(concat!(stringify!($ty), " underflow")))
                 }
             }
@@ -226,7 +226,7 @@ mod tests {
 
     #[test]
     #[should_panic]
-    fn underflow() {
+    const fn underflow() {
         let _ = LocalInstanceId::ZERO.sub_one();
     }
 
