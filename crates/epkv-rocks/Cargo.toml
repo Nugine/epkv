@@ -4,19 +4,19 @@ version = "0.1.0-dev"
 edition = "2021"
 
 [dependencies]
-anyhow = { version = "1.0.89", features = ["backtrace"] }
-asc = "0.1.1"
-bytemuck = { version = "1.18.0", features = ["derive"] }
-bytes = { version = "1.7.2", features = ["serde"] }
+anyhow = { version = "1.0.93", features = ["backtrace"] }
+asc = "0.2.0"
+bytemuck = { version = "1.20.0", features = ["derive"] }
+bytes = { version = "1.9.0", features = ["serde"] }
 camino = { version = "1.1.9", features = ["serde"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-utils = { path = "../epkv-utils" }
 numeric_cast = "0.2.1"
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 parking_lot = "0.12.3"
-serde = { version = "1.0.210", features = ["derive"] }
-tokio = { version = "1.40.0", features = ["full"] }
-tracing = "0.1.40"
+serde = { version = "1.0.215", features = ["derive"] }
+tokio = { version = "1.41.1", features = ["full"] }
+tracing = "0.1.41"
 
 [dependencies.rocksdb]
 git = "https://github.com/rust-rocksdb/rust-rocksdb.git"
