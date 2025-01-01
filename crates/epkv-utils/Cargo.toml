@@ -4,10 +4,10 @@ version = "0.1.0-dev"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.93"
+anyhow = "1.0.95"
 asc = "0.2.0"
 bincode = "1.3.3"
-bytemuck = { version = "1.20.0", features = ["derive"] }
+bytemuck = { version = "1.21.0", features = ["derive"] }
 bytes = { version = "1.9.0", features = ["serde"] }
 camino = "1.1.9"
 futures-util = { version = "0.3.31", features = ["sink"] }
@@ -15,12 +15,12 @@ numeric_cast = "0.2.1"
 once_cell = "1.20.2"
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 parking_lot = "0.12.3"
-roaring = "0.10.7"
-serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.133"
+roaring = "0.10.9"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.134"
 simdutf8 = "0.1.5"
-tokio = { version = "1.41.1", features = ["full"] }
-tokio-util = { version = "0.7.12", features = ["codec"] }
+tokio = { version = "1.42.0", features = ["full"] }
+tokio-util = { version = "0.7.13", features = ["codec"] }
 toml = "0.8.19"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "time"] }
