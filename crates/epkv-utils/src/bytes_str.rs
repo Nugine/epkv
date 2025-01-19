@@ -15,7 +15,8 @@ impl BytesStr {
 
     #[inline]
     #[allow(unsafe_code)]
-    pub const fn as_str(&self) -> &str {
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn as_str(&self) -> &str {
         unsafe { core::str::from_utf8_unchecked(&self.0) }
     }
 }
