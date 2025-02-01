@@ -16,7 +16,6 @@ use camino::{Utf8Path, Utf8PathBuf};
 use crossbeam_queue::SegQueue;
 use futures_util::future::join_all;
 use numeric_cast::NumericCast;
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::spawn;
@@ -652,7 +651,7 @@ impl Iterator for &'_ RandomCmds {
         } else if self.rate == 100 {
             self.common_key
         } else {
-            let magic: usize = rand::thread_rng().gen_range(0..100);
+            let magic: usize = rand::random_range(0..100);
             if magic < self.rate {
                 self.common_key
             } else {

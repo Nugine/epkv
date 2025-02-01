@@ -32,7 +32,7 @@ fn default_rpc_client_config() -> RpcClientConfig {
 
 fn random_bytes(size: usize) -> Bytes {
     let mut buf: Vec<u8> = vec![0; size];
-    rand::thread_rng().fill_bytes(&mut buf);
+    rand::rng().fill_bytes(&mut buf);
     Bytes::from(buf)
 }
 
