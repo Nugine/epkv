@@ -184,7 +184,7 @@ impl<T> Head<T> {
 
 impl Head<ReplicaId> {
     #[inline]
-    pub fn gen_next(&mut self) -> ReplicaId {
+    pub const fn gen_next(&mut self) -> ReplicaId {
         self.0 = self.0.add_one();
         self.0
     }
@@ -192,7 +192,7 @@ impl Head<ReplicaId> {
 
 impl Head<Epoch> {
     #[inline]
-    pub fn gen_next(&mut self) -> Epoch {
+    pub const fn gen_next(&mut self) -> Epoch {
         self.0 = self.0.add_one();
         self.0
     }
@@ -200,7 +200,7 @@ impl Head<Epoch> {
 
 impl Head<LocalInstanceId> {
     #[inline]
-    pub fn gen_next(&mut self) -> LocalInstanceId {
+    pub const fn gen_next(&mut self) -> LocalInstanceId {
         self.0 = self.0.add_one();
         self.0
     }
@@ -208,7 +208,7 @@ impl Head<LocalInstanceId> {
 
 impl Head<SyncId> {
     #[inline]
-    pub fn gen_next(&mut self) -> SyncId {
+    pub const fn gen_next(&mut self) -> SyncId {
         self.0 = self.0.add_one();
         self.0
     }

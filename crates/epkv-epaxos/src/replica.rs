@@ -41,7 +41,6 @@ use numeric_cast::NumericCast;
 use ordered_vecmap::VecMap;
 use ordered_vecmap::VecSet;
 use parking_lot::Mutex as SyncMutex;
-use rand::Rng;
 use tokio::spawn;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::MutexGuard as AsyncMutexGuard;
@@ -358,7 +357,7 @@ where
     }
 
     fn random_time(duration: Duration, rate_range: ops::Range<f64>) -> Duration {
-        let rate: f64 = rand::thread_rng().gen_range(rate_range);
+        let rate: f64 = rand::random_range(rate_range);
         duration.mul_f64(rate)
     }
 

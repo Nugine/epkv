@@ -6,7 +6,7 @@ use std::ops::Not;
 use std::time::Duration;
 
 use ordered_vecmap::VecSet;
-use rand::prelude::SliceRandom;
+use rand::prelude::IndexedRandom;
 use tracing::debug;
 
 pub struct Peers {
@@ -134,7 +134,7 @@ impl Peers {
         let ans_acc = if acc.len() <= quorum {
             acc
         } else {
-            let rng = &mut rand::thread_rng();
+            let rng = &mut rand::rng();
             let iter = acc.as_slice().choose_multiple(rng, quorum);
             iter.copied().collect()
         };

@@ -31,7 +31,7 @@ const fn is_init(inited: u64, idx: u8) -> bool {
     ((inited.wrapping_shr(idx as u32)) & 1) != 0
 }
 
-fn set_init(inited: &mut u64, idx: u8) {
+const fn set_init(inited: &mut u64, idx: u8) {
     *inited |= 1u64.wrapping_shl(idx as u32)
 }
 
