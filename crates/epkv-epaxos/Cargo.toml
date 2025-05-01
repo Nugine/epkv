@@ -5,7 +5,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 asc = { version = "0.2.0", features = ["serde"] }
 dashmap = "6.1.0"
 epkv-utils = { path = "../epkv-utils" }
@@ -15,8 +15,8 @@ numeric_cast = "0.3.0"
 once_cell = "1.21.3"
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 parking_lot = "0.12.3"
-rand = "0.9.0"
+rand = "0.9.1"
 scopeguard = "1.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
-tokio = { version = "1.44.1", features = ["full"] }
+tokio = { version = "1.44.2", features = ["full"] }
 tracing = "0.1.41"
