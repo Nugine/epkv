@@ -65,7 +65,7 @@ pub async fn run(opt: Opt) -> Result<()> {
     if let Some(t0) = t0 {
         #[allow(clippy::arithmetic_side_effects)]
         let duration = t1 - t0;
-        eprintln!("time: {:?}", duration);
+        eprintln!("time: {duration:?}");
     }
 
     Ok(())

@@ -1896,7 +1896,7 @@ where
         debug!(?id, ?seq, ?deps, ?status, "spawn_execute");
 
         match Ord::cmp(&status, &Status::Committed) {
-            Ordering::Less => panic!("unexpected status: {:?}", status),
+            Ordering::Less => panic!("unexpected status: {status:?}"),
             Ordering::Equal => {}
             Ordering::Greater => return,
         }

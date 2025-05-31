@@ -34,7 +34,6 @@ macro_rules! impl_newtype {
         $(
             impl From<$inner> for $ty {
                 #[inline]
-                #[must_use]
                 #[track_caller]
                 fn from(val: $inner) -> Self {
                     assert!(val != 0, concat!("Zero ", stringify!($ty), " is reserved"));

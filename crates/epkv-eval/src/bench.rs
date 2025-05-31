@@ -493,7 +493,7 @@ pub async fn case4(config: &Config, args: Case4) -> Result<serde_json::Value> {
                         let result = (t, cluster_metrics);
                         let line = serde_json::to_string(&result).unwrap();
                         q.push(result);
-                        println!("{}", line);
+                        println!("{line}");
                     }
                 })
             };

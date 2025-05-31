@@ -75,7 +75,7 @@ impl<C> Graph<C> {
             Status::Committed => ExecStatus::Committed,
             Status::Issued => ExecStatus::Issued,
             Status::Executed => ExecStatus::Executed,
-            _ => panic!("unexpected status: {:?}", status),
+            _ => panic!("unexpected status: {status:?}"),
         };
 
         let gen = || Asc::new(InsNode { cmd, seq, deps, status: SyncMutex::new(exec_status) });

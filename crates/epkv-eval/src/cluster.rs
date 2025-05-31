@@ -104,7 +104,7 @@ pub fn generate(config_path: &Utf8Path, target_dir: &Utf8Path) -> Result<()> {
     let config: Config =
         read_config_file(config_path).with_context(|| format!("failed to read config file {config_path}"))?;
 
-    println!("read  config: {}", config_path);
+    println!("read  config: {config_path}");
 
     let files = config.generate(config_path)?;
 
@@ -122,7 +122,7 @@ pub fn generate(config_path: &Utf8Path, target_dir: &Utf8Path) -> Result<()> {
 
         value.serialize(&mut serializer)?;
 
-        println!("write config: {}", path);
+        println!("write config: {path}");
     }
 
     println!("done");
