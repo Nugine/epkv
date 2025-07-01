@@ -7,8 +7,8 @@ edition = "2021"
 anyhow = "1.0.97"
 asc = "0.2.0"
 bytes = "1.10.1"
-camino = { version = "1.1.9", features = ["serde1"] }
-clap = { version = "4.5.34", features = ["derive"] }
+camino = { version = "1.1.10", features = ["serde1"] }
+clap = { version = "4.5.40", features = ["derive"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-protocol = { path = "../epkv-protocol" }
 epkv-rocks = { path = "../epkv-rocks" }
@@ -20,6 +20,6 @@ parking_lot = "0.12.3"
 serde = { version = "1.0.219", features = ["derive", "rc"] }
 tikv-jemallocator = "0.5.4"
 tokio = { version = "1.44.1", features = ["full"] }
-toml = "0.8.20"
+toml = "0.8.23"
 tracing = "0.1.41"
 wgp = "0.2.0"
