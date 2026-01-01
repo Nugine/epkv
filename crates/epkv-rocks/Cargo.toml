@@ -16,7 +16,7 @@ ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 parking_lot = "0.12.5"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["full"] }
-tracing = "0.1.43"
+tracing = "0.1.44"
 
 [dependencies.rocksdb]
 git = "https://github.com/rust-rocksdb/rust-rocksdb.git"
