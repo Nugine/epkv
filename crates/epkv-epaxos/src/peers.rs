@@ -60,7 +60,7 @@ impl Avg {
 }
 
 fn sort_rank(rank: &mut [(u64, ReplicaId)]) {
-    rank.sort_unstable_by(|lhs, rhs| lhs.0.cmp(&rhs.0));
+    rank.sort_unstable_by_key(|lhs| lhs.0);
 }
 
 impl Peers {
