@@ -19,7 +19,7 @@ use epkv_utils::utf8;
 
 use anyhow::Result;
 use bytes::Bytes;
-use rand::RngCore;
+use rand::Rng;
 use serde::Serialize;
 
 fn default_rpc_client_config() -> RpcClientConfig {
