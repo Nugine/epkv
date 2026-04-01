@@ -12,11 +12,11 @@ epkv-utils = { path = "../epkv-utils" }
 fnv = "1.0.7"
 futures-util = "0.3.32"
 numeric_cast = "0.3.0"
-once_cell = "1.21.3"
+once_cell = "1.21.4"
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 parking_lot = "0.12.5"
 rand = "0.10.0"
 scopeguard = "1.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
-tokio = { version = "1.49.0", features = ["full"] }
+tokio = { version = "1.50.0", features = ["full"] }
 tracing = "0.1.44"
