@@ -15,7 +15,7 @@ numeric_cast = "0.3.0"
 ordered-vecmap = { version = "0.2.0", features = ["serde"] }
 parking_lot = "0.12.5"
 serde = { version = "1.0.228", features = ["derive"] }
-tokio = { version = "1.50.0", features = ["full"] }
+tokio = { version = "1.52.1", features = ["full"] }
 tracing = "0.1.44"
 
 [dependencies.rocksdb]
