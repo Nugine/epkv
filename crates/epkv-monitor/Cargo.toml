@@ -6,15 +6,15 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.102"
 camino = { version = "1.1.12", features = ["serde1"] }
-clap = { version = "4.6.0", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 epkv-epaxos = { path = "../epkv-epaxos" }
 epkv-protocol = { path = "../epkv-protocol" }
 epkv-utils = { path = "../epkv-utils" }
 parking_lot = "0.12.5"
 serde = { version = "1.0.228", features = ["derive", "rc"] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 tikv-jemallocator = "0.5.4"
-tokio = { version = "1.50.0", features = ["full"] }
-toml = "1.1.1"
+tokio = { version = "1.52.3", features = ["full"] }
+toml = "1.1.2"
 tracing = "0.1.44"
 wgp = "0.3.0"
